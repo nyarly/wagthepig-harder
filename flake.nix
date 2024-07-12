@@ -29,6 +29,7 @@
         nodejs_latest
         elmPackages.elm
         elmPackages.elm-test
+        elmPackages.elm-live
       ] ++ buildDeps;
     };
     devShells.default = devShells.devShell.${system};

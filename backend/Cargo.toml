@@ -6,3 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+axum = "~0.7"
+hyper = { version = "1.4.1", features = ["client", "http1"] }
+hyper-util = { version = "0.1.6", features = ["client-legacy", "http1", "tokio"] }
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread"] }
+
+tower-http = { version = "0.5.0", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
