@@ -70,11 +70,10 @@ view model =
       , ul []
           [ viewLink "/home"
           , viewLink "/profile"
-          , viewLink "/reviews/the-century-of-the-self"
           , viewLink "/reviews/one-more-link"
           , viewLink "/reviews/another-link"
-          , viewLink "/reviews/another"
-          , viewLink "/reviews/another-again"
+          , viewLink "/reviews/another-one"
+          , viewLink "/reviews/moar"
           ]
       ]
   }

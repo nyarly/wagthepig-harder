@@ -1,0 +1,8 @@
+environment:
+  - "PGDATA=devsupport/db"
+processes:
+  elm-live:
+    command: "elm-live src/Main.elm --pushstate --start-page html/index.html -- --output=js/main.js"
+    working_dir: frontend/
+  database:
+    command: "devsupport/run_postgres.sh"

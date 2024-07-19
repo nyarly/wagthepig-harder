@@ -26,6 +26,10 @@
         rust-analyzer
         clippy
 
+        process-compose
+
+        postgresql
+
         nodejs_latest
         elmPackages.elm
         elmPackages.elm-test
