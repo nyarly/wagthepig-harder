@@ -4,7 +4,9 @@ import Browser
 import Browser.Navigation as Nav
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (..)
 import Url
+import Landing
 
 main : Program () Model Msg
 main =
@@ -20,16 +22,22 @@ main =
 type alias Model =
   { key : Nav.Key
   , url : Url.Url
+  , page: Page
+  , landing: Landing.Model
   }
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-  ( Model key url, Cmd.none )
+  ( Model key url Landing (Landing.Model), Cmd.none )
 
+type Page =
+  Landing
 
 type Msg
   = LinkClicked Browser.UrlRequest
+  | PathRequested String
   | UrlChanged Url.Url
+  | LandingMsg Landing.Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -42,10 +50,15 @@ update msg model =
         Browser.External href ->
           ( model, Nav.load href )
 
+    PathRequested path ->
+      ( model, Nav.pushUrl model.key path )
+
     UrlChanged url ->
       ( { model | url = url }
       , Cmd.none
       )
+
+    LandingMsg _ -> ( model, Cmd.none )
 
 
 
@@ -63,22 +76,33 @@ subscriptions _ =
 
 view : Model -> Browser.Document Msg
 view model =
-  { title = "URL Interceptor"
-  , body =
-      [ text "The current URL is: "
-      , b [] [ text (Url.toString model.url) ]
-      , ul []
-          [ viewLink "/home"
-          , viewLink "/profile"
-          , viewLink "/reviews/one-more-link"
-          , viewLink "/reviews/another-link"
-          , viewLink "/reviews/another-one"
-          , viewLink "/reviews/moar"
+  { title = "Wag The Pig"
+  , body = [
+      div [ class "page", class (pageName model) ] ([
+
+        nav [] [
+          img [ src "/assets/wagthepig-med.png" ] []
+          , ul [ class "menu" ] [
+            headerButton "Profile" "/profile"
+            , headerButton "Events" "/events"
+            , headerButton "Sign out" "/sign-out"
           ]
-      ]
+        ]
+      ] ++ renderPage model)
+    ]
   }
 
 
-viewLink : String -> Html msg
-viewLink path =
-  li [] [ a [ href path ] [ text path ] ]
+
+pageName : Model -> String
+pageName model =
+  case model.page of
+    Landing -> "landing"
+
+renderPage model =
+  case model.page of
+    Landing -> List.map (Html.map (\lm -> LandingMsg lm)) (Landing.view model.landing) -- but consider how pages share information
+
+headerButton : String -> String -> Html Msg
+headerButton txt path =
+  li [] [ button [ class "header", href path, onClick (PathRequested path) ] [ text txt ] ]

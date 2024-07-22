@@ -1,5 +1,5 @@
 {
-  description = "shoppinglist is the WIP name for a web app to manage shopping lists";
+  description = "wagthepig is a web app to help with the What Are We Going to Play Game";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/24.05";
     flake-utils.url = "github:numtide/flake-utils";
@@ -27,12 +27,13 @@
         clippy
 
         process-compose
+        watchexec
 
         postgresql
 
         nodejs_latest
         elmPackages.elm
-        elmPackages.elm-test
+        elmPackages.elm-test-rs
         elmPackages.elm-live
       ] ++ buildDeps;
     };
