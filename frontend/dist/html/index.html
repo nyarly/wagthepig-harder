@@ -3,15 +3,20 @@
   <meta charset="UTF-8">
   <title>Main</title>
   <script src="/js/main.js"></script>
+  <script src="/js/ports/localstorage.js"></script>
   <link rel="stylesheet" href = "/css/main.css" />
 </head>
 
 <body>
   <div id="myapp"></div>
   <script>
+  var flags = allState();
+
   var app = Elm.Main.init({
-    node: document.getElementById('myapp')
+    node: document.getElementById('myapp'),
+    flags: flags
   });
+  addLocalStoragePorts(app);
   </script>
 </body>
 </html>

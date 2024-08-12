@@ -1,9 +1,9 @@
 module Landing exposing (..)
 
-import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Url
+
+import Router
 
 type alias Model = { }
 
@@ -14,9 +14,9 @@ view : Model -> List (Html Msg)
 view model =
   [
    h1 [] [ text "Welcome to Wag the Pig!" ]
-   , div [ class "account" ] [
-      viewLink "Sign up" "/sign-up"
-     , viewLink "Log In" "/log-in"
+   , div [ class "account" ]
+     [ viewLink "Sign up" "/sign-up"
+     , viewLink "Log In" (Router.buildFromTarget Router.Login)
    ]
   ]
 

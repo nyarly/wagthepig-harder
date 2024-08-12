@@ -26,15 +26,16 @@
         rust-analyzer
         clippy
 
-        process-compose
-        watchexec
-
-        postgresql
-
         nodejs_latest
         elmPackages.elm
         elmPackages.elm-test-rs
         elmPackages.elm-live
+
+        process-compose
+        watchexec
+        postgresql
+        sqlx-cli
+        biscuit-cli
       ] ++ buildDeps;
     };
     devShells.default = devShells.devShell.${system};

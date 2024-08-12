@@ -1,11 +1,34 @@
+vars:
+  projectname: "wagthepig"
 environment:
   - "PGDATA=devsupport/db"
-processes:
-  elm-live:
-    command: "elm-live src/Main.elm --verbose --pushstate --dir dist/ --start-page html/index.html -- --output=dist/js/main.js"
+
+unifiendbackend: &unifiedbackend
+  live-make:
     working_dir: frontend/
-  ccs-watch:
-    command: watchexec -w dist/css touch src/Main.elm
-    working_dir: frontend/
+    command: watchexec -w src/ elm make src/Main.elm --output=dist/js/main.js --debug
+  backend:
+    working_dir: backend/
+    command: watchexec --no-vcs-ignore -w target/debug/{{.projectname}}-backend -r target/debug/{{.projectname}}-backend
+    depends_on:
+      database:
+        condition: process_log_ready
   database:
     command: "devsupport/run_postgres.sh"
+    ready_log_line: "ready to accept connections"
+    shutdown:
+      signal: 2 # SIGINT kills live clients and shuts down
+
+barefrontend: &barefrontend
+  elm-live:
+    working_dir: frontend/
+    command: "elm-live src/Main.elm --verbose --pushstate --dir dist/ --start-page html/index.html -- --output=dist/js/main.js"
+  ccs-watch:
+    working_dir: frontend/
+    command: watchexec -w dist/css touch src/Main.elm
+
+processes:
+  <<: *unifiedbackend # starting out, use barefrontend; then unifiedbackend
+  elm-tests:
+    working_dir: frontend/
+    command: elm-test-rs --watch
