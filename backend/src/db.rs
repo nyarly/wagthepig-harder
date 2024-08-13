@@ -3,14 +3,39 @@ use chrono::NaiveDateTime;
 use futures::TryFuture;
 use sqlx::{Executor, Postgres};
 
-#[derive(sqlx::FromRow, Default)]
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+#[derive(Zeroize, ZeroizeOnDrop, Default)]
+pub(crate) struct Password(String);
+
+impl From<String> for Password {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl AsRef<String> for Password {
+    fn as_ref(&self) -> &String {
+        &self.0
+    }
+}
+
+impl fmt::Debug for Password {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Password")
+            .field(&"[redacted]")
+            .finish()
+    }
+}
+
+#[derive(sqlx::FromRow, Default, Debug)]
 #[allow(dead_code)] // Have to match DB
 pub(crate) struct User {
     pub id: i64,
     pub name: Option<String>,
     pub bgg_username: Option<String>,
     pub email: String,
-    pub encrypted_password: String,
+    pub encrypted_password: Password,
     pub updated_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub remember_created_at: Option<NaiveDateTime>,
@@ -21,14 +46,5 @@ pub(crate) struct User {
 impl User {
     pub fn by_email<'a>(db: impl Executor<'a, Database = Postgres> + 'a, email: String) -> impl TryFuture<Ok = Self, Error = sqlx::Error> + 'a {
         sqlx::query_as!( Self, "select * from users where email = $1", email).fetch_one(db)
-    }
-}
-
-impl fmt::Debug for User {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("User")
-            .field("email", &self.email)
-            .field("password", &"[redacted]")
-            .finish()
     }
 }

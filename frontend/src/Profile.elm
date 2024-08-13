@@ -8,6 +8,7 @@ import Html.Events exposing (onInput)
 import Json.Decode as D
 
 import Api
+import Html.Attributes exposing (class)
 
 type Msg
   = Entered Api.Cred
@@ -75,7 +76,7 @@ inputPair attrs name v event =
   let
       pid = String.toLower name
   in
-    div []
+    div [ class "field" ]
     [ label [ for pid ] [ text name ]
     , input ([ id pid, onInput event, value v ] ++ attrs) []
     ]

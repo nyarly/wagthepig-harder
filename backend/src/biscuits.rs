@@ -4,7 +4,7 @@ use axum_extra::extract as extra_extract;
 use axum::response::IntoResponse;
 
 use biscuit_auth::{format::schema::AuthorizerSnapshot, macros::{authorizer, biscuit, fact}};
-use biscuit_auth::{error, Authorizer, Biscuit, KeyPair, PrivateKey};
+use biscuit_auth::{error, Authorizer, AuthorizerLimits, Biscuit, KeyPair, PrivateKey};
 
 use axum::{
     response::Response,
@@ -30,7 +30,7 @@ use std::time::{Duration, SystemTime};
 
 /// A convenience method for building a authentication token
 /// The result is a biscuit_auth::Biscuit.to_base64()
-pub fn authority(auth: &Authentication, userid: String, ttl: u64, ip: Option<SocketAddr>) -> Result<String, Error> {
+pub fn authority(auth: &Authentication, userid: String, ttl: u64, maybe_addr: Option<SocketAddr>) -> Result<String, Error> {
     let now = SystemTime::now();
     let expires = now + Duration::from_secs(ttl);
     let mut builder = biscuit!(r#"
@@ -38,8 +38,8 @@ pub fn authority(auth: &Authentication, userid: String, ttl: u64, ip: Option<Soc
         issued_at({now});
         check if time($time), $time < {expires};
         "#);
-    if let Some(addr) = ip {
-        let addr_str = addr.to_string();
+    if let Some(addr) = maybe_addr {
+        let addr_str = addr.ip().to_string();
         builder.add_fact(fact!("client_ip({addr_str})"))?;
     }
     Ok(builder.build(&auth.keypair())?.to_base64()?)
@@ -65,15 +65,25 @@ async fn find_facts(header: String, root: PrivateKey, mut request: Request) -> R
     let extract::Host(host) = request.extract_parts().await?;
 
     let matched_path = request.extract_parts::<extract::MatchedPath>().await?;
-    let route = matched_path.as_str();
+    let full_route = matched_path.as_str();
+
+    let nested_path = request.extract_parts::<extract::NestedPath>().await?;
+    let nested_at = nested_path.as_str();
+
+    let maybe_route = full_route.strip_prefix(nested_at);
 
     let mut auth = authorizer!( r#"
         version({version_str});
         host({host});
         method({method_str});
-        route({route});
+        full_route({full_route});
+        nested_at({nested_at});
         path({uri_path});
         "#);
+
+    if let Some(route) = maybe_route {
+        auth.add_fact(fact!("route({route})"))?;
+    }
 
     if let Some(uri_scheme) = maybe_uri_scheme {
         auth.add_fact(fact!("uri_scheme({uri_scheme})"))?;
@@ -105,8 +115,6 @@ async fn find_facts(header: String, root: PrivateKey, mut request: Request) -> R
         auth.add_fact(fact!("query_param({key}, {value})"))?;
     }
 
-    debug!("Authorizer Facts: {:?}", auth.dump_code());
-
     let ctx = AuthContext{ authority: token, authorizer: auth };
     request.extensions_mut().insert(ctx);
     Ok(request)
@@ -123,14 +131,22 @@ fn check_authentication(policy_snapshot: AuthorizerSnapshot, request: Request) -
     az.merge(policy);
     az.set_time();
     az.add_token(&token)?;
+    az.set_limits(AuthorizerLimits{
+        max_time: Duration::from_millis(20),
+        ..Default::default()
+    });
+    debug!("Authorizing against: \n{}", az.dump_code());
     match az.authorize() {
         Ok(idx) => {
             // XXX conditional compile?
-            debug!("Authorized by: {:?}", az.save()?.policies.get(idx));
+            debug!("Authorized by: \n{}", match az.save()?.policies.get(idx){
+                Some(pol) => format!("{}", pol),
+                None => "<cannot find authorizing policy!>".to_string()
+            });
             Ok(request)
         },
         Err(err) => {
-            debug!("Authorization rejected: {:?}", err);
+            debug!("Authorization rejected: {}", err);
             Err(Error::AuthorizationFailed)
         }
     }
@@ -339,6 +355,8 @@ pub enum Error {
     Token(#[from] biscuit_auth::error::Token),
     #[error("routing match error")]
     MatchedPath(#[from] extract::rejection::MatchedPathRejection),
+    #[error("nested path error")]
+    NestedPath(#[from] extract::rejection::NestedPathRejection),
     #[error("extension error")]
     Extension(#[from] extract::rejection::ExtensionRejection),
     #[error("extracting path params")]
@@ -367,13 +385,14 @@ impl IntoResponse for Error {
                 }
             }
             Error::MatchedPath(mpe) => mpe.into_response(),
+            Error::NestedPath(e) => e.into_response(),
             Error::Extension(ee) => ee.into_response(),
             Error::PathParams(e) => e.into_response(),
             Error::Host(e) => e.into_response(),
             Error::Query(e) => e.into_response(),
             Error::MissingContext => (StatusCode::INTERNAL_SERVER_ERROR, "missing authorization context").into_response(), // 500
             Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
-            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response()
+            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
         }
     }
 }

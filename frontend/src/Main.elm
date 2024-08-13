@@ -134,13 +134,15 @@ view model =
         nav [] [
           img [ src "/assets/wagthepig-med.png" ] []
           , ul [ class "menu" ] [
-            headerButton "Profile" "/profile"
+              headerButton "Profile" "/profile"
             , headerButton "Events" "/events"
             , authButton model
           ]
         ] :: Pages.view model.page model.pages PageMsg ++ [
-        a [ href "https://github.com/nyarly/wagthepig" ] [ text "Contribute!" ]
-        , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [text "Complain!"], text "Suggest!" ]
+          div [ class "footer" ] [
+            a [ href "https://github.com/nyarly/wagthepig" ] [ text "Contribute!" ]
+          , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [text "Complain!"], text "Suggest!" ]
+          ]
         ])
     ]
   }

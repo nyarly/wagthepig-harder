@@ -59,12 +59,11 @@ update msg models =
         ((toModel pagemodel), Cmd.map toMsg cmd)
   in
   case msg of
+    ProfileMsg submsg ->
+      dispatch submsg Profile.update models.profile (\pm -> {models | profile = pm}) ProfileMsg
+    LoginMsg submsg ->
+      dispatch submsg Login.update models.login (\pm -> {models | login = pm}) LoginMsg
+    LandingMsg _ -> ( models, Cmd.none )
     Routed (Router.Profile, creds) ->
       dispatch (Profile.Entered creds) Profile.update models.profile (\pm -> {models | profile = pm}) ProfileMsg
     Routed _ -> ( models, Cmd.none )
-    LandingMsg _ -> ( models, Cmd.none )
-    ProfileMsg submsg ->
-      dispatch submsg Profile.update models.profile (\pm -> {models | profile = pm}) ProfileMsg
-
-    LoginMsg submsg ->
-      dispatch submsg Login.update models.login (\pm -> {models | login = pm}) LoginMsg

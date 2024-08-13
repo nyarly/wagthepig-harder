@@ -1,6 +1,7 @@
 use axum::response::ErrorResponse;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::db;
 
@@ -36,7 +37,7 @@ fn db_error_code(err: &sqlx::Error) -> StatusCode {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AuthnRequest {
     pub email: String,
     pub password: String

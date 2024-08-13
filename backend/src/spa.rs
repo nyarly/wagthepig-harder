@@ -4,8 +4,9 @@ use axum::Router;
 use notify::Watcher;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_livereload::LiveReloadLayer;
+use tracing::debug;
 
-pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<Router<S>,Box<dyn StdError>> {
+pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<(Router<S>, Box<dyn Watcher>),Box<dyn StdError>> {
     let livereload = LiveReloadLayer::new();
     let reloader = livereload.reloader();
 
@@ -16,8 +17,12 @@ pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_
         )
         .layer(livereload);
 
-    let mut watcher = notify::recommended_watcher(move |_| reloader.reload())?;
+    let mut watcher = notify::recommended_watcher(move |ev| {
+        debug!("livereload: file change detected: {:?}", ev);
+        reloader.reload()
+    })?;
     watcher.watch(path::Path::new(&frontend_path), notify::RecursiveMode::Recursive)?;
 
-    Ok(app)
+    debug!("Finished setting up livereload {:?}", watcher);
+    Ok((app, Box::new(watcher)))
 }

@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
   // XXX conditionally, include assets directly
-  let app = spa::livereload(app, frontend_path)?;
+  let (app, _watcher) = spa::livereload(app, frontend_path)?;
 
   let app = app
     .layer(TraceLayer::new_for_http())
@@ -89,7 +89,7 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
     .layer(tower::ServiceBuilder::new()
       .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
       .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
-            allow if route("/profile/:userid"), path_query("userid", $user), user($user);
+            allow if route("/profile/:userid"), path_param("userid", $user), user($user);
             deny if route("/profile/:userid");
             allow if user($user);
             "#))
@@ -114,6 +114,7 @@ async fn get_profile(State(db): State<Pool<Postgres>>, Path(userid): Path<String
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
 
+
 #[debug_handler(state = AppState)]
 async fn authenticate(
   State(db): State<Pool<Postgres>>,
@@ -121,10 +122,10 @@ async fn authenticate(
   ConnectInfo(addr): ConnectInfo<SocketAddr>,
   Json(authreq): Json<httpapi::AuthnRequest>
 ) -> impl IntoResponse {
-  db::User::by_email(&db, authreq.email)
+  db::User::by_email(&db, authreq.email.clone())
     .map_err(httpapi::db_error_response)
     .and_then(|user| async move {
-      if bcrypt::verify(authreq.password, &user.encrypted_password).map_err(internal_error)? {
+      if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
         let token = biscuits::authority(&auth, user.email.clone(), ONE_WEEK, Some(addr))?;
         Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from(user))))
       } else {

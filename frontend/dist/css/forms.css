@@ -1,0 +1,32 @@
+div {
+  &.field, &.actions {
+    margin-bottom: 10px;
+  }
+}
+
+form {
+  padding: 0 10vw;
+  display: flex;
+  flex-flow: column nowrap;
+
+  .field {
+    display: flex;
+
+    label {
+      font-weight: bolder;
+      flex: 0 0 auto;
+      width: 12em;
+      text-align: right;
+      padding: 0 1em;
+    }
+
+    input, textarea {
+      flex: 4 1 auto;
+    }
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}

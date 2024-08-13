@@ -9,7 +9,7 @@ unifiendbackend: &unifiedbackend
     command: watchexec -w src/ elm make src/Main.elm --output=dist/js/main.js --debug
   backend:
     working_dir: backend/
-    command: watchexec --no-vcs-ignore -w target/debug/{{.projectname}}-backend -r target/debug/{{.projectname}}-backend
+    command: watchexec --no-vcs-ignore --on-busy-update restart --watch target/debug/ --filter {{.projectname}}-backend target/debug/{{.projectname}}-backend
     depends_on:
       database:
         condition: process_log_ready

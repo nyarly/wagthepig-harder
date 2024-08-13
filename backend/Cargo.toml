@@ -29,6 +29,7 @@ base64 = "0.22.1"
 
 bcrypt = "0.15.1"
 biscuit-auth = "~5.0"
+zeroize = { version = "~1.8", features = ["derive", "std"] }
 
 notify = "~6.1"
 
