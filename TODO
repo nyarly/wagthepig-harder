@@ -1,3 +1,32 @@
 * Revocation of tokens e.g. on password reset
 * Scoped tokens -> email for registration/reset
 * Biscuit WASM port for Elm e.g. "check if my ip = requesting id"
+* Send email / dev mode for capture (c.f. mailpit)
+* Modern CSS (c.f. "6 patterns of CSS variables")
+
+* Elm link walking
+
+WTG parity:
+* Profile
+  * change password
+* Events list view
+  * Sorted table
+  * Get
+  * Add
+* Event view (game list)
+  * Sorted table
+  * Add game (BGG JS interface)
+  * Want to play
+  * Know rules
+  * Personal notes
+* What should we play?
+  * Other players
+  * extra players
+  * SQL for preference list
+
+== Design Decisions
+
+Progressive JSON-LD - use JSON-LD compatible fields as we go,
+with the idea that we notionally have a @context.
+Maybe someday we do this for real and build things out.
+Minimize the amount of adjustment that takes.

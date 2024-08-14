@@ -1,7 +1,7 @@
-module Api exposing (Cred, loadCred, storageField, storeCred, login, accountID, logout, get, post, put, delete)
+module Api exposing (Cred, loadCred, storageField, storeCred, login, accountID, chain, linkByName, logout, get, post, put, delete)
 
 import Dict exposing (Dict)
-import Http exposing (Body, Resolver)
+import Http exposing (Resolver)
 import Task exposing (Task, andThen)
 import Json.Decode as D exposing (Decoder, Value, decodeString, field)
 import Json.Encode as E
@@ -74,15 +74,45 @@ accountID cred =
     Just c -> c.accountID
     Nothing -> ""
 
-{-
-musing:
-what if there were a "http plan":
-creds
-expect
-[linkExtractor] = (name, (HeadersAndBodyToRes x a) <| (a -> String) -- extracts just the link from the response)
-(method body makeRes toMsg)
+type alias Headers = (Dict String String)
+type alias Body = String
+type alias URI = String
+type alias HeadersAndBodyToRes a = (Headers -> Body -> Result String a)
+type alias LinkExtractor = HeadersAndBodyToRes URI
+type alias BodyToRes x a = (String -> (Result x a))
+type alias RzToRes x a = (Http.Response String -> Result x a)
+type alias ResToMsg x a msg = (Result x a -> msg)
 
+
+-- possible replacement for login
+newlogin : String -> String -> ResToMsg Http.Error Cred msg -> Cmd msg
+newlogin email password expect =
+  let
+      reqBody = (Http.jsonBody (requestJson email password))
+  in
+    chain Nothing [linkByName "authenticate"] "POST" reqBody (credExtractor email) expect
+
+{-
+Pass a list of linkExtractors to nose, along with the handling for the final link
 -}
+chain : Cred -> List(LinkExtractor) -> String -> Http.Body -> HeadersAndBodyToRes a -> ResToMsg Http.Error a msg -> Cmd msg
+chain cred extractors method body makeRes toMsg =
+  let
+    oneHop linkEx link = follow cred "GET" link Http.emptyBody linkEx -- XXX consider reordering `follow`
+    nextHop ex task = task |> andThen (oneHop ex)
+    plan = List.foldl nextHop (Task.succeed "/api") extractors
+      |> andThen (\link -> follow cred method link body makeRes)
+  in
+    Task.attempt toMsg plan
+
+linkByName : String -> LinkExtractor
+linkByName name _ body =
+  (decodeString (D.dict D.string) body)
+  |> Result.mapError D.errorToString
+  |> Result.andThen ( \links -> case (Dict.get name links) of
+      Just link -> Ok(link)
+      Nothing -> Err(String.concat ["No ", name , " link!"])
+    )
 
 credExtractor : String -> Headers -> any -> (Result String Cred)
 credExtractor email headers _ = -- XXX should use the body to get accountID
@@ -103,12 +133,6 @@ logout =
 
 -- HTTP
 
-type alias Headers = (Dict String String)
-type alias HeadersAndBodyToRes x a = (Headers -> String -> (Result x a))
-type alias BodyToRes x a = (String -> (Result x a))
-type alias RzToRes x a = (Http.Response String -> Result x a)
-type alias ResToMsg x a msg = (Result x a -> msg)
-
 {-
 reasoning is that:
 
@@ -119,19 +143,19 @@ Http.request { expectStringResponse ResToMsg RzToRes }
 and having `follow` lets us chase links if wanted
 -}
 
-jsonRequest : Cred -> String -> String -> Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+jsonRequest : Cred -> String -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
 jsonRequest maybeCred method url body decoder toMsg =
   let
     toRes = (\b -> Result.mapError D.errorToString (D.decodeString decoder  b))
   in
     request maybeCred method url Http.emptyBody toRes toMsg
 
-request : Cred -> String -> String -> Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
+request : Cred -> String -> String -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
 request maybeCred method url body makeRes toMsg =
   Task.attempt toMsg
     (follow maybeCred method url body (\_ b-> makeRes b))
 
-follow :  Cred -> String -> String -> Body -> HeadersAndBodyToRes String a -> Task Http.Error a
+follow :  Cred -> String -> String -> Http.Body -> HeadersAndBodyToRes a -> Task Http.Error a
 follow maybeCred method url body makeRes =
     Http.task
     { method = method
@@ -153,11 +177,11 @@ get :  Cred -> String -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
 get maybeCred url decoder toMsg =
   jsonRequest maybeCred "GET" url Http.emptyBody decoder toMsg
 
-put :  Cred -> String -> Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+put :  Cred -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
 put maybeCred url body decoder toMsg =
   jsonRequest maybeCred "PUT" url body decoder toMsg
 
-post :  Cred -> String -> Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+post :  Cred -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
 post maybeCred url body decoder toMsg =
   jsonRequest maybeCred "POST" url body decoder toMsg
 
@@ -171,7 +195,7 @@ bodyRzToRes extractBody =
   baseRzToRes (\_ body -> extractBody body)
 
 
-baseRzToRes : HeadersAndBodyToRes String a -> RzToRes Http.Error a
+baseRzToRes : HeadersAndBodyToRes a -> RzToRes Http.Error a
 baseRzToRes extractValue =
     \response ->
         case response of
