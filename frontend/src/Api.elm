@@ -1,4 +1,4 @@
-module Api exposing (Cred, loadCred, storageField, storeCred, login, accountID, chain, linkByName, logout, get, post, put, delete)
+module Api exposing (Cred, unauthenticated, loggedIn, loadCred, storageField, storeCred, login, accountID, chain, linkByName, logout, get, post, put, delete)
 
 import Dict exposing (Dict)
 import Http exposing (Resolver)
@@ -13,12 +13,39 @@ import State
 This token should never be rendered to the end user, and with this API, it
 can't be!
 -}
-type alias Cred = Maybe Credentials
+type Cred =
+  Cred (Maybe Credentials)
 
 type alias Credentials =
   { accountID: String
   , token: String
   }
+
+type Method
+  = GET
+  | POST
+  | DELETE
+  | PUT
+-- there's more
+
+type alias Uri = String
+type alias Kind = String
+
+type alias Affordance =
+  { method: Method
+  , uri: Uri
+  , kind: Maybe Kind
+  }
+
+unauthenticated : Cred
+unauthenticated =
+  Cred Nothing
+
+loggedIn : Cred -> Bool
+loggedIn (Cred cred) =
+  case cred of
+    Just _ -> True
+    Nothing -> False
 
 storageField : String
 storageField =
@@ -30,10 +57,16 @@ loadCred value =
   |> Result.mapError D.errorToString
   |> Debug.log "loaded cred"
   |> Result.toMaybe
+  |> Cred
 
-credHeader : Credentials -> Http.Header
-credHeader cred =
-  Http.header "authorization" cred.token -- Should be something like: ("Token " ++ cred.token)
+credHeader : Cred-> List(Http.Header)
+credHeader (Cred cred) =
+  case cred of
+    Just c->
+      [ Http.header "authorization" c.token ] -- Should be something like: ("Token " ++ cred.token)
+    Nothing ->
+      []
+
 
 {-| It's important that this is never exposed!
 We expose `login`, `loadCred` and request functions instead, so we can be certain that if anyone
@@ -54,7 +87,7 @@ encodeCred cred =
   ]
 
 storeCred : Cred -> Cmd msg
-storeCred cred =
+storeCred (Cred cred) =
   case cred of
     Just c -> State.store storageField (encodeCred c)
     Nothing -> State.clear storageField
@@ -62,27 +95,17 @@ storeCred cred =
 login : String -> String -> ResToMsg Http.Error Cred msg -> Cmd msg
 login email password expect =
   Task.attempt expect
-  (follow Nothing "GET" "/api"  Http.emptyBody rootExtractor
+  (follow unauthenticated "GET" "/api"  Http.emptyBody rootExtractor
    |> andThen ( \links -> case (Dict.get "authenticate" links) of
-     Just link -> follow Nothing "POST" link (Http.jsonBody (requestJson email password)) (credExtractor email)
+     Just link -> follow unauthenticated "POST" link (Http.jsonBody (requestJson email password)) (credExtractor email)
      Nothing -> Task.fail (Http.BadBody "No authenticate link!")
      ))
 
 accountID : Cred -> String
-accountID cred =
+accountID (Cred cred) =
   case cred of
     Just c -> c.accountID
     Nothing -> ""
-
-type alias Headers = (Dict String String)
-type alias Body = String
-type alias URI = String
-type alias HeadersAndBodyToRes a = (Headers -> Body -> Result String a)
-type alias LinkExtractor = HeadersAndBodyToRes URI
-type alias BodyToRes x a = (String -> (Result x a))
-type alias RzToRes x a = (Http.Response String -> Result x a)
-type alias ResToMsg x a msg = (Result x a -> msg)
-
 
 -- possible replacement for login
 newlogin : String -> String -> ResToMsg Http.Error Cred msg -> Cmd msg
@@ -90,20 +113,7 @@ newlogin email password expect =
   let
       reqBody = (Http.jsonBody (requestJson email password))
   in
-    chain Nothing [linkByName "authenticate"] "POST" reqBody (credExtractor email) expect
-
-{-
-Pass a list of linkExtractors to nose, along with the handling for the final link
--}
-chain : Cred -> List(LinkExtractor) -> String -> Http.Body -> HeadersAndBodyToRes a -> ResToMsg Http.Error a msg -> Cmd msg
-chain cred extractors method body makeRes toMsg =
-  let
-    oneHop linkEx link = follow cred "GET" link Http.emptyBody linkEx -- XXX consider reordering `follow`
-    nextHop ex task = task |> andThen (oneHop ex)
-    plan = List.foldl nextHop (Task.succeed "/api") extractors
-      |> andThen (\link -> follow cred method link body makeRes)
-  in
-    Task.attempt toMsg plan
+    chain unauthenticated [linkByName "authenticate"] "POST" reqBody (credExtractor email) expect
 
 linkByName : String -> LinkExtractor
 linkByName name _ body =
@@ -117,7 +127,7 @@ linkByName name _ body =
 credExtractor : String -> Headers -> any -> (Result String Cred)
 credExtractor email headers _ = -- XXX should use the body to get accountID
   case (Dict.get "set-authorization" headers) of
-    Just token -> Ok (Just (Credentials email token))
+    Just token -> Ok (Cred (Just (Credentials email token)))
     Nothing -> Err "no set-authorization header"
 
 requestJson : String -> String -> Value
@@ -132,6 +142,15 @@ logout =
   State.clear storageField
 
 -- HTTP
+
+type alias Headers = (Dict String String)
+type alias Body = String
+type alias URI = String
+type alias HeadersAndBodyToRes a = (Headers -> Body -> Result String a)
+type alias BodyToRes x a = (String -> (Result x a))
+type alias RzToRes x a = (Http.Response String -> Result x a)
+type alias ResToMsg x a msg = (Result x a -> msg)
+type alias LinkExtractor = HeadersAndBodyToRes URI
 
 {-
 reasoning is that:
@@ -163,14 +182,21 @@ follow maybeCred method url body makeRes =
     , body = body
     , timeout = Nothing
     , resolver = baseResolver makeRes
-    , headers =
-      case maybeCred of
-        Just cred ->
-          [ credHeader cred ]
-        Nothing ->
-          []
+    , headers = credHeader maybeCred
     }
 
+{-
+Pass a list of linkExtractors to nose, along with the handling for the final link
+-}
+chain : Cred -> List(LinkExtractor) -> String -> Http.Body -> HeadersAndBodyToRes a -> ResToMsg Http.Error a msg -> Cmd msg
+chain cred extractors method body makeRes toMsg =
+  let
+    oneHop linkEx link = follow cred "GET" link Http.emptyBody linkEx -- XXX consider reordering `follow`
+    nextHop ex task = task |> andThen (oneHop ex)
+    plan = List.foldl nextHop (Task.succeed "/api") extractors
+      |> andThen (\link -> follow cred method link body makeRes)
+  in
+    Task.attempt toMsg plan
 
 
 get :  Cred -> String -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg

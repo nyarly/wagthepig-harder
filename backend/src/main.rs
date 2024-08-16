@@ -86,6 +86,7 @@ fn open_api_router() -> Router<AppState> {
 fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
   Router::new()
     .route("/profile/:userid", get(get_profile))
+    .route("/events", get(get_event_list))
     .layer(tower::ServiceBuilder::new()
       .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
       .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
@@ -101,7 +102,8 @@ async fn sitemap() -> String {
   json!({
     "root": "/api",
     "authenticate": "/api/authenticate",
-    "profile": "/api/profile/:userid"
+    "profile": "/api/profile/{userid}",
+    "events": "/api/events"
   }).to_string()
 }
 
@@ -110,6 +112,15 @@ async fn get_profile(State(db): State<Pool<Postgres>>, Path(userid): Path<String
   db::User::by_email(&db, userid)
     .map_err(httpapi::db_error_response)
     .and_then(|profile| async { Ok(Json(httpapi::UserResponse::from(profile))) }).await
+}
+
+#[debug_handler(state = AppState)]
+async fn get_event_list(State(db): State<Pool<Postgres>> ) -> impl IntoResponse {
+  db::Event::get_all(&db)
+    .map_err(httpapi::db_error_response)
+    // XXX Fix h/c URI
+    .and_then(|events| async { Ok(Json(httpapi::EventListResponse::from_query("/api/events", events)))})
+    .await
 }
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week

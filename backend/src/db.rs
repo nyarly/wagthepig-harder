@@ -48,3 +48,22 @@ impl User {
         sqlx::query_as!( Self, "select * from users where email = $1", email).fetch_one(db)
     }
 }
+
+#[derive(sqlx::FromRow, Default, Debug)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct Event {
+     pub id: i64,
+     pub name: Option<String>,
+     pub date: Option<NaiveDateTime>,
+     pub r#where: Option<String>,
+     pub created_at: NaiveDateTime,
+     pub updated_at: NaiveDateTime,
+     pub description: Option<String>,
+}
+
+impl Event {
+    pub fn get_all<'a>(db: impl Executor<'a, Database = Postgres> + 'a) -> impl TryFuture<Ok = Vec<Self
+    >, Error = sqlx::Error> + 'a {
+        sqlx::query_as!(Self, "select * from events").fetch_all(db)
+    }
+}

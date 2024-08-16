@@ -50,21 +50,16 @@ main =
 init : Value -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
   let
-    fromStore = Debug.log "State.loadAll" (State.loadAll flags)
-      |> Result.toMaybe -- XXX ewwww
-    loadedCred = fromStore
-      |> Maybe.andThen (Dict.get Api.storageField)
-      |> Maybe.andThen State.asString
-      |> Debug.log "loaded 'credentials'"
-      |> Maybe.andThen Api.loadCred
-      |> Debug.log "api.loadCred"
-    (pagesModel, pagesCmd) = Pages.init loadedCred
+    startingPage = Router.routeToTarget url
+    (finalUrl, target) = case startingPage of
+      Just t -> (url, t)
+      Nothing -> ({ url | path = "/" }, Router.Landing)
+    baseModel = Model key finalUrl Nothing target Pages.init Api.unauthenticated
+    fromStore = State.loadAll flags
+    model = Dict.foldl loadIntoModel baseModel fromStore
   in
-    case (Router.routeToTarget url) of
-      Just target ->
-        ( Model key url Nothing target pagesModel loadedCred, Cmd.map PageMsg pagesCmd )
-      Nothing ->
-        ( Model key { url | path = "/" } Nothing Router.Landing pagesModel loadedCred, Cmd.map PageMsg pagesCmd )
+    routeToPage url model
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -81,25 +76,12 @@ update msg model =
       ( model, Nav.pushUrl model.key path )
 
     UrlChanged url ->
-      case (Router.routeToTarget url) of
-        Just target ->
-          let
-            (pagemodel, pagecmd) = Pages.update (Pages.Routed (target, model.creds) ) model.pages
-            newmodel = { model | url = url , pages = pagemodel, page = target }
-          in
-            (newmodel, Cmd.map PageMsg pagecmd)
-        Nothing ->
-          ( model, Nav.pushUrl model.key "/" )
+      routeToPage url model
 
     StoreChange (key, value) ->
-      if key == Api.storageField then
-        case State.asString value of
-          Just s -> ({model | creds = Api.loadCred s} , Cmd.none )
-          Nothing -> (model, Cmd.none)
-      else
-        (model , Cmd.none)
+      ( loadIntoModel key value model, Cmd.none )
 
-    SignOut -> ({model | creds = Nothing}, Api.logout )
+    SignOut -> ({model | creds = Api.unauthenticated}, Api.logout )
 
     PageMsg submsg ->
       let
@@ -117,6 +99,28 @@ update msg model =
 
           _ -> default ()
 
+loadIntoModel : String -> Value -> Model -> Model
+loadIntoModel key value model =
+  case State.asString value of
+    Just s ->
+      -- add an if clause for each storage field
+      if key == Api.storageField then
+        { model | creds = Api.loadCred s }
+      else
+        model
+    Nothing -> model
+
+routeToPage : Url.Url -> Model -> ( Model, Cmd Msg )
+routeToPage url model =
+  case (Router.routeToTarget url) of
+    Just target ->
+      let
+        (pagemodel, pagecmd) = Pages.update (Pages.Routed (target, model.creds) ) model.pages
+        newmodel = { model | url = url , pages = pagemodel, page = target }
+      in
+        (newmodel, Cmd.map PageMsg pagecmd)
+    Nothing ->
+      ( model, Nav.pushUrl model.key "/" )
 
 -- SUBSCRIPTIONS
 
@@ -149,11 +153,10 @@ view model =
 
 authButton : Model -> Html Msg
 authButton model =
-  case model.creds of
-    Just _ ->
-      li [] [ button [ class "header", onClick SignOut ] [ text "Sign Out" ] ]
-    Nothing ->
-      headerButton "Log In" "/login"
+  if (Api.loggedIn model.creds) then
+    li [] [ button [ class "header", onClick SignOut ] [ text "Sign Out" ] ]
+  else
+    headerButton "Log In" "/login"
 
 headerButton : String -> String -> Html Msg
 headerButton txt path =

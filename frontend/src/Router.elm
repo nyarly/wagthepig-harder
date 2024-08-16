@@ -8,21 +8,7 @@ type Target
   = Login
   | Landing
   | Profile
-
-router : Parser (Target -> c) c
-router =
-  oneOf
-    [ map Landing top
-    , map Login ( s "login" )
-    , map Profile ( s "profile" )
-    ]
-
-builder : Target -> String
-builder target =
-  case target of
-    Landing -> absolute [] []
-    Login -> absolute ["login"] []
-    Profile -> absolute ["profile"] []
+  | Events
 
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
@@ -30,7 +16,11 @@ routeToTarget url =
 
 buildFromTarget : Target -> String
 buildFromTarget target =
-  builder target
+  case target of
+    Landing -> absolute [] []
+    Login -> absolute ["login"] []
+    Profile -> absolute ["profile"] []
+    Events -> absolute ["events"] []
 
 pageName : Target -> String
 pageName target =
@@ -38,3 +28,13 @@ pageName target =
     Landing -> "landing"
     Login -> "login"
     Profile -> "profile"
+    Events -> "events"
+
+router : Parser (Target -> c) c
+router =
+  oneOf
+    [ map Landing top
+    , map Login ( s "login" )
+    , map Profile ( s "profile" )
+    , map Events ( s "events" )
+    ]

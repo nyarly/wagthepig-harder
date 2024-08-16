@@ -8,31 +8,29 @@ import Api
 import Landing
 import Login
 import Profile
+import Events
 
 type Msg
   = Routed (Router.Target, Api.Cred)
   | LandingMsg Landing.Msg
   | LoginMsg Login.Msg
   | ProfileMsg Profile.Msg
+  | EventsMsg Events.Msg
 
 type alias Models =
   { landing: Landing.Model
   , login: Login.Model
   , profile: Profile.Model
+  , events: Events.Model
   }
 
-init : Api.Cred -> (Models, Cmd Msg)
-init cred =
-  let
-      (profilemodel, profilecmd) = Profile.init cred
-  in
-    (Models
-      Landing.Model
-      Login.init
-      profilemodel
-      , Cmd.batch [
-        Cmd.map ProfileMsg profilecmd
-      ])
+init : Models
+init =
+  Models
+    Landing.Model
+    Login.init
+    Profile.init
+    Events.init
 
 view : Router.Target -> Models -> (Msg -> msg) -> List (Html msg)
 view target models toMsg =
@@ -47,23 +45,22 @@ view target models toMsg =
       |> wrapMsg LoginMsg
     Router.Profile -> Profile.view models.profile
       |> wrapMsg ProfileMsg
+    Router.Events -> Events.view models.events
+      |> wrapMsg EventsMsg
 
 
 update : Msg -> Models -> ( Models, Cmd Msg )
 update msg models =
-  let
-      dispatch submsg updateFn pmodel toModel toMsg =
-        let
-            (pagemodel, cmd) = updateFn submsg pmodel
-        in
-        ((toModel pagemodel), Cmd.map toMsg cmd)
-  in
   case msg of
     ProfileMsg submsg ->
-      dispatch submsg Profile.update models.profile (\pm -> {models | profile = pm}) ProfileMsg
+      Profile.update submsg models.profile |> Tuple.mapBoth (\pm -> {models | profile = pm}) (Cmd.map ProfileMsg)
     LoginMsg submsg ->
-      dispatch submsg Login.update models.login (\pm -> {models | login = pm}) LoginMsg
+      Login.update submsg models.login |> Tuple.mapBoth (\pm -> {models | login = pm}) (Cmd.map LoginMsg)
+    EventsMsg submsg ->
+      Events.update submsg models.events |> Tuple.mapBoth (\pm -> {models | events = pm}) (Cmd.map EventsMsg)
     LandingMsg _ -> ( models, Cmd.none )
     Routed (Router.Profile, creds) ->
-      dispatch (Profile.Entered creds) Profile.update models.profile (\pm -> {models | profile = pm}) ProfileMsg
+      update (ProfileMsg (Profile.Entered creds)) models
+    Routed (Router.Events, creds) ->
+      update (EventsMsg (Events.Entered creds)) models
     Routed _ -> ( models, Cmd.none )

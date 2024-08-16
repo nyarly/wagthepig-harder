@@ -1,6 +1,6 @@
 port module State exposing (
   store, clear,
-  onStoreChange, loadAll, asString)
+  onStoreChange, asString, loadAll, fromState, fromChange)
 
 import Json.Decode as D exposing (Value)
 import Dict exposing (Dict)
@@ -18,9 +18,27 @@ clear : String -> Cmd msg
 clear name =
   storeCache (name, Nothing)
 
-loadAll : Value -> Result D.Error (Dict String Value)
+loadAll : Value -> Dict String Value
 loadAll localValues =
   D.decodeValue (D.dict D.value) localValues
+  |> Result.mapError (\e -> Debug.log (D.errorToString e))
+  |> Result.withDefault Dict.empty
+
+fromState : String -> Result D.Error (Dict String Value) -> (String -> Maybe val) -> Maybe val
+fromState name fromStore toVal =
+    fromStore
+    |> Result.toMaybe -- XXX ewwww
+    |> Maybe.andThen (Dict.get name)
+    |> Maybe.andThen asString
+    |> Maybe.andThen toVal
+
+fromChange : String -> (String, Value) -> (String -> Maybe val) -> Maybe val
+fromChange name (changed, value) toVal =
+  if (name /= changed) then
+    Nothing
+  else
+    asString value
+    |> Maybe.andThen toVal
 
 port storeCache : (String, Maybe Value) -> Cmd msg
 

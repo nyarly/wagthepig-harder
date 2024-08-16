@@ -35,3 +35,4 @@ notify = "~6.1"
 
 sqlx = { version = "0.8.0", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono"] }
 chrono = "0.4.38"
+uritemplate = "0.1.2"

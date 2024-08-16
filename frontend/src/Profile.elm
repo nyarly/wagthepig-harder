@@ -24,12 +24,9 @@ type alias Model =
   , bgg_username: String
   }
 
-init : Api.Cred -> ( Model, Cmd Msg )
-init cred =
-    (
-        Model "" "" "",
-        fetchProfile cred
-    )
+init : Model
+init  =
+  Model "" "" ""
 
 decoder : D.Decoder Model
 decoder =

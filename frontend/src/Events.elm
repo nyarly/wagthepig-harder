@@ -1,4 +1,4 @@
-module Events exposing (Model, Msg(..), view, update)
+module Events exposing (Model, Msg(..), init, view, update)
 
 import Time
 import Json.Decode as D
@@ -16,7 +16,7 @@ type Msg
 type alias IRI = String
 
 type alias Model =
-  { id: IRI
+  { id: Maybe IRI
   , events: List(Event)
   , operation: List(Operation)
   }
@@ -32,11 +32,17 @@ type alias Event =
   , location: String
   }
 
+init : Model
+init =
+  Model Nothing [] []
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
   case msg of
     Entered creds -> (model, fetch creds)
-    _ -> (model, Cmd.none)
+    GotEvents new -> (new, Cmd.none)
+    ErrGetEvents _ -> (model, Cmd.none) -- XXX
+
 
 view : Model -> List (Html Msg)
 view model =
@@ -85,7 +91,7 @@ modelRes _ body =
 decoder : D.Decoder Model
 decoder =
   D.map3 Model
-    (D.field "@id" D.string)
+    (D.map Just (D.field "@id" D.string))
     (D.field "events" (D.list itemDecoder))
     (D.field "operation" (D.list opDecoder))
 

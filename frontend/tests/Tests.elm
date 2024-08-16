@@ -12,6 +12,8 @@ suite =
   describe "Routing"
     [ routePair "/" Landing "Landing"
     , routePair "/login" Login "Login"
+    , routePair "/profile" Profile "Profile"
+    , routePair "/events" Events "Event"
     ]
 
 
