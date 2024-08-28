@@ -146,9 +146,43 @@ fn check_authentication(policy_snapshot: AuthorizerSnapshot, request: Request) -
             Ok(request)
         },
         Err(err) => {
-            debug!("Authorization rejected: {}", err);
+            debug!("Authorization rejected: {}", format_rejection(az, err)?);
             Err(Error::AuthorizationFailed)
         }
+    }
+}
+
+fn show_matching_policy(idx: usize, az: Authorizer) -> Result<String, Error> {
+    match az.save()?.policies.get(idx){
+        Some(pol) => Ok(format!("{}", pol)),
+        None => Ok("<cannot find policy!>".to_string())
+    }
+}
+
+fn show_checks(checks: Vec<error::FailedCheck>) -> String {
+    checks.into_iter().map(|check| match check {
+        error::FailedCheck::Block(c) => format!("block {} :{}", c.block_id, c.rule),
+        error::FailedCheck::Authorizer(c) => format!("autherizer: {}", c.rule),
+    }).collect::<Vec<_>>().join(", ")
+
+}
+
+fn format_rejection(az: Authorizer, token: error::Token) -> Result<String, Error> {
+    match token {
+        error::Token::FailedLogic(error::Logic::Unauthorized{ policy, checks}) => {
+            match policy {
+                error::MatchedPolicy::Deny(idx) => Ok(
+                    format!("refused by policy: {} - failed checks: {}",
+                        show_matching_policy(idx, az)?,
+                        show_checks(checks))
+                ),
+                error::MatchedPolicy::Allow(_) => Ok(format!("failed checks: {}", show_checks(checks)))
+            }
+        },
+        error::Token::FailedLogic(error::Logic::NoMatchingPolicy{ checks }) => {
+            Ok(format!("no matching policy; failed checks: {}", show_checks(checks)))
+        }
+        _ => Ok(format!("{:?}", token))
     }
 }
 

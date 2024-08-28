@@ -1,17 +1,18 @@
 module Profile exposing (Model, Msg(..), init, view, update)
 
 import Http
-import Html exposing (Html, Attribute, div, form, input, label, text)
-import Html.Attributes exposing (for, id, value)
-import Html.Events exposing (onInput)
+import Html exposing (Html, form)
+import ViewUtil as Eww
 
 import Json.Decode as D
 
-import Api
-import Html.Attributes exposing (class)
+import Auth
+import Hypermedia as HM
+import Hypermedia exposing (OperationSelector(..))
+import Dict
 
 type Msg
-  = Entered Api.Cred
+  = Entered Auth.Cred
   | ChangeEmail String
   | ChangeName String
   | ChangeBGG String
@@ -39,9 +40,9 @@ view : Model -> List (Html Msg)
 view model =
   [
     form []
-      [ (inputPair [] "Name" model.name ChangeName)
-      , (inputPair [] "Email" model.email ChangeEmail)
-      , (inputPair [] "BGG Username" model.bgg_username ChangeBGG)
+      [ (Eww.inputPair [] "Name" model.name ChangeName)
+      , (Eww.inputPair [] "Email" model.email ChangeEmail)
+      , (Eww.inputPair [] "BGG Username" model.bgg_username ChangeBGG)
       ]
   ]
 
@@ -56,24 +57,20 @@ update msg model =
     ErrProfileGet _ -> (model, Cmd.none) -- XXX
 
 
-fetchProfile : Api.Cred -> Cmd Msg
+fetchProfile : Auth.Cred -> Cmd Msg
 fetchProfile creds =
--- get : Maybe Cred -> String -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-  Api.get creds ("/api/profile/" ++ Api.accountID creds) decoder handleGetResult -- XXX h/c URL
+  HM.chain creds [
+      HM.browse ["profile"] (ByType "FindAction")|> HM.fillIn (Dict.fromList [("user_id", Auth.accountID creds)])
+    ] HM.emptyBody modelRes handleGetResult
+
+modelRes : {a | body: String } -> Result String Model
+modelRes res =
+  res.body
+  |> D.decodeString decoder
+  |> Result.mapError D.errorToString
 
 handleGetResult : Result Http.Error Model -> Msg
 handleGetResult res =
   case res of
     Ok model -> GotProfile model
     Err err -> ErrProfileGet err
-
-
-inputPair : List (Attribute msg) -> String -> String -> (String -> msg) -> Html msg
-inputPair attrs name v event =
-  let
-      pid = String.toLower name
-  in
-    div [ class "field" ]
-    [ label [ for pid ] [ text name ]
-    , input ([ id pid, onInput event, value v ] ++ attrs) []
-    ]

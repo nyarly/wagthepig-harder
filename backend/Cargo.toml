@@ -16,7 +16,7 @@ futures-util = "0.3.30"
 pin-project-lite = "0.2.14"
 
 axum = { version = "~0.7", features = ["macros", "json"]}
-axum-extra = { version = "0.9.3", features = ["query"] }
+axum-extra = { version = "0.9.3", features = ["query", "typed-header"] }
 hyper = { version = "~1.4", features = ["client", "http1"] }
 hyper-util = { version = "0.1.6", features = ["client-legacy", "http1", "tokio"] }
 tower = "0.4.13"
@@ -34,5 +34,8 @@ zeroize = { version = "~1.8", features = ["derive", "std"] }
 notify = "~6.1"
 
 sqlx = { version = "0.8.0", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono"] }
-chrono = "0.4.38"
-uritemplate = "0.1.2"
+chrono = { version = "0.4.38", features = ["serde"] }
+iri-string = { version = "0.7.2", features = ["serde"] }
+sha2 = "0.10.8"
+base64ct = { version = "1.6.0", features = ["alloc"] }
+nom = "7.1.3"

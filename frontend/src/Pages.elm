@@ -1,27 +1,31 @@
-module Pages exposing (Msg(..), Models, init, view, update)
+module Pages exposing (Msg(..), Models, init, view, bidiupdate, pageNav)
 
 import Html exposing (Html)
 
 import Router
-import Api
+import Auth
+import OutMsg
 
 import Landing
 import Login
 import Profile
 import Events
+import EventEdit
+import Router exposing (Target(..))
 
 type Msg
-  = Routed (Router.Target, Api.Cred)
-  | LandingMsg Landing.Msg
+  = LandingMsg Landing.Msg
   | LoginMsg Login.Msg
   | ProfileMsg Profile.Msg
   | EventsMsg Events.Msg
+  | EventEditMsg EventEdit.Msg
 
 type alias Models =
   { landing: Landing.Model
   , login: Login.Model
   , profile: Profile.Model
   , events: Events.Model
+  , event: EventEdit.Model
   }
 
 init : Models
@@ -31,6 +35,7 @@ init =
     Login.init
     Profile.init
     Events.init
+    EventEdit.init
 
 view : Router.Target -> Models -> (Msg -> msg) -> List (Html msg)
 view target models toMsg =
@@ -47,20 +52,52 @@ view target models toMsg =
       |> wrapMsg ProfileMsg
     Router.Events -> Events.view models.events
       |> wrapMsg EventsMsg
+    Router.EventEdit _ -> EventEdit.view models.event
+      |> wrapMsg EventEditMsg
+    Router.CreateEvent -> EventEdit.view models.event
+      |> wrapMsg EventEditMsg
 
 
-update : Msg -> Models -> ( Models, Cmd Msg )
-update msg models =
+pageNav : Router.Target -> Auth.Cred -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
+pageNav target creds models =
+  case target of
+    Router.Profile ->
+      bidiupdate (ProfileMsg (Profile.Entered creds)) models
+    Router.Events ->
+      bidiupdate (EventsMsg (Events.Entered creds)) models
+    Router.EventEdit name ->
+      bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname name))) models
+    _ -> ( models, Cmd.none, OutMsg.None )
+
+bidiupdate : Msg -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
+bidiupdate msg models =
   case msg of
+    LandingMsg _ -> ( models, Cmd.none, OutMsg.None )
     ProfileMsg submsg ->
-      Profile.update submsg models.profile |> Tuple.mapBoth (\pm -> {models | profile = pm}) (Cmd.map ProfileMsg)
+      Profile.update submsg models.profile |> OutMsg.addNone
+        |> OutMsg.mapBoth (\pm -> {models | profile = pm}) (Cmd.map ProfileMsg)
+        |> consumeOutmsg
     LoginMsg submsg ->
-      Login.update submsg models.login |> Tuple.mapBoth (\pm -> {models | login = pm}) (Cmd.map LoginMsg)
+      Login.bidiupdate submsg models.login
+        |> OutMsg.mapBoth (\pm -> {models | login = pm}) (Cmd.map LoginMsg)
+        |> consumeOutmsg
     EventsMsg submsg ->
-      Events.update submsg models.events |> Tuple.mapBoth (\pm -> {models | events = pm}) (Cmd.map EventsMsg)
-    LandingMsg _ -> ( models, Cmd.none )
-    Routed (Router.Profile, creds) ->
-      update (ProfileMsg (Profile.Entered creds)) models
-    Routed (Router.Events, creds) ->
-      update (EventsMsg (Events.Entered creds)) models
-    Routed _ -> ( models, Cmd.none )
+      Events.bidiupdate submsg models.events
+        |> OutMsg.mapBoth (\pm -> {models | events = pm}) (Cmd.map EventsMsg)
+        |> consumeOutmsg
+    EventEditMsg submsg ->
+      EventEdit.bidiupdate submsg models.event
+        |> OutMsg.mapBoth (\pm -> {models | event = pm}) (Cmd.map EventEditMsg)
+        |> consumeOutmsg
+
+consumeOutmsg : ( Models, Cmd Msg, OutMsg.Msg ) -> ( Models, Cmd Msg, OutMsg.Msg )
+consumeOutmsg ( models, cmd, out ) =
+  case out of
+    OutMsg.Page (pagemsg) ->
+      case pagemsg of
+        OutMsg.CreateEvent aff ->
+          ({models | event = EventEdit.forCreate aff}, cmd, OutMsg.Main << OutMsg.Nav <| Router.CreateEvent)
+        OutMsg.EditEvent creds aff ->
+          EventEdit.bidiupdate (EventEdit.Entered creds (EventEdit.Url aff)) EventEdit.init
+            |> OutMsg.mapBoth (\pm -> {models | event = pm}) (Cmd.map EventEditMsg)
+    _ -> (models, cmd, out)

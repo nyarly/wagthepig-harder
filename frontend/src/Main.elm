@@ -9,23 +9,18 @@ import Json.Encode exposing (Value)
 import Url
 import Dict
 
-import Api
+import Auth
 import Router
 import Pages
 import State
-
-import User
-
-import Login
-
+import OutMsg
 
 type alias Model =
   { key : Nav.Key
   , url : Url.Url
-  , user: Maybe User.User
   , page: Router.Target
   , pages: Pages.Models
-  , creds: Api.Cred
+  , creds: Auth.Cred
   }
 
 type Msg
@@ -54,11 +49,12 @@ init flags url key =
     (finalUrl, target) = case startingPage of
       Just t -> (url, t)
       Nothing -> ({ url | path = "/" }, Router.Landing)
-    baseModel = Model key finalUrl Nothing target Pages.init Api.unauthenticated
+    baseModel = Model key finalUrl target Pages.init Auth.unauthenticated
     fromStore = State.loadAll flags
     model = Dict.foldl loadIntoModel baseModel fromStore
   in
     routeToPage url model
+    |> consumeOutmsg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -77,50 +73,56 @@ update msg model =
 
     UrlChanged url ->
       routeToPage url model
+      |> consumeOutmsg
 
     StoreChange (key, value) ->
       ( loadIntoModel key value model, Cmd.none )
 
-    SignOut -> ({model | creds = Api.unauthenticated}, Api.logout )
+    SignOut -> ({model | creds = Auth.unauthenticated}, Auth.logout )
 
     PageMsg submsg ->
-      let
-        (pagemodel, cmd) = Pages.update submsg model.pages
-        newmodel = {model | pages = pagemodel}
-        default _ = (newmodel, Cmd.map PageMsg cmd)
-      in
-        case submsg of
-          Pages.LoginMsg (Login.AuthResponse (Ok newcred)) -> (
-            {newmodel | creds = newcred},
-            Cmd.batch [
-              Api.storeCred newcred
-              , Nav.pushUrl model.key "/"
-              ])
+      Pages.bidiupdate submsg model.pages
+      |> OutMsg.mapBoth (\pagemodel -> {model | pages = pagemodel}) (Cmd.map PageMsg)
+      |> consumeOutmsg
 
-          _ -> default ()
+consumeOutmsg : (Model, Cmd Msg, OutMsg.Msg) -> (Model, Cmd Msg)
+consumeOutmsg (model, msg, out) =
+  case out of
+    OutMsg.Main(mymsg) ->
+      case mymsg of
+        OutMsg.Nav target -> (model, Cmd.batch [
+          msg
+          , Nav.pushUrl model.key (Router.buildFromTarget target)
+          ])
+        OutMsg.NewCred newcred -> ({model | creds = newcred}, Cmd.batch [
+          msg
+          , Auth.storeCred newcred
+          , Nav.pushUrl model.key "/"
+          ])
+    _ -> (model, msg)
+
 
 loadIntoModel : String -> Value -> Model -> Model
 loadIntoModel key value model =
   case State.asString value of
     Just s ->
       -- add an if clause for each storage field
-      if key == Api.storageField then
-        { model | creds = Api.loadCred s }
+      if key == Auth.storageField then
+        { model | creds = Auth.loadCred s }
       else
         model
     Nothing -> model
 
-routeToPage : Url.Url -> Model -> ( Model, Cmd Msg )
+routeToPage : Url.Url -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 routeToPage url model =
   case (Router.routeToTarget url) of
     Just target ->
-      let
-        (pagemodel, pagecmd) = Pages.update (Pages.Routed (target, model.creds) ) model.pages
-        newmodel = { model | url = url , pages = pagemodel, page = target }
-      in
-        (newmodel, Cmd.map PageMsg pagecmd)
+      Pages.pageNav target model.creds model.pages
+      |> OutMsg.mapBoth
+        (\pagemodel -> { model | url = url , pages = pagemodel, page = target })
+        (Cmd.map PageMsg)
     Nothing ->
-      ( model, Nav.pushUrl model.key "/" )
+      ( model, Nav.pushUrl model.key "/", OutMsg.None )
 
 -- SUBSCRIPTIONS
 
@@ -153,7 +155,7 @@ view model =
 
 authButton : Model -> Html Msg
 authButton model =
-  if (Api.loggedIn model.creds) then
+  if (Auth.loggedIn model.creds) then
     li [] [ button [ class "header", onClick SignOut ] [ text "Sign Out" ] ]
   else
     headerButton "Log In" "/login"

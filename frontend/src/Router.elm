@@ -1,7 +1,7 @@
 module Router exposing (Target(..), routeToTarget, buildFromTarget, pageName)
 
 import Url exposing (Url)
-import Url.Parser exposing (Parser, map, parse, s, top, oneOf)
+import Url.Parser exposing (Parser, map, parse, s, top, oneOf, (</>), string)
 import Url.Builder exposing (absolute)
 
 type Target
@@ -9,6 +9,8 @@ type Target
   | Landing
   | Profile
   | Events
+  | CreateEvent
+  | EventEdit String
 
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
@@ -21,6 +23,8 @@ buildFromTarget target =
     Login -> absolute ["login"] []
     Profile -> absolute ["profile"] []
     Events -> absolute ["events"] []
+    CreateEvent -> absolute ["new_event"] []
+    EventEdit name -> absolute ["event", name] []
 
 pageName : Target -> String
 pageName target =
@@ -29,6 +33,8 @@ pageName target =
     Login -> "login"
     Profile -> "profile"
     Events -> "events"
+    CreateEvent -> "event"
+    EventEdit _ -> "event"
 
 router : Parser (Target -> c) c
 router =
@@ -37,4 +43,6 @@ router =
     , map Login ( s "login" )
     , map Profile ( s "profile" )
     , map Events ( s "events" )
+    , map CreateEvent ( s "new_event" )
+    , map EventEdit ( s "event" </> string )
     ]

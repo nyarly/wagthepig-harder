@@ -1,52 +1,80 @@
-module Events exposing (Model, Msg(..), init, view, update)
+module Events exposing (Model, Msg(..), init, view, bidiupdate)
 
+import Http
 import Time
 import Json.Decode as D
-
-import Api
-import Http
-import Html exposing (Html, h1, text, table, thead, th, tbody, tr, td)
+import Html exposing (Html, h1, text, table, thead, th, tbody, tr, td, button)
+import Html.Events exposing (onClick)
 import Html.Attributes exposing (colspan)
 
-type Msg
-  = Entered Api.Cred
-  | GotEvents Model
-  | ErrGetEvents Http.Error
+import Iso8601
 
-type alias IRI = String
+import OutMsg
+import Auth
+import Hypermedia as HM exposing (Uri, Affordance, OperationSelector(..))
+import Html exposing (a)
 
 type alias Model =
-  { id: Maybe IRI
-  , events: List(Event)
-  , operation: List(Operation)
+  { creds: Auth.Cred
+  , resource: Resource
   }
 
-type alias Operation =
-  { method: String
+type alias Resource =
+  { id: Maybe Uri
+  , events: List(Event)
+  , affordances: List(Affordance)
   }
 
 type alias Event =
-  { id: IRI
+  { id: Uri
   , name: String
   , time: Time.Posix
   , location: String
+  , affordances: List(Affordance)
   }
+
+decoder : D.Decoder Resource
+decoder =
+  D.map3 Resource
+    (D.map Just (D.field "id" D.string))
+    (D.field "events" (D.list itemDecoder))
+    HM.affordanceListDecoder
+
+itemDecoder : D.Decoder Event
+itemDecoder =
+  D.map5 Event
+    (D.field "id" D.string)
+    (D.field "name" D.string)
+    (D.field "time" Iso8601.decoder)
+    (D.field "location" D.string)
+    HM.affordanceListDecoder
+
+type Msg
+  = Entered Auth.Cred
+  | GotEvents Resource
+  | ErrGetEvents Http.Error
+  | CreateNewEvent Affordance
+  | EditEvent Affordance
 
 init : Model
 init =
-  Model Nothing [] []
+  Model
+    Auth.unauthenticated
+    (Resource Nothing [] [])
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
+bidiupdate msg model =
   case msg of
-    Entered creds -> (model, fetch creds)
-    GotEvents new -> (new, Cmd.none)
-    ErrGetEvents _ -> (model, Cmd.none) -- XXX
-
+    Entered creds -> (model, fetch creds, OutMsg.None)
+    GotEvents new -> ({model | resource = new}, Cmd.none, OutMsg.None)
+    ErrGetEvents _ -> (model, Cmd.none, OutMsg.None) -- XXX
+    CreateNewEvent aff -> (model, Cmd.none, OutMsg.Page << OutMsg.CreateEvent <| aff)
+    EditEvent aff -> (model, Cmd.none, OutMsg.Page (OutMsg.EditEvent model.creds aff))
 
 view : Model -> List (Html Msg)
 view model =
   [ h1 [] [ text "Events" ]
+  , createEventButton model.resource
   , table []
     [ thead []
         [ th [] [ text "Name" ]
@@ -54,9 +82,15 @@ view model =
         , th [] [ text "Where" ]
         , th [ colspan 3 ] []
         ]
-    , tbody [] (List.foldr addRow [] model.events)
+    , tbody [] (List.foldr addRow [] model.resource.events)
     ]
   ]
+
+createEventButton : Resource -> Html Msg
+createEventButton eventlist =
+  case HM.selectAffordance (HM.ByType "AddAction") eventlist.affordances of
+    Just aff -> button [ onClick (CreateNewEvent aff) ] [ text "Create Event" ]
+    Nothing -> button [] [ text "event creation not available" ]
 
 addRow : Event -> List (Html Msg) -> List (Html Msg)
 addRow event list =
@@ -65,15 +99,22 @@ addRow event list =
     , td [] [ text (String.fromInt (Time.posixToMillis event.time)) ]
     , td [] [ text event.location ]
     , td [] [ text "Show" ]
-    , td [] [ text "Edit" ]
+    , td [] [ eventEditButton event ]
   ]) :: list
 
+eventEditButton : Event -> Html Msg
+eventEditButton event =
+  case HM.selectAffordance (HM.ByType "UpdateAction") event.affordances of
+    Just aff -> a [ onClick (EditEvent aff) ] [ text "Edit" ]
+    Nothing -> text "Edit"
 
-fetch: Api.Cred -> Cmd Msg
+fetch: Auth.Cred -> Cmd Msg
 fetch creds =
-  Api.chain creds [(Api.linkByName "events")] "GET" Http.emptyBody modelRes handleGetResult
+  HM.chain creds [
+    HM.browse ["events"] (HM.ByType "ViewAction")
+  ] Http.emptyBody modelRes handleGetResult
 
-handleGetResult : Result Http.Error Model -> Msg
+handleGetResult : Result Http.Error Resource -> Msg
 handleGetResult res =
   case res of
     Ok model -> GotEvents model
@@ -81,29 +122,8 @@ handleGetResult res =
 
 -- type alias HeadersAndBodyToRes a = (Headers -> Body -> Result String a)
 
-modelRes : a -> String -> Result String Model
-modelRes _ body =
-  body
+modelRes : {a|body:String} -> Result String Resource
+modelRes res =
+  res.body
   |> D.decodeString decoder
   |> Result.mapError D.errorToString
-
-
-decoder : D.Decoder Model
-decoder =
-  D.map3 Model
-    (D.map Just (D.field "@id" D.string))
-    (D.field "events" (D.list itemDecoder))
-    (D.field "operation" (D.list opDecoder))
-
-itemDecoder : D.Decoder Event
-itemDecoder =
-  D.map4 Event
-    (D.field "@id" D.string)
-    (D.field "name" D.string)
-    (D.field "time" (D.map Time.millisToPosix D.int))
-    (D.field "location" D.string)
-
-opDecoder : D.Decoder Operation
-opDecoder =
-  D.map Operation
-    (D.field "method" D.string)

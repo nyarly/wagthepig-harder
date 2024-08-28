@@ -36,6 +36,12 @@ nav {
   grid-template-columns: 70px auto;
 }
 
+.footer {
+  margin: 2em;
+  text-align: center;
+}
+
+
 .menu {
   margin: 0;
   text-align: right;

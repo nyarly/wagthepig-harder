@@ -1,42 +1,90 @@
-use axum::{http, response::ErrorResponse};
+use axum::{response::IntoResponse, Json};
+use axum_extra::{headers::ETag, TypedHeader};
+use base64ct::{Base64, Encoding};
 use chrono::NaiveDateTime;
-use hyper::StatusCode;
+use iri_string::{
+    spec::IriSpec,
+    template::{simple_context::SimpleContext, UriTemplateStr}};
 use serde::{Deserialize, Serialize};
-use uritemplate::UriTemplate;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::db;
 
-pub(crate) fn db_error_response(err: sqlx::Error) -> ErrorResponse {
-    (db_error_code(&err), err.to_string()).into()
+use crate::routing;
+
+mod semweb;
+use semweb::*;
+pub(crate) use semweb::Error;
+
+pub(crate) enum RouteMap {
+    Root,
+    Authenticate,
+    Profile,
+    Events,
+    Event
 }
 
-fn db_error_code(err: &sqlx::Error) -> StatusCode {
-    match err {
-        sqlx::Error::TypeNotFound { .. } |
-        sqlx::Error::ColumnNotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
+pub struct EtaggedJson<T: Serialize + Clone>(pub T);
 
-        sqlx::Error::Configuration(_) |
-        sqlx::Error::Migrate(_) |
-        sqlx::Error::Database(_) |
-        sqlx::Error::Tls(_) |
-        sqlx::Error::AnyDriverError(_) => StatusCode::BAD_GATEWAY,
-
-        sqlx::Error::Io(_) |
-        sqlx::Error::Protocol(_) |
-        sqlx::Error::PoolTimedOut |
-        sqlx::Error::PoolClosed |
-        sqlx::Error::WorkerCrashed => StatusCode::GATEWAY_TIMEOUT,
-
-        sqlx::Error::RowNotFound => StatusCode::NOT_FOUND,
-
-        sqlx::Error::ColumnIndexOutOfBounds { .. } |
-        sqlx::Error::ColumnDecode { .. } |
-        sqlx::Error::Encode(_) |
-        sqlx::Error::Decode(_) => StatusCode::BAD_REQUEST,
-
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
+impl<T: Serialize + Clone> EtaggedJson<T> {
+    fn inner_response(self) -> Result<impl IntoResponse, Error> {
+        Ok((TypedHeader(etag_for(self.0.clone())?), Json(self.0)))
     }
+}
+
+impl<T: Serialize + Clone> IntoResponse for EtaggedJson<T> {
+    fn into_response(self) -> axum::response::Response {
+        self.inner_response().into_response()
+    }
+}
+
+pub(crate) fn etag_for<T: Serialize>(v: T) -> Result<ETag, Error> {
+    let mut hasher = Sha256::new();
+    serde_json::to_writer(&mut hasher, &v)?;
+    let bytes = hasher.finalize();
+    format!("\"{}\"", Base64::encode_string(&bytes[..])).parse()
+        .map_err(|e| Error::BadETagFormat(format!("{:?}", e)))
+
+}
+
+pub(crate) fn route_config(rm: RouteMap) -> routing::Config {
+    let cfg = |t, cs| routing::Config::new(t, cs);
+    use RouteMap::*;
+    match rm {
+        Root => cfg( "/", vec![]),
+        Authenticate => cfg( "/authenticate", vec![]),
+        Profile => cfg( "/profile/{user_id}", vec!["user_id"]),
+        Events => cfg( "/events", vec![]),
+        Event => cfg( "/event/{event_id}", vec!["event_id"])
+    }
+}
+
+pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
+    use RouteMap::*;
+    use ActionType::*;
+    let entry = |rm, ops| {
+        let prefixed = route_config(rm).prefixed(nested_at);
+        let url_attr = if prefixed.hydra_type() == "Link" {
+            "id"
+        } else {
+            "template"
+        };
+        json!({
+            "type": prefixed.hydra_type(),
+            url_attr: prefixed.template_str,
+            "operation": ops
+        })
+    };
+
+    Json(json!({
+      "root": entry(Root, vec![ op(View) ]),
+      "authenticate": entry(Authenticate, vec![op(Login)]),
+      "profile": entry(Profile, vec![op(Find)]),
+      "events": entry(Events, vec![ op(View), op(Add) ]),
+      "event": entry(Event, vec![ op(Find), op(Update) ]),
+    }))
 }
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -45,7 +93,7 @@ pub(crate) struct AuthnRequest {
     pub password: String
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Clone)]
 pub(crate) struct UserResponse {
     pub name: Option<String>,
     pub bgg_username: Option<String>,
@@ -62,103 +110,83 @@ impl From<db::User> for UserResponse {
     }
 }
 
-/*
-type alias Model =
-  { id: Maybe IRI
-  , events: List(Event)
-  , operation: List(Operation)
-  }
-
-type alias Operation =
-  { method: String
-  }
-
-type alias Event =
-  { id: IRI
-  , name: String
-  , time: Time.Posix
-  , location: String
-  }
-*/
-
-
-// this starts to feel a little gross
-// using Elm millis-since-epoch Posix time
-// (and probably days since year 0 for dates)
-#[derive(Default, Serialize)]
-pub(crate) struct Posix(i64);
-
-impl From<NaiveDateTime> for Posix {
-    fn from(value: NaiveDateTime) -> Self {
-        Self(value.signed_duration_since(NaiveDateTime::UNIX_EPOCH).num_milliseconds())
-    }
-}
-
-#[derive(Default, Serialize)]
-pub(crate) struct IRI(String);
-
-impl From<String> for IRI {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Default, Serialize)]
-pub(crate) struct Operation {
-    pub method: Method,
-    // type: ActionType e.g. CreateAction
-}
-
-#[derive(Default)]
-pub(crate) struct Method(http::Method);
-
-impl From<http::Method> for Method {
-    fn from(value: http::Method) -> Self {
-        Self(value)
-    }
-}
-
-impl Serialize for Method {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    {
-        serializer.serialize_str(self.0.as_str())
-    }
-}
-
-#[derive(Default, Serialize)]
-pub(crate) struct Event {
-    pub id: IRI,
-    pub name: Option<String>,
-    pub time: Option<Posix>,
-    pub location: Option<String>
-}
-
-impl Event {
-    fn build(uritmpl: &str, value: db::Event) -> Self {
-        let mut idtmpl = UriTemplate::new(uritmpl);
-        Self{
-            name: value.name,
-            location: value.r#where,
-            id: idtmpl.set("id", value.id.to_string()).build().into(),
-            time: value.date.map(|t| t.into())
-        }
-    }
-}
-
-
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
 pub(crate) struct EventListResponse {
-    pub id: IRI,
-    pub events: Vec<Event>,
+    pub id: IriReferenceString,
+    pub r#type: String,
+    pub event_by_id: IriTemplate,
+    pub events: Vec<EventResponse>,
     pub operation: Vec<Operation>
 }
 
 impl EventListResponse {
-    pub fn from_query(id: &str, list: Vec<db::Event>) -> Self {
-        Self{
-            id: id.to_string().into(),
-            operation: vec![Operation{method: axum::http::Method::POST.into()}],
-            events: list.into_iter().map(|ev| Event::build("/api/event/{id}",ev)).collect()
+    pub fn from_query(nested_at: &str, list: Vec<db::Event>) -> Result<Self, Error> {
+        let id = route_config(RouteMap::Events).prefixed(nested_at).axum_route();
+        let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at).template()?;
+        Ok(Self{
+            id: id.try_into()?,
+            r#type: "Resource".to_string(),
+            operation: vec![ op(ActionType::View), op(ActionType::Add) ],
+            event_by_id: IriTemplate {
+                id: "api:eventByIdTemplate".try_into()?,
+                template: event_tmpl.as_str().to_string(),
+                operation: vec![ op(ActionType::Find) ]
+            },
+            events: list.into_iter().map(|ev| EventResponse::from_query(&event_tmpl,ev)).collect::<Result<_,_>>()?
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventResponse {
+    pub id: IriReferenceString,
+    pub r#type: String,
+    pub event_by_id: IriTemplate,
+    pub name: Option<String>,
+    pub time: Option<NaiveDateTime>,
+    pub location: Option<String>,
+    pub description: Option<String>
+}
+
+impl EventResponse {
+    pub(crate) fn from_query(idtmpl: &UriTemplateStr, value: db::Event) -> Result<Self, Error> {
+        let mut context = SimpleContext::new();
+        context.insert("id", value.id.to_string());
+        Ok(Self{
+            name: value.name,
+            location: value.r#where,
+            id: idtmpl.expand::<IriSpec, _>(&context)?.to_string().try_into()?,
+            r#type: "Resource".to_string(),
+            event_by_id: IriTemplate {
+                id: "api:eventByIdTemplate".try_into()?,
+                template: idtmpl.as_str().into(),
+                operation: vec![ op(ActionType::Find) ]
+            },
+            time: value.date,
+            description: value.description.clone()
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventUpdateRequest {
+    pub name: Option<String>,
+    pub time: Option<NaiveDateTime>,
+    pub location: Option<String>,
+    pub description: Option<String>
+}
+
+impl EventUpdateRequest {
+    pub(crate) fn db_param(&self) -> db::Event {
+        db::Event {
+            name: self.name.clone(),
+            date: self.time,
+            r#where: self.location.clone(),
+            description: self.description.clone(),
+            ..db::Event::default()
         }
     }
 }

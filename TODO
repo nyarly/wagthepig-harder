@@ -1,18 +1,31 @@
 * Revocation of tokens e.g. on password reset
-* Scoped tokens -> email for registration/reset
-* Biscuit WASM port for Elm e.g. "check if my ip = requesting id"
-* Send email / dev mode for capture (c.f. mailpit)
 * Modern CSS (c.f. "6 patterns of CSS variables")
-
-* Elm link walking
+* Add lightningcss for CSS bundling & compatibility
+* sqlxmq for background job handling
+* Scoped tokens -> email for registration/reset
+* Send email / dev mode for capture (c.f. mailpit)
 
 WTG parity:
+B/E
+* Profile
+  * change password
+* Event view (game list)
+  * Add game
+  * Want to play
+  * Know rules
+  * Personal notes
+* What should we play?
+  * Other players
+  * extra players
+  * SQL for preference list
+
+F/E
 * Profile
   * change password
 * Events list view
   * Sorted table
-  * Get
   * Add
+* Event edit
 * Event view (game list)
   * Sorted table
   * Add game (BGG JS interface)
@@ -22,7 +35,33 @@ WTG parity:
 * What should we play?
   * Other players
   * extra players
-  * SQL for preference list
+
+* Fork and strip for future projects
+
+== Future work
+
+* Middleware for conditional requests
+  * c.f. `tower_etag_cache`
+  * On GET, calculate and insert ETag and Last-Modified(?)
+  * Cache generated/included ETags
+  * If-Match & If-None-Match - check cache, and short circuit
+  * If-Match & If-None-Match - check response/generated and empty bodies
+* actually write a JSON-LD @context
+* add JSON-LD tooling - at least validate our API
+* investigate elm-concurrent-task (enables JSON-LD and Biscuits in Elm)
+* Client-side JSON-LD
+  - flatten/expand responses
+  - validate `expect`
+  - in general decouple from B/E
+* Biscuit WASM port for Elm e.g.
+  - check if my ip = requesting id
+  - check if time is in the next 60 seconds
+* Sophisticated 409 handling for conditional updates (automatic 3-way merge)
+* A URITemplate/matchit "bridge"
+  * constrain URITemplate grammar with restricted abs-path component between optional authority and query
+  * abs-path limited to matchit compatible syntax (expressions bounded by `/`, expand only at end)
+  * parse that grammar, extracting variable names
+  * build on existing RouteConfig (fill, uritemplate, axum_route), including errors, maybe sqlx-quality macros
 
 == Design Decisions
 
@@ -30,3 +69,7 @@ Progressive JSON-LD - use JSON-LD compatible fields as we go,
 with the idea that we notionally have a @context.
 Maybe someday we do this for real and build things out.
 Minimize the amount of adjustment that takes.
+
+pJSON-LD - use "id" and "type" etc
+because "@id" requires extra serde macros to make work.
+In our "notional" @context, we could `id: @id` to "fix" it.
