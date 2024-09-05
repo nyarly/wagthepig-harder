@@ -19,9 +19,9 @@ use tracing::{debug, Level};
 use futures::future::TryFutureExt;
 
 use biscuits::Authentication;
-use httpapi::{route_config, RouteMap, EtaggedJson};
+use httpapi::{RouteMap, EtaggedJson};
 
-use crate::httpapi::etag_for;
+use crate::{httpapi::etag_for, routing::route_config};
 
 // crate candidates
 mod biscuits;

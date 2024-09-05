@@ -94,7 +94,15 @@ pub enum Error {
     #[error("badly formatted ETag: {0:?}")]
     BadETagFormat(String),
     #[error("route config: {0:?}")]
-    Routing(#[from] routing::Error)
+    Routing(#[from] routing::Error),
+    #[error("couldn't validate IRI: {0:?}")]
+    IriValidate(#[from] iri_string::validate::Error),
+    #[error("error processing IRI template: {0:?}")]
+    IriTempate(#[from] iri_string::template::Error),
+    #[error("creating a string for an IRI: {0:?}")]
+    CreateString(#[from] iri_string::types::CreationError<std::string::String>),
+    #[error("cannot parse string as a header value: {0:?}")]
+    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
 }
 
 impl IntoResponse for Error {
@@ -103,9 +111,13 @@ impl IntoResponse for Error {
         match self {
             // might specialize these errors more going forward
             // need to consider server vs client
+            Error::IriValidate(_) |
+            Error::IriTempate(_) |
+            Error::CreateString(_) |
+            Error::InvalidHeaderValue(_) |
             Error::Routing(_) |
             Error::BadETagFormat(_) |
-            Error::JSONSerialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response(),
+            Error::JSONSerialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self)).into_response(),
         }
     }
 }

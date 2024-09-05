@@ -1,18 +1,32 @@
-use axum::response::IntoResponse;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{self as character, char, one_of, satisfy},
+    combinator::{all_consuming, map, map_opt, map_parser, opt, recognize, value},
+    multi::{fold_many_m_n, many0, many0_count, many1, many1_count, separated_list1},
+    sequence::{delimited, pair, preceded, separated_pair, tuple},
+    IResult,
+    Parser
+};
 
-/*
+
+/* We're parsing a terrible hybrid of
+* RFC 3986 (just paths)
+* RFC 6570 (URITemplates +)
+* matchit
+*
 (ideally with slices in the String...)
 we want:
 the matchit route, in alternating (lit|capture)* list
 the URITemplate variables
 
 from which we will be able to build
-A URITemplate for clients to fill
-Filled URIs (by filling variables)
-Checked Filled URIs (by requiring all variables have an assignment)
-Strict URIs (by further requiring that no other variables are supplied
-matchit routes for Axum (v0.7 or v0.8)
-regexp to extract path variables as matchit would from a URI
+* A URITemplate for clients to fill
+* Filled URIs (by filling variables)
+* Checked Filled URIs (by requiring all variables have an assignment) [need varlist]
+* Strict URIs (by further requiring that no other variables are supplied [need varlist]
+* matchit routes for Axum (v0.7 or v0.8) [need path, some var structure]
+* regexp to extract path variables as matchit would from a URI [idem]
 
 lists of variables -> matchit captures?
 sort, concatenate; error on collision
@@ -24,7 +38,9 @@ all of the above pull 'foo' and 'bar' as variable names
 
 {/foo,bar} -> /:foo/:bar
 {/var:1,var} -> /:varp1/:var (matchit oblivious to relationship)
-{/var:1,var} -> `/./(?var:[^/]*)`
+{/var:1,var} -> `/[^/]* /(?var:[^/]*)`  (note space for comment continuation)
+  (we can't match by bytes (or even Unicode characters) because prefix counts percent-encoding)
+  (IOW, if var:= %20%20something, the above would fill as /%20%20/%20%20something
 /{var:1}/{var}
 
 {/list*} -> at end-of-path: /:*list
@@ -34,203 +50,634 @@ Non-features: (or v2)
 extracting variables outside of the path
 if you need that,
 parse the URL to get query, fragment, host
+*
+//
+//
+//
+//
+Not supported
+/ path-rootless   ; begins with a segment
+/ path-noscheme   ; begins with a non-colon segment
+path-rootless = segment-nz *( "/" segment )
+
 */
-struct Parsed {
-    base: String
+
+pub(super) type NomError<'a> = nom::error::Error<&'a str>;
+
+type NomResult<'a, T> = IResult<&'a str, T, NomError<'a>>;
+
+#[derive(Debug, PartialEq, Default, Clone)]
+pub(super) struct Parsed {
+    pub(super) auth: Option<Vec<Part<'static>>>,
+    pub(super) path: Vec<Part<'static>>,
+    pub(super) query: Option<Vec<Part<'static>>>,
+    base: Box<String>
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
+#[derive(Debug, PartialEq, Clone)]
+pub(super) enum Part<'a> {
+    Lit(&'a str),
+    Expression(Vec<VarSpec<'a>>),
+    SegVar(Vec<VarSpec<'a>>),
+    SegPathVar(Vec<VarSpec<'a>>),
+    SegRest(Vec<VarSpec<'a>>),
+    SegPathRest(Vec<VarSpec<'a>>),
 }
 
-impl IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        (hyper::StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+impl<'a> Default for Part<'a> {
+    fn default() -> Self {
+        Part::Lit("")
     }
 }
 
-/*
-* (assume URITemplate ABNF) adding:
-*
-    route-template = [*( literals / expression ) '//' authority ] path [ '?'/'#' *(literals / expression) ]
 
-    authority = *(authority-literals / expression )
-    authority-literals = literals - "/"
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(super) struct VarSpec<'a>{
+    pub(super) varname: &'a str,
+    pub(super) modifier: VarMod
+}
 
-    path         = *segment [tail-segment]
-
-    segment = segment-literal / segment-variable / segment-pathvar
-    tail-segment = segment-rest / segment-pathrest
-
-    segment-literal = "/" *pchar
-    segment-variable = "/{" [ "+" ] segment-variable-list "}"
-    segment-pathvar = "{/" segment-variable-list "}"
-
-    pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
-
-    segment-rest = "/{" [ operator ] variable-list "}"
-    segment-pathrest = "{/" variable-list "}"
-
-    operator      =  op-level2 / op-level3 / op-reserve
-    op-level2     =  "+" / "#"
-    op-level3     =  "." / ";" / "?" / "&" ; removing "/"
-    op-reserve    =  "=" / "," / "!" / "@" / "|"
-
-    segment-var-list =  varspec *( "," varspec )
-    segment-varspec       =  varname [ prefix ]
-
-    variable-list =  varspec *( "," varspec )
-    varspec       =  varname [ modifier-level4 ]
-
-    varname       =  varchar *( ["."] varchar )
-    varchar       =  ALPHA / DIGIT / "_" / pct-encoded
-
-
-    modifier-level4 =  prefix / explode
-
-    prefix        =  ":" max-length
-    max-length    =  %x31-39 0*3DIGIT   ; positive integer < 10000
-    explode       =  "*"
-
-
-    pct-encoded   = "%" HEXDIG HEXDIG
-
-    unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
-    reserved      = gen-delims / sub-delims
-    gen-delims    = ":" / "/" / "?" / "#" / "[" / "]" / "@"
-    sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
-         / "*" / "+" / "," / ";" / "="
-
-***
-
-Not supported
-                 / path-rootless   ; begins with a segment
-                 / path-noscheme   ; begins with a non-colon segment
-    path-rootless = segment-nz *( "/" segment )
-
-
-*/
-pub(super) fn parse(route_template: String) -> Result<Parsed, Error> {
-
-    Ok(Parsed{base: route_template})
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum VarMod {
+    Prefix(u16),
+    Explode,
+    None
 }
 
 
-/* We're parsing a terrible hybrid of
-* RFC 3986 (just paths)
-* RFC 6570 (URITemplates +)
-* matchit
-*/
+pub(super) fn parse(input: &str) -> Result<Parsed, nom::Err<NomError<'static>>> {
+    let base = Box::new(input.to_string());
+    let (_, (auth, path, query)) = route_template(base)?;
+    Ok(Parsed{auth, path, query, base})
+}
+
+// route-template = [authority-part] path [query_part]
+#[allow(clippy::type_complexity)]
+fn route_template(i: &str) -> NomResult<(Option<Vec<Part>>, Vec<Part>, Option<Vec<Part>>)> {
+    all_consuming(tuple((
+        opt(authority_part),
+        path,
+        opt(query_part)
+    )))(i)
+}
+//
+//
+// authority-part = *( literals / expression ) '//' authority
+fn authority_part(i: &str) -> NomResult<Vec<Part>> {
+    map(
+        separated_pair(
+            many0(alt((authority_literals, expression))),
+            tag("//"),
+            authority
+        ),
+        |(mut pre, mut authority)| {pre.append(&mut authority); pre}
+    )(i)
+}
+
+// path         = 1*segment [tail-segment]
+fn path(i: &str) -> NomResult<Vec<Part>> {
+    alt((
+        map(
+            pair(many1(segment),opt(tail_segment)),
+            |(mut segs, maybe_tail)| match maybe_tail {
+                Some(seg) => {segs.push(seg); segs}
+                None => segs
+            }
+        ),
+        value(vec![Part::Lit("/")], tag("/"))
+    ))(i)
+}
+
+// query_part =  '?'/'#' *(literals / expression)
+fn query_part(i: &str) -> NomResult<Vec<Part>> {
+    many1(alt((authority_literals, authority_expression)))(i)
+}
+
+// authority = *(authority-literals / authority-expression )
+fn authority(i: &str) -> NomResult<Vec<Part>> {
+    many0(alt((authority_literals, authority_expression)))(i)
+}
+
+// segment = segment-literal / segment-variable / segment-pathvar
+fn segment(i: &str) -> NomResult<Part> {
+    alt((segment_variable, segment_pathvar, segment_literal))(i)
+}
+
+// tail-segment = segment-rest / segment-pathrest
+fn tail_segment(i: &str) -> NomResult<Part> {
+    alt((segment_rest, segment_pathrest))(i)
+}
+
+// segment-literal = "/" *pchar
+fn segment_literal(i: &str) -> NomResult<Part> {
+    map(
+        recognize(preceded(char('/'), many1_count(pchar))), // test "/" path
+        Part::Lit
+    )(i)
+}
+
+// literals      =  %x21 / %x23-24 / %x26 / %x28-3B / %x3D / %x3F-5B
+// /  %x5D / %x5F / %x61-7A / %x7E / ucschar / iprivate
+// /  pct-encoded
+fn literals(i: &str) -> NomResult<Part> {
+    map(
+        recognize(many1_count(
+            alt((satisfy(|ch| matches!(ch,
+                '\u{21}' | '\u{23}'..='\u{24}' | '\u{26}' | '\u{28}'..='\u{3B}' | '\u{3D}' | '\u{3F}'..='\u{5B}'
+                | '\u{5D}' | '\u{5F}' | '\u{61}'..='\u{7A}' | '\u{7E}')), ucschar, iprivate,
+                pct_encoded))
+        )),
+        Part::Lit
+    )(i)
+}
+
+// authority-literals = literals - "/"
+fn authority_literals(i: &str) -> NomResult<Part> {
+    map(
+        recognize(many1_count(
+            alt((satisfy(|ch| matches!(ch,
+                '\u{21}' | '\u{23}'..='\u{24}' | '\u{26}' |
+                '\u{28}'..='\u{2e}' | '\u{30}'..='\u{3B}' | // not \u{2f} = '/'
+                '\u{3D}' | '\u{3F}'..='\u{5B}' | '\u{5D}' | '\u{5F}' | '\u{61}'..='\u{7A}' | '\u{7E}')),
+                ucschar, iprivate, pct_encoded))
+        )),
+        Part::Lit
+    )(i)
+}
 
 
-/*
-RFC 3986
-Extract from Appendix A.  Collected ABNF for URI
+// segment-variable = "/{" [ "+" ] segment-variable-list "}"
+fn segment_variable(i: &str) -> NomResult<Part> {
+    map(
+        delimited(tag("/{"), preceded(opt(char('+')), segment_var_list), tag("}")),
+        Part::SegVar
+    )(i)
+}
 
-   absolute-URI  = scheme ":" hier-part [ "?" query ]
+// segment-pathvar = "{/" segment-variable-list "}"
+fn segment_pathvar(i: &str) -> NomResult<Part> {
+    // using Parser trait...
+    delimited(tag("{/"), segment_var_list, tag("}")).map( Part::SegPathVar).parse(i)
+}
 
-   URI-reference = URI / relative-ref
+// segment-rest = "/{" [ operator ] variable-list "}"
+fn segment_rest(i: &str) -> NomResult<Part> {
+    map(
+        delimited(tag("/{"), preceded(opt(tail_operator), variable_list), tag("}")),
+        Part::SegRest
+    )(i)
+}
 
-   URI           = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
+// segment-pathrest = "{/" variable-list "}"
+fn segment_pathrest(i: &str) -> NomResult<Part> {
+    map(
+        delimited(tag("{/"), variable_list, tag("}")),
+        Part::SegPathRest
+    )(i)
+}
 
-   relative-ref  = relative-part [ "?" query ] [ "#" fragment ]
+// segment-var-list =  varspec *( "," varspec )
+fn segment_var_list(i: &str) -> NomResult<Vec<VarSpec>> {
+    separated_list1(char(','), segment_varspec)(i)
+}
 
-   hier-part     = "//" authority path-abempty
-                 / path-absolute
-                 / path-rootless
-                 / path-empty
+// segment-varspec       =  varname [ prefix ]
+fn segment_varspec(i: &str) -> NomResult<VarSpec> {
+    map(
+        pair(
+            varname,
+            map(
+                opt( mod_prefix,),
+                |maybe| maybe.unwrap_or(VarMod::None)
+            )),
+        |(varname, modifier)| VarSpec{ varname, modifier }
+    )(i)
+}
+
+//expression    =  "{" [ operator ] variable-list "}"
+fn expression(i: &str) -> NomResult<Part> {
+    map(
+        delimited(tag("{"), preceded(opt(operator), variable_list), tag("}")),
+        Part::Expression
+    )(i)
+}
+
+// authority-expresion = expression - "/"
+fn authority_expression(i: &str) -> NomResult<Part> {
+    map(
+        delimited(tag("{"), preceded(opt(authority_operator), variable_list), tag("}")),
+        Part::Expression
+    )(i)
+}
+
+// variable-list =  varspec *( "," varspec )
+fn variable_list(i: &str) -> NomResult<Vec<VarSpec>> {
+    separated_list1(char(','), varspec)(i)
+}
+
+// varspec       =  varname [ modifier-level4 ]
+// modifier-level4 =  prefix / explode
+fn varspec(i: &str) -> NomResult<VarSpec> {
+    map(
+        pair(
+            varname,
+            map(
+                opt(alt((
+                    mod_prefix,
+                    mod_explode
+                ))),
+                |maybe| maybe.unwrap_or(VarMod::None)
+            )),
+        |(varname, modifier)| VarSpec{ varname, modifier }
+    )(i)
+}
+
+// varname       =  varchar *( ["."] varchar )
+fn varname(i: &str) -> NomResult<&str> {
+    recognize(pair(many1_count(varchar), many0_count(alt((varchar, char('.'))))))(i)
+}
+
+// prefix        =  ":" max-length
+// max-length    =  %x31-39 0*3DIGIT   ; positive integer < 10000
+fn mod_prefix(i: &str) -> NomResult<VarMod> {
+    preceded(
+        char(':'),
+        map(
+            map_parser(
+                recognize(pair(one_of("123456789"), fold_many_m_n(0, 3, digit, || 0, |_,_| 0))),
+                character::u16
+            ),
+            VarMod::Prefix
+        )
+    )(i)
+}
+
+// explode       =  "*"
+fn mod_explode(i: &str) -> NomResult<VarMod> {
+    value(VarMod::Explode, char('*'))(i)
+}
+
+// operator      =  op-level2 / op-level3 / op-reserve
+// op-level2     =  "+" / "#"
+// op-level3     =  "." / ";" / "?" / "&" / "/"
+// op-reserve    =  "=" / "," / "!" / "@" / "|"
+fn operator(i: &str) -> NomResult<char> {
+    one_of("+.;&=,!@|/#?")(i)
+}
+
+// tail_operator = operator - ?#/, used in "rest" path matches
+//
+fn tail_operator(i: &str) -> NomResult<char> {
+    one_of("+.;&=,!@|")(i)
+}
+
+// authority_operator = operator - /, used in the "authority" part
+//
+fn authority_operator(i: &str) -> NomResult<char> {
+    one_of("+.;&=,!@|#?")(i)
+}
+
+// pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
+fn pchar(i: &str) -> NomResult<char> {
+    alt((unreserved, pct_encoded, sub_delims, one_of(":@")))(i)
+}
+
+//
+// unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
+fn unreserved(i: &str) -> NomResult<char> {
+    alt((alphanumeric, one_of("-._~")))(i)
+}
+// sub-delims    = "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / "," / ";" / "="
+fn sub_delims(i: &str) -> NomResult<char> {
+    one_of("!$&'()*+,;=")(i)
+}
+
+// varchar       =  ALPHA / DIGIT / "_" / pct-encoded
+fn varchar(i: &str) -> NomResult<char> {
+    alt((alpha, digit, char('_'), pct_encoded))(i)
+}
+
+fn alphanumeric( i: &str) -> NomResult<char> {
+    alt((alpha, digit))(i)
+}
+
+fn alpha(i: &str) -> NomResult<char> {
+    one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")(i)
+}
+
+fn digit(i: &str) -> NomResult<char> {
+    one_of("0123456789")(i)
+}
+
+fn hexdig(i: &str) -> NomResult<char> {
+    one_of("0123456789ABCDEFabcdef")(i)
+}
+
+//pct-encoded   = "%" HEXDIG HEXDIG
+fn pct_encoded(i: &str) -> NomResult<char> {
+    preceded(
+        char('%'),
+        map_opt(
+            map_parser(
+                recognize(pair(hexdig, hexdig)),
+                hex_u32
+            ),
+            core::char::from_u32
+        )
+    )(i)
+}
+
+// reformatted for comparison
+// ucschar        =
+//           %xA0-D7FF     /             %xF900-FDCF
+// /         %xFDF0-FFEF   /           %x10000-1FFFD
+// /         %x20000-2FFFD /           %x30000-3FFFD
+// /         %x40000-4FFFD /           %x50000-5FFFD
+// /         %x60000-6FFFD /           %x70000-7FFFD
+// /         %x80000-8FFFD /           %x90000-9FFFD
+// /         %xA0000-AFFFD /           %xB0000-BFFFD
+// /         %xC0000-CFFFD /           %xD0000-DFFFD
+// /         %xE1000-EFFFD
+fn ucschar(i: &str) -> NomResult<char> {
+    satisfy(|ch| matches!(ch,
+             '\u{A0}'..='\u{D7FF}' | '\u{F900}'..='\u{FDCF}'
+        |  '\u{FDF0}'..='\u{FFEF}' |'\u{10000}'..='\u{1FFFD}'
+        |'\u{20000}'..='\u{2FFFD}' |'\u{30000}'..='\u{3FFFD}'
+        |'\u{40000}'..='\u{4FFFD}' |'\u{50000}'..='\u{5FFFD}'
+        |'\u{60000}'..='\u{6FFFD}' |'\u{70000}'..='\u{7FFFD}'
+        |'\u{80000}'..='\u{8FFFD}' |'\u{90000}'..='\u{9FFFD}'
+        |'\u{A0000}'..='\u{AFFFD}' |'\u{B0000}'..='\u{BFFFD}'
+        |'\u{C0000}'..='\u{CFFFD}' |'\u{D0000}'..='\u{DFFFD}'
+        |'\u{E1000}'..='\u{EFFFD}'
+    ))(i)
+}
+
+// iprivate       =  %xE000-F8FF / %xF0000-FFFFD / %x100000-10FFFD
+fn iprivate(i: &str) -> NomResult<char> {
+    satisfy(|ch| matches!(ch,
+        '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}' | '\u{100000}'..='\u{10FFFD}'
+    ))(i)
+}
 
 
-   relative-part = "//" authority path-abempty
-                 / path-absolute
-                 / path-noscheme
-                 / path-empty
 
-   scheme        = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+use nomnumber::hex_u32;
+// lifted from nom-future
+mod nomnumber {
+    use std::ops::{RangeFrom, RangeTo};
 
-   authority = DONTCARE
-
-   path          = path-abempty    ; begins with "/" or is empty
-                 / path-absolute   ; begins with "/" but not "//"
-                 / path-noscheme   ; begins with a non-colon segment
-                 / path-rootless   ; begins with a segment
-                 / path-empty      ; zero characters
-
-   path-abempty  = *( "/" segment )
-   path-absolute = "/" [ segment-nz *( "/" segment ) ]
-   path-noscheme = segment-nz-nc *( "/" segment )
-   path-rootless = segment-nz *( "/" segment )
-   path-empty    = 0<pchar>
-
-   segment       = *pchar
-   segment-nz    = 1*pchar
-   segment-nz-nc = 1*( unreserved / pct-encoded / sub-delims / "@" )
-                 ; non-zero-length segment without any colon ":"
-
-   pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
-
-   query         = DONTCARE
-
-   fragment      = DONTCARE
-
-   pct-encoded   = "%" HEXDIG HEXDIG
-
-   unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
-   reserved      = gen-delims / sub-delims
-   gen-delims    = ":" / "/" / "?" / "#" / "[" / "]" / "@"
-   sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
-                 / "*" / "+" / "," / ";" / "="
-*
-*/
-
-/*
-RFC 6570
-     URI-Template  = *( literals / expression )
-     literals      =  %x21 / %x23-24 / %x26 / %x28-3B / %x3D / %x3F-5B
-                   /  %x5D / %x5F / %x61-7A / %x7E / ucschar / iprivate
-                   /  pct-encoded
-                        ; any Unicode character except: CTL, SP,
-                        ;  DQUOTE, "'", "%" (aside from pct-encoded),
-                        ;  "<", ">", "\", "^", "`", "{", "|", "}"
-     expression    =  "{" [ operator ] variable-list "}"
-     operator      =  op-level2 / op-level3 / op-reserve
-     op-level2     =  "+" / "#"
-     op-level3     =  "." / "/" / ";" / "?" / "&"
-     op-reserve    =  "=" / "," / "!" / "@" / "|"
-
-     variable-list =  varspec *( "," varspec )
-     varspec       =  varname [ modifier-level4 ]
-     varname       =  varchar *( ["."] varchar )
-     varchar       =  ALPHA / DIGIT / "_" / pct-encoded
+    use nom::{error::{ErrorKind, ParseError}, AsBytes, AsChar, IResult, InputLength, InputTakeAtPosition, Slice};
 
 
-     modifier-level4 =  prefix / explode
+    #[inline]
+    pub(super) fn hex_u32<I, E: ParseError<I>>(input: I) -> IResult<I, u32, E>
+where
+        I: InputTakeAtPosition,
+        I: Slice<RangeFrom<usize>> + Slice<RangeTo<usize>>,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        I: AsBytes,
+        I: InputLength,
+    {
+        let e: ErrorKind = ErrorKind::IsA;
+        let (i, o) = input.split_at_position1_complete(
+            |c| {
+                let c = c.as_char();
+                !"0123456789abcdefABCDEF".contains(c)
+            },
+            e,
+        )?;
 
-     prefix        =  ":" max-length
-     max-length    =  %x31-39 0*3DIGIT   ; positive integer < 10000
+        // Do not parse more than 8 characters for a u32
+        let (parsed, remaining) = if o.input_len() <= 8 {
+            (o, i)
+        } else {
+            (input.slice(..8), input.slice(8..))
+        };
 
-     explode       =  "*"
+        let res = parsed
+            .as_bytes()
+            .iter()
+            .rev()
+            .enumerate()
+            .map(|(k, &v)| {
+                let digit = v as char;
+                digit.to_digit(16).unwrap_or(0) << (k * 4)
+            })
+            .sum();
 
-     ALPHA          =  %x41-5A / %x61-7A   ; A-Z / a-z
-     DIGIT          =  %x30-39             ; 0-9
-     HEXDIG         =  DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
-                       ; case-insensitive
+        Ok((remaining, res))
+    }
 
-     pct-encoded    =  "%" HEXDIG HEXDIG
-     unreserved     =  ALPHA / DIGIT / "-" / "." / "_" / "~"
-     reserved       =  gen-delims / sub-delims
-     gen-delims     =  ":" / "/" / "?" / "#" / "[" / "]" / "@"
-     sub-delims     =  "!" / "$" / "&" / "'" / "(" / ")"
-                    /  "*" / "+" / "," / ";" / "="
-
-     ucschar        =  %xA0-D7FF / %xF900-FDCF / %xFDF0-FFEF
-                    /  %x10000-1FFFD / %x20000-2FFFD / %x30000-3FFFD
-                    /  %x40000-4FFFD / %x50000-5FFFD / %x60000-6FFFD
-                    /  %x70000-7FFFD / %x80000-8FFFD / %x90000-9FFFD
-                    /  %xA0000-AFFFD / %xB0000-BFFFD / %xC0000-CFFFD
-                    /  %xD0000-DFFFD / %xE1000-EFFFD
-
-     iprivate       =  %xE000-F8FF / %xF0000-FFFFD / %x100000-10FFFD
+}
 
 
-*/
+#[cfg(test)]
+mod test {
+    use nom::error::ErrorKind;
+
+    use super::*;
+
+    #[test]
+    fn test_parse() {
+        let input = "http://example.com/user/{user_id}{?something,mysterious}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            auth: Some(vec![
+                Part::Lit("http:"),
+                Part::Lit("example.com")
+            ]),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ],
+            query: Some(vec![
+                Part::Expression(vec![
+                    VarSpec { varname: "something", modifier: VarMod::None },
+                    VarSpec { varname: "mysterious", modifier: VarMod::None }
+                ])
+            ]),
+        }));
+        let input = "/user/{user_id}{?something,mysterious}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ],
+            query: Some(vec![
+                Part::Expression(vec![
+                    VarSpec { varname: "something", modifier: VarMod::None },
+                    VarSpec { varname: "mysterious", modifier: VarMod::None }
+                ])
+            ]),
+           ..Parsed::default()
+        }));
+        assert_eq!(parse("/user/{user_id}?something=good{&mysterious}"), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ],
+            query: Some(vec![
+                Part::Lit("?something=good"),
+                Part::Expression(vec![VarSpec { varname: "mysterious", modifier: VarMod::None }])
+            ]),
+           ..Parsed::default()
+        }));
+        let input = "/user/{user_id,user_name}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None},
+                    VarSpec{varname: "user_name", modifier: VarMod::None}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/user{/user_id,user_name}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegPathVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None},
+                    VarSpec{varname: "user_name", modifier: VarMod::None}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/user{/user_id}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegPathVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/user/{user_id*}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegRest(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::Explode}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/user{/user_id*}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegPathRest(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::Explode}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/user/{user_id}";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ],
+           ..Parsed::default()
+        }));
+        let input = "/";
+        assert_eq!(parse(input), Ok(Parsed{
+            base: input.to_string(),
+            path: vec![
+                Part::Lit("/"),
+            ],
+           ..Parsed::default()
+        }));
+    }
+
+    #[test]
+    fn test_path() {
+        assert_eq!(
+            path("/user/{user_id}"),
+            Ok(("", vec![
+                Part::Lit("/user"),
+                Part::SegVar(vec![
+                    VarSpec{varname: "user_id", modifier: VarMod::None}
+                ])
+            ]))
+        )
+    }
+
+    #[test]
+    fn test_segment() {
+        assert_eq!(
+            segment("/user"),
+            Ok(("",
+                Part::Lit("/user"),
+            ))
+        );
+        assert_eq!(
+            segment("/{user_id}"),
+            Ok(("", Part::SegVar(vec![
+                VarSpec{varname: "user_id", modifier: VarMod::None}
+            ])))
+        )
+    }
+
+    #[test]
+    fn test_segment_variable() {
+        assert_eq!(segment_variable("/{user_id}"),
+            Ok(("", Part::SegVar(vec![
+                VarSpec{varname: "user_id", modifier: VarMod::None}
+            ])))
+        )
+    }
+
+    #[test]
+    fn test_segment_varspec() {
+        assert_eq!(segment_varspec("user_id"),
+            Ok(("",
+                VarSpec{varname: "user_id", modifier: VarMod::None}
+            ))
+        )
+    }
+
+    #[test]
+    fn test_prefix() {
+        assert_eq!(Ok(("", VarMod::Prefix(17))), mod_prefix(":17"));
+        assert_eq!(Ok(("", VarMod::Prefix(1))), mod_prefix(":1"))
+    }
+
+    #[test]
+    fn test_pct_encoded() {
+        assert_eq!(
+            pct_encoded("%30*"),
+            Ok(("*", '0'))
+        );
+        assert_eq!(
+            pct_encoded("%41g"),
+            Ok(("g", 'A'))
+        );
+        assert_eq!(
+            pct_encoded("41"),
+            Err(nom::Err::Error(nom::error::Error { input: "41", code: ErrorKind::Char }))
+        );
+        assert_eq!(
+            pct_encoded("%4"),
+            Err(nom::Err::Error(nom::error::Error { input: "", code: ErrorKind::OneOf }))
+        );
+    }
+}

@@ -1,3 +1,8 @@
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock, RwLock}
+};
+
 use axum::{http, response::IntoResponse};
 use iri_string::{
     spec::IriSpec,
@@ -9,8 +14,224 @@ use iri_string::{
     types::UriRelativeString
 };
 
+use self::parser::{Parsed, Part, VarSpec};
+
 
 mod parser;
+
+pub(crate) trait RouteTemplate: Copy {
+    fn route_template(&self) -> String;
+}
+
+#[derive(Default)]
+pub(crate) struct Map {
+    templates: HashMap<String, String>,
+    store: HashMap<String, Arc<RwLock<InnerSingle>>>
+}
+
+static THE_MAP:  OnceLock<Mutex<Map>> = OnceLock::new();
+
+fn the_map() -> &'static Mutex<Map> {
+    THE_MAP.get_or_init(|| Mutex::new(Map::default()))
+}
+
+impl Map {
+    fn named(& mut self, rt: impl RouteTemplate) -> Result<Arc<RwLock<InnerSingle>>, Error> {
+        let template = rt.route_template();
+        let template = self.templates.entry(template.clone()).or_insert(template);
+        if self.store.contains_key(template) {
+            self.store.get(template)
+                .ok_or(Error::Parsing("couldn't get value for contained key".to_string()))
+                .cloned()
+        } else {
+            let route = Arc::new(RwLock::new(InnerSingle{
+                parsed: parser::parse(template) .map_err(|e| Error::Parsing(format!("{:?}", e)))?,
+                // ..InnerSingle::default()
+            }));
+            self.store.insert(template.to_string(), route);
+            self.store.get(template)
+                .ok_or(Error::Parsing("couldn't get value for just-inserted key".to_string()))
+                .cloned()
+        }
+    }
+}
+
+pub(crate) fn inner_route_config(rm: impl RouteTemplate) -> Arc<RwLock<InnerSingle>> {
+    let mutex = the_map();
+    let mut map = mutex.lock().expect("route map not to be poisoned");
+    let inner = map.named(rm).expect("routes to be parseable");
+    inner.clone()
+}
+
+pub(crate) fn route_config(rm: impl RouteTemplate) -> Single {
+    Single{ inner: inner_route_config(rm) }
+}
+
+pub(crate) struct Single {
+    inner: Arc<RwLock<InnerSingle>>
+}
+
+impl Single {
+    pub(crate) fn axum_route(&self) -> String {
+        let inner = self.inner.write().expect("not poisoned");
+        inner.axum_route()
+    }
+
+    pub(crate) fn prefixed<'a>(&self, prefix: &'a str) -> InnerSingle
+    {
+        InnerSingle::default()
+    }
+}
+
+#[derive(Default, Clone)]
+struct InnerSingle {
+    parsed: Parsed,
+}
+
+impl InnerSingle {
+    fn auth_expressions(&self) -> Vec<Part> {
+        match &self.parsed.auth {
+            Some(parts) => parts.iter().filter(|part| {
+                !matches!(part, Part::Lit(_))
+            }).cloned().collect(),
+            None => vec![]
+        }
+    }
+
+    fn path_expressions(&self) -> Vec<Part> {
+        self.parsed.path.iter().filter(|part| {
+            !matches!(part, Part::Lit(_))
+        }).cloned().collect()
+    }
+
+    fn query_expressions(&self) -> Vec<Part> {
+        match &self.parsed.query {
+            Some(parts) => parts.iter().filter(|part| {
+                !matches!(part, Part::Lit(_))
+            }).cloned().collect(),
+            None => vec![]
+        }
+    }
+
+    fn expressions(&self) -> Vec<Part> {
+        self.auth_expressions().iter()
+            .chain(self.path_expressions().iter())
+            .chain(self.query_expressions().iter())
+            .cloned().collect()
+
+    }
+
+    fn vars(&self) -> HashSet<String> {
+        let mut allvars: HashSet<String> = Default::default();
+        for exp in self.expressions() {
+            match exp {
+                Part::Expression(vars) |
+                Part::SegVar(vars) |
+                Part::SegRest(vars) |
+                Part::SegPathVar(vars) |
+                Part::SegPathRest(vars) => {
+                    for var in vars {
+                        allvars.insert(var.varname.to_string());
+                    }
+                }
+                Part::Lit(_) => ()
+
+            }
+        }
+        allvars
+    }
+
+    pub(crate) fn hydra_type(&self) -> String {
+        if self.expressions().is_empty() {
+            "Link".to_string()
+        } else {
+            "IriTemplate".to_string()
+        }
+    }
+
+    pub(crate) fn prefixed(&self, prefix: &str) -> Self {
+        InnerSingle{
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
+        let t = UriTemplateStr::new("")?;
+        Ok(t.into())
+    }
+
+    pub(crate) fn fill_uritemplate(&self, policy: FillPolicy, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
+        let mut missing = self.vars();
+        let mut extra: HashSet<String> = Default::default();
+        let mut context = SimpleContext::new();
+
+        for (k,v) in vars {
+            if missing.remove(&k) {
+                extra.insert(k.clone());
+            }
+            context.insert(k,v);
+        }
+
+        match (policy, missing.is_empty(), extra.is_empty()) {
+            (FillPolicy::Strict, false, _) |
+            (FillPolicy::NoMissing, false, _) =>
+                Err(Error::MissingCaptures(missing.iter().cloned().collect())),
+            (FillPolicy::Strict, _, false) |
+            (FillPolicy::NoMissing, _, false) =>
+                Err(Error::ExtraCaptures(extra.iter().cloned().collect())),
+            _ => Ok(UriTemplateStr::new("")?
+                .expand::<IriSpec, _>(&context)?
+                .to_string().try_into()?),
+        }
+    }
+
+    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
+        self.fill_uritemplate(FillPolicy::NoMissing, vars)
+    }
+
+    pub(crate) fn axum_route(&self) -> String {
+        let mut out = "".to_string();
+
+        for part in &self.parsed.path { match part {
+            Part::Lit(l) => out.push_str(l),
+            Part::Expression(vars) |
+            Part::SegVar(vars) |
+            Part::SegPathVar(vars) => out.push_str(&axum7_vars(vars)),
+            Part::SegRest(vars) |
+            Part::SegPathRest(vars) => out.push_str(&axum7_rest(vars))
+        }}
+
+        out
+    }
+}
+
+/*
+* varchar       =  ALPHA / DIGIT / "_" / pct-encoded
+* {/foo} => /:foo
+* /{foo} => /:foo
+* {foo,bar} => /:foobar // because which [,;.&=] delimits?
+* {bar,foo} => /:barfoo
+*
+* {foo:3} => /:foopre3
+* {foo,pre3} => ? /:foopre3
+*
+* {foo:3,bar} => /:foopre3bar
+* {/foo,bar} => <slash-star> :foobar
+*/
+fn axum7_vars(vars: &[VarSpec]) -> String {
+    format!("/:{}", vars.iter().map(|var| var.varname).collect::<Vec<_>>().join(""))
+}
+
+fn axum7_rest(vars: &[VarSpec]) -> String {
+    format!("/*{}", vars.iter().map(|var| var.varname).collect::<Vec<_>>().join(""))
+}
+
+pub(crate) enum FillPolicy {
+    Relaxed,
+    NoMissing,
+    NoExtra,
+    Strict
+}
 
 #[derive(Debug)]
 pub(crate) struct Config{
@@ -113,7 +334,7 @@ impl Config {
                 .expand::<IriSpec, _>(&context)?
                 .to_string().try_into()?)
         } else {
-            Err(Error::MissingCapture(missing_vars))
+            Err(Error::MissingCaptures(missing_vars))
         }
     }
 
@@ -151,14 +372,18 @@ mod test {
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("trouble parsing: {0:?}")]
+    Parsing(String),
     #[error("couldn't validate IRI: {0:?}")]
     IriValidate(#[from] iri_string::validate::Error),
     #[error("error processing IRI template: {0:?}")]
     IriTempate(#[from] iri_string::template::Error),
     #[error("creating a string for an IRI: {0:?}")]
     CreateString(#[from] iri_string::types::CreationError<std::string::String>),
-    #[error("missing caputres: {0:?}")]
-    MissingCapture(Vec<String>),
+    #[error("missing captures: {0:?}")]
+    MissingCaptures(Vec<String>),
+    #[error("extra captures: {0:?}")]
+    ExtraCaptures(Vec<String>),
     #[error("cannot parse string as a header value: {0:?}")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
 }
@@ -170,10 +395,12 @@ impl IntoResponse for Error {
         match self {
             // might specialize these errors more going forward
             // need to consider server vs client
+            Error::Parsing(_) |
             Error::InvalidHeaderValue(_) |
             Error::IriTempate(_) |
             Error::CreateString(_) |
-            Error::MissingCapture(_) |
+            Error::ExtraCaptures(_) |
+            Error::MissingCaptures(_) |
             Error::IriValidate(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response(),
         }
     }

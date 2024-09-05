@@ -10,14 +10,13 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::db;
-
-use crate::routing;
+use crate::{db, routing::{route_config, RouteTemplate}};
 
 mod semweb;
 use semweb::*;
 pub(crate) use semweb::Error;
 
+#[derive(Copy, Clone)]
 pub(crate) enum RouteMap {
     Root,
     Authenticate,
@@ -49,15 +48,16 @@ pub(crate) fn etag_for<T: Serialize>(v: T) -> Result<ETag, Error> {
 
 }
 
-pub(crate) fn route_config(rm: RouteMap) -> routing::Config {
-    let cfg = |t, cs| routing::Config::new(t, cs);
-    use RouteMap::*;
-    match rm {
-        Root => cfg( "/", vec![]),
-        Authenticate => cfg( "/authenticate", vec![]),
-        Profile => cfg( "/profile/{user_id}", vec!["user_id"]),
-        Events => cfg( "/events", vec![]),
-        Event => cfg( "/event/{event_id}", vec!["event_id"])
+impl RouteTemplate for RouteMap {
+    fn route_template(&self) -> String {
+        use RouteMap::*;
+        match self {
+            Root => "/",
+            Authenticate => "/authenticate",
+            Profile => "/profile/{user_id}",
+            Events => "/events",
+            Event => "/event/{event_id}",
+        }.to_string()
     }
 }
 
@@ -71,9 +71,10 @@ pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
         } else {
             "template"
         };
+        let url_template = prefixed.template().expect("a legit URITemplate");
         json!({
             "type": prefixed.hydra_type(),
-            url_attr: prefixed.template_str,
+            url_attr: url_template,
             "operation": ops
         })
     };
