@@ -6,18 +6,24 @@ use std::{
 use axum::{http, response::IntoResponse};
 use iri_string::{
     spec::IriSpec,
-    template::{context::VarName,
+    template::{
         simple_context::SimpleContext,
         UriTemplateStr,
         UriTemplateString
     },
     types::UriRelativeString
 };
+use regex::Regex;
+use serde::de::DeserializeOwned;
 
-use self::parser::{Parsed, Part, VarSpec};
-
+use self::{
+    parser::{Parsed, Part},
+    render::{auth_re_string, axum7_rest, axum7_vars, original_string, path_re_string, re_names}
+};
 
 mod parser;
+mod render;
+mod de;
 
 pub(crate) trait RouteTemplate: Copy {
     fn route_template(&self) -> String;
@@ -29,10 +35,10 @@ pub(crate) struct Map {
     store: HashMap<String, Arc<RwLock<InnerSingle>>>
 }
 
-static THE_MAP:  OnceLock<Mutex<Map>> = OnceLock::new();
+static THE_MAP:  OnceLock<Arc<Mutex<Map>>> = OnceLock::new();
 
-fn the_map() -> &'static Mutex<Map> {
-    THE_MAP.get_or_init(|| Mutex::new(Map::default()))
+fn the_map() -> Arc<Mutex<Map>> {
+    THE_MAP.get_or_init(|| Arc::new(Mutex::new(Map::default()))).clone()
 }
 
 impl Map {
@@ -46,7 +52,7 @@ impl Map {
         } else {
             let route = Arc::new(RwLock::new(InnerSingle{
                 parsed: parser::parse(template) .map_err(|e| Error::Parsing(format!("{:?}", e)))?,
-                // ..InnerSingle::default()
+                ..InnerSingle::default()
             }));
             self.store.insert(template.to_string(), route);
             self.store.get(template)
@@ -56,37 +62,70 @@ impl Map {
     }
 }
 
-pub(crate) fn inner_route_config(rm: impl RouteTemplate) -> Arc<RwLock<InnerSingle>> {
-    let mutex = the_map();
-    let mut map = mutex.lock().expect("route map not to be poisoned");
-    let inner = map.named(rm).expect("routes to be parseable");
-    inner.clone()
-}
-
 pub(crate) fn route_config(rm: impl RouteTemplate) -> Single {
-    Single{ inner: inner_route_config(rm) }
+    let arcmutex = the_map();
+    let mut map = arcmutex.lock().expect("route map not to be poisoned");
+    let inner = map.named(rm).expect("routes to be parseable");
+    Single{
+        inner: inner.clone()
+    }
 }
 
+pub(crate) enum FillPolicy {
+    Relaxed,
+    NoMissing,
+    NoExtra,
+    Strict
+}
+
+// We have a RwLock here because we would like to be able to cache rendering in the InnerSingle To
+// do that, we'd need to be able to accept a &mut self, or else replace the innersingle with a
+// cloned version where we update the values (imagine InnerSingle with OnceLocks for many of its
+// methods) at some point, we might also decide that a given InnerSingle is close enough to done
+// and finish its rendering, and have a FixedSingle or something. Or just start there: render out
+// all the things a given route might need and cache that. For the time being, we'll render each
+// time (and just get read locks), but at some point in the future there's another round of
+// over-engineering to tackle
 pub(crate) struct Single {
-    inner: Arc<RwLock<InnerSingle>>
+    inner: Arc<RwLock<InnerSingle>>,
 }
 
 impl Single {
     pub(crate) fn axum_route(&self) -> String {
-        let inner = self.inner.write().expect("not poisoned");
+        let inner = self.inner.read().expect("not poisoned");
         inner.axum_route()
     }
 
-    pub(crate) fn prefixed<'a>(&self, prefix: &'a str) -> InnerSingle
+    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
+        let inner = self.inner.read().expect("not poisoned");
+        inner.fill(vars)
+    }
+
+    pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
+        let inner = self.inner.read().expect("not poisoned");
+        inner.template()
+    }
+
+    pub(crate) fn hydra_type(&self) -> String {
+        let inner = self.inner.read().expect("not poisoned");
+        inner.hydra_type()
+    }
+
+    pub(crate) fn prefixed(&self, prefix: &str) -> Single
     {
-        InnerSingle::default()
+        let mut inner = self.inner.write().expect("not poisoned");
+        Single{
+            inner: Arc::new(RwLock::new(inner.prefixed(prefix)))
+        }
     }
 }
 
 #[derive(Default, Clone)]
 struct InnerSingle {
     parsed: Parsed,
+    prefixes: HashMap<String, InnerSingle>
 }
+
 
 impl InnerSingle {
     fn auth_expressions(&self) -> Vec<Part> {
@@ -125,12 +164,12 @@ impl InnerSingle {
         let mut allvars: HashSet<String> = Default::default();
         for exp in self.expressions() {
             match exp {
-                Part::Expression(vars) |
-                Part::SegVar(vars) |
-                Part::SegRest(vars) |
-                Part::SegPathVar(vars) |
-                Part::SegPathRest(vars) => {
-                    for var in vars {
+                Part::Expression(exp) |
+                Part::SegVar(exp) |
+                Part::SegRest(exp) |
+                Part::SegPathVar(exp) |
+                Part::SegPathRest(exp) => {
+                    for var in exp.varspecs {
                         allvars.insert(var.varname.to_string());
                     }
                 }
@@ -149,14 +188,68 @@ impl InnerSingle {
         }
     }
 
-    pub(crate) fn prefixed(&self, prefix: &str) -> Self {
-        InnerSingle{
-            ..self.clone()
+    pub(crate) fn prefixed(&mut self, prefix: &str) -> Self {
+        let prefix_owned = prefix.to_owned();
+        if self.prefixes.contains_key(&prefix_owned) {
+            self.prefixes.get(&prefix_owned)
+                .expect("couldn't get value for contained key")
+                .clone()
+        } else {
+            let mut prefixed = InnerSingle{
+                ..self.clone()
+            };
+            prefixed.parsed.path.insert(0, Part::Lit(prefix.to_owned()));
+            self.prefixes.insert(prefix_owned.to_string(), prefixed.clone());
+            prefixed
         }
     }
 
+    fn re_str(&self) -> String {
+        let mut re = self.parsed.auth.iter().flatten().map(auth_re_string)
+            .chain(self.parsed.path.iter().map(path_re_string))
+            .collect::<Vec<_>>().join("");
+        re.push_str("[?#]?.*");
+        re
+    }
+
+    fn re_names(&self) -> Vec<String> {
+        self.parsed.auth.iter().flatten().map(re_names)
+            .chain(self.parsed.path.iter().map(re_names))
+            .flatten().collect::<Vec<_>>()
+    }
+
+    // definitely consider caching this result
+    fn regex(&self) -> Result<Regex, regex::Error> {
+        Regex::new(&self.re_str())
+    }
+
+    fn extract<T: DeserializeOwned>(&self, url: &str) -> Result<T, Error> {
+        let caps = self.regex()?.captures(url)
+            .ok_or_else(|| Error::NoMatch(self.re_str(), url.to_string()))?;
+        let names = self.re_names();
+        let captures = names.into_iter()
+            .filter_map(|name|
+                caps.name(&name)
+                    .and_then(move |m| percent_decode(m.as_str())
+                        .map(move |value| (Arc::from(name.as_str()), value)
+                    )
+                )
+        ).collect::<Vec<_>>();
+
+        T::deserialize(de::CapturesDeserializer::new(&captures))
+            .map_err(Error::from)
+    }
+
+    fn template_string(&self) -> String {
+        self.parsed.auth.iter().flatten().map(original_string)
+        .chain(self.parsed.path.iter().map(original_string))
+        .chain(self.parsed.query.iter().flatten().map(original_string))
+        .collect::<Vec<_>>().join("")
+    }
+
     pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
-        let t = UriTemplateStr::new("")?;
+        let string = self.template_string();
+        let t = UriTemplateStr::new(&string)?;
         Ok(t.into())
     }
 
@@ -194,180 +287,85 @@ impl InnerSingle {
 
         for part in &self.parsed.path { match part {
             Part::Lit(l) => out.push_str(l),
-            Part::Expression(vars) |
-            Part::SegVar(vars) |
-            Part::SegPathVar(vars) => out.push_str(&axum7_vars(vars)),
-            Part::SegRest(vars) |
-            Part::SegPathRest(vars) => out.push_str(&axum7_rest(vars))
+            Part::Expression(exp) |
+            Part::SegVar(exp) |
+            Part::SegPathVar(exp) => out.push_str(&axum7_vars(&exp.varspecs)),
+            Part::SegRest(exp) |
+            Part::SegPathRest(exp) => out.push_str(&axum7_rest(&exp.varspecs))
         }}
 
         out
     }
 }
 
-/*
-* varchar       =  ALPHA / DIGIT / "_" / pct-encoded
-* {/foo} => /:foo
-* /{foo} => /:foo
-* {foo,bar} => /:foobar // because which [,;.&=] delimits?
-* {bar,foo} => /:barfoo
-*
-* {foo:3} => /:foopre3
-* {foo,pre3} => ? /:foopre3
-*
-* {foo:3,bar} => /:foopre3bar
-* {/foo,bar} => <slash-star> :foobar
-*/
-fn axum7_vars(vars: &[VarSpec]) -> String {
-    format!("/:{}", vars.iter().map(|var| var.varname).collect::<Vec<_>>().join(""))
-}
-
-fn axum7_rest(vars: &[VarSpec]) -> String {
-    format!("/*{}", vars.iter().map(|var| var.varname).collect::<Vec<_>>().join(""))
-}
-
-pub(crate) enum FillPolicy {
-    Relaxed,
-    NoMissing,
-    NoExtra,
-    Strict
-}
-
-#[derive(Debug)]
-pub(crate) struct Config{
-    pub(crate) template_str: String,
-    captures: Vec<String>,
-    wildcard: Option<String>
-}
-
-
-fn template_munge(tmpl: &str) -> String {
-    let mut tokens = tmpl.split(&['{','}']);
-    let mut munged = "".to_string();
-
-    while let Some(token) = tokens.next() {
-        munged.push_str(token);
-        if let Some(next) = tokens.next() {
-            let (op, rest) = next.split_at(1);
-            let (name, last) = rest.split_at(rest.len() - 1);
-            match (op, last) {
-                ("/", "*") => {
-                    munged.push_str("/{+"); munged.push_str(name);
-                }
-                _ => {
-                    munged.push_str("{+"); munged.push_str(next);
-                }
-            }
-            munged.push('}');
-        }
-    }
-    munged
-}
-
-impl Config {
-    pub(crate) fn new( tmpl: &str, captures: Vec<&str>) -> Self {
-        Self{
-            template_str: tmpl.to_string(),
-            captures: captures.into_iter().map(|c| c.to_string()).collect(),
-            wildcard: None
-        }
-    }
-
-    /*
-    pub(crate) fn new_with_wildcard(tmpl: &str, captures: Vec<&str>, rest: &str) -> Self {
-        Self{
-            template_str: tmpl.to_string(),
-            captures: captures.into_iter().map(|c| c.to_string()).collect(),
-            wildcard: Some(rest.to_string())
-        }
-    }
-    */
-
-    pub(crate) fn hydra_type(&self) -> String {
-        if self.captures.is_empty() && self.wildcard.is_none() {
-            "Link".to_string()
-        } else {
-            "IriTemplate".to_string()
-        }
-    }
-
-    pub(crate) fn prefixed(&self, prefix: &str) -> Self {
-        let mut template_str = prefix.to_string();
-        template_str.push_str(&self.template_str);
-        Self{
-            template_str,
-            captures: self.captures.clone(),
-            wildcard: self.wildcard.clone()
-        }
-    }
-
-    pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
-        let t = UriTemplateStr::new(&self.template_str)?;
-        Ok(t.into())
-    }
-
-    /*
-        .fill(vec![("event_id".to_string(), new_id.to_string())])
-        .map_err(internal_error)
-        .and_then(|location_uri| {
-          location_uri.to_string().try_into().map_err(internal_error)
-        })
-    */
-    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
-        let mut context = SimpleContext::new();
-        for (k,v) in vars {
-            context.insert(k,v);
-        }
-        let mut missing_vars = vec![];
-        for v in &self.captures {
-            if context.get(VarName::new(v)?).is_none() {
-                missing_vars.push(v.to_string())
-            }
-        }
-        if let Some(v) = &self.wildcard {
-            if context.get(VarName::new(v)?).is_none() {
-                missing_vars.push(v.to_string())
-            }
-        }
-        if missing_vars.is_empty() {
-            Ok(UriTemplateStr::new(&self.template_str)?
-                .expand::<IriSpec, _>(&context)?
-                .to_string().try_into()?)
-        } else {
-            Err(Error::MissingCaptures(missing_vars))
-        }
-    }
-
-    pub(crate) fn axum_route(&self) -> String {
-        let mut context = SimpleContext::new();
-        for c in &self.captures {
-            context.insert(c.clone(), format!(":{}", c));
-        }
-        if let Some(w) = &self.wildcard {
-            context.insert(w.clone(), format!("*{}", w));
-        }
-        let route_template = template_munge(&self.template_str);
-        let uri: UriRelativeString = UriTemplateStr::new(&route_template)
-            .unwrap_or_else(|_| panic!("{:?} to have a validate template_str", self))
-            .expand::<IriSpec, _>(&context)
-            .unwrap_or_else(|_| panic!("{:?} to expand successfully", self))
-            .to_string()
-            .try_into().unwrap_or_else(|_| panic!("{:?} to render to a relative path", self));
-        uri.path_str().to_string()
-    }
+fn percent_decode<S: AsRef<str>>(s: S) -> Option<Arc<str>> {
+    percent_encoding::percent_decode(s.as_ref().as_bytes())
+        .decode_utf8()
+        .ok()  //consider: Result?
+        .map(|decoded| decoded.as_ref().into())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    fn quick_route(input: &str) -> InnerSingle {
+        InnerSingle{
+            parsed: parser::parse(input).unwrap(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn round_trip() {
+        let input = "http://example.com/user/{user_id}{?something,mysterious}";
+
+        let route = quick_route(input);
+
+        assert_eq!(
+            route.template_string(),
+            input.to_string()
+        )
+    }
+
+    #[test]
+    fn prefixing() {
+        let mut route = quick_route("http://example.com/user/{user_id}{?something,mysterious}");
+        let prefixed = route.prefixed("/api");
+        assert_eq!(
+            prefixed.template_string(),
+             "http://example.com/api/user/{user_id}{?something,mysterious}".to_string()
+            //                  ^^^^
+        )
+    }
+
     #[test]
     fn axum_routes() {
-        let rc = Config::new("/api/event/{event_id}", vec!["event_id"]);
+        let rc = quick_route("/api/event/{event_id}");
         assert_eq!(rc.axum_route(), "/api/event/:event_id".to_string());
-        // let rc = RouteConfig::new_with_wildcard("/api/something/{id}{/rest*}", vec!["id"], "rest");
-        // assert_eq!(rc.axum_route(), "/api/something/:id/*rest".to_string());
     }
+    /*
+    * Considerations for regexp:
+    * if lits include //, we can sensibly match variables in auth part;
+    * otherwise, we have to match '[^/]* //[^/]*' for the authority
+    */
+    #[test]
+    fn regex() {
+        let route = quick_route("http://{domain}/user/{user_id}/file{/file_id}?something={good}{&mysterious}");
+        assert_eq!(
+            route.re_str(),
+            "http://(?<domain>[^/,]*)/user/(?<user_id>[^/?#,]*)/file/(?<file_id>[^/?#/]*)[?#]?.*"
+        );
+    }
+
+    /*
+    #[test]
+    fn extraction() {
+        let route = quick_route("http://{domain}/user/{user_id}/file{/file_id}?something={good}{&mysterious}");
+        let uri = "http://example.com/user/me@nowhere.org/file/17?something=weird&mysterious=100";
+        assert_eq!(route.extract(uri), ("me@nowhere.org", 17));
+    }
+    */
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -386,6 +384,12 @@ pub enum Error {
     ExtraCaptures(Vec<String>),
     #[error("cannot parse string as a header value: {0:?}")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+    #[error("regex parse: {0:?}")]
+    RegexParse(#[from] regex::Error),
+    #[error("no match: {0:?} vs {1:?}")]
+    NoMatch(String, String),
+    #[error("capture deserialization: {0:?}")]
+    Deserialization(#[from] de::CaptureDeserializationError),
 }
 
 
@@ -395,6 +399,9 @@ impl IntoResponse for Error {
         match self {
             // might specialize these errors more going forward
             // need to consider server vs client
+            Error::Deserialization(_) |
+            Error::NoMatch(_,_) |
+            Error::RegexParse(_) |
             Error::Parsing(_) |
             Error::InvalidHeaderValue(_) |
             Error::IriTempate(_) |
