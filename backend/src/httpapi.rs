@@ -11,6 +11,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{db, routing::{self, route_config, RouteTemplate}};
 
+use semweb_api_derives::{Context, Listable};
+
 mod semweb;
 use semweb::*;
 pub(crate) use semweb::Error;
@@ -105,9 +107,8 @@ struct EventLocate {
     event_id: u16
 }
 
-use semweb_api_derives::Listable;
 
-#[derive(Serialize, Clone, Listable)]
+#[derive(Serialize, Clone, Listable, Context)]
 struct EventGamesLocate {
     event_id: u16,
     user_id: String

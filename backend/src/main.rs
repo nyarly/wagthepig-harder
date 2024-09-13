@@ -185,7 +185,7 @@ async fn update_event(
         .with_id(event_id)
         .update(&db)
         .and_then(|event| async move {
-            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str()).template()?;
+            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
             Ok(Json(httpapi::EventResponse::from_query(&event_tmpl, event)?))
         }).await
 }
@@ -199,7 +199,7 @@ async fn retrieve_event(
     .and_then(|maybe_event| async {
       match maybe_event {
         Some(event) => {
-          let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str()).template()?;
+          let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
           httpapi::EventResponse::from_query(&event_tmpl, event)
                     .map_err(|e| e.into())
         }
