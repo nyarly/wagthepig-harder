@@ -5,11 +5,9 @@ use std::{
 use axum::{http, response::IntoResponse};
 use iri_string::{
     spec::IriSpec,
-    types::IriRelativeString,
     template::{
-        UriTemplateStr,
-        UriTemplateString
-    }
+        DynamicContext, UriTemplateStr, UriTemplateString
+    }, types::IriRelativeString
 };
 use regex::Regex;
 use serde::de::DeserializeOwned;
@@ -60,11 +58,11 @@ impl Map {
     }
 }
 
-pub(crate) fn route_config(rm: impl RouteTemplate) -> Single {
+pub(crate) fn route_config(rm: impl RouteTemplate) -> Entry {
     let arcmutex = the_map();
     let mut map = arcmutex.lock().expect("route map not to be poisoned");
     let inner = map.named(rm).expect("routes to be parseable");
-    Single{
+    Entry{
         inner: inner.clone()
     }
 }
@@ -83,7 +81,7 @@ pub(crate) trait Listable {
     fn list_vars(&self) -> Vec<String>;
 }
 
-pub(crate) struct VarsList<L: IntoIterator<Item = (String, String)>>( L );
+pub(crate) struct VarsList<L: IntoIterator<Item = (String, String)>>( pub L );
 
 impl<L: Clone + IntoIterator<Item = (String, String)>> Listable for VarsList<L> {
     fn list_vars(&self) -> Vec<String> {
@@ -104,45 +102,50 @@ impl<L: Clone + IntoIterator<Item = (String, String)>> Context for VarsList<L> {
 
 pub(crate) struct PolicyContext<C: Context + Listable> {
     provided: HashSet<String>,
-    extra: Arc<Mutex<HashSet<String>>>,
-    missing: Arc<Mutex<HashSet<String>>>,
+    extra: HashSet<String>,
+    missing: HashSet<String>,
     inner: C
 }
 
 impl<C: Context + Listable> PolicyContext<C> {
     fn new(inner: C) -> Self {
-        let provided = HashSet::from_iter(inner.list_vars());
         Self{
-            provided: provided.clone(),
-            extra: Arc::new(Mutex::new(provided)),
-            missing: Arc::new(Mutex::new(HashSet::new())),
+            provided: HashSet::new(),
+            extra: HashSet::new(),
+            missing: HashSet::new(),
             inner
         }
     }
 
     fn check(&self, policy: FillPolicy) -> Result<(), Error> {
-        let missing = self.missing.lock().expect("lock not poisoned");
-        let extra = self.extra.lock().expect("lock not poisoned");
-        match (policy, missing.is_empty(), extra.is_empty()) {
+        match (policy, self.missing.is_empty(), self.extra.is_empty()) {
             (FillPolicy::Strict, false, _) |
             (FillPolicy::NoMissing, false, _) =>
-                Err(Error::MissingCaptures(missing.iter().cloned().collect())),
+                Err(Error::MissingCaptures(self.missing.iter().cloned().collect())),
             (FillPolicy::Strict, _, false) |
             (FillPolicy::NoMissing, _, false) =>
-                Err(Error::ExtraCaptures(extra.iter().cloned().collect())),
+                Err(Error::ExtraCaptures(self.extra.iter().cloned().collect())),
             _ => Ok(())
         }
     }
 }
 
-impl<C: Context + Listable> Context for PolicyContext<C> {
-    fn visit<V: Visitor>(&self, visitor: V) -> V::Result {
+impl<C: Context + Listable> DynamicContext for PolicyContext<C> {
+    fn on_expansion_start(&mut self) {
+        self.provided.clear();
+        self.extra.clear();
+        self.missing.clear();
+        for v in self.inner.list_vars() {
+            self.provided.insert(v.clone());
+            self.extra.insert(v);
+        }
+    }
+
+    fn visit_dynamic<V: Visitor>(&mut self, visitor: V) -> V::Result {
         let k = visitor.var_name().as_str();
-        let mut extra = self.extra.lock().expect("lock not poisoned");
-        extra.remove(k);
+        self.extra.remove(k);
         if !self.provided.contains(k) {
-            let mut missing = self.missing.lock().expect("lock not poisoned");
-            missing.insert(k.to_string());
+            self.missing.insert(k.to_string());
         }
         self.inner.visit(visitor)
     }
@@ -157,19 +160,19 @@ impl<C: Context + Listable> Context for PolicyContext<C> {
 // all the things a given route might need and cache that. For the time being, we'll render each
 // time (and just get read locks), but at some point in the future there's another round of
 // over-engineering to tackle
-pub(crate) struct Single {
+pub(crate) struct Entry {
     inner: Arc<RwLock<InnerSingle>>,
 }
 
-impl Single {
+impl Entry {
     pub(crate) fn axum_route(&self) -> String {
         let inner = self.inner.read().expect("not poisoned");
         inner.axum_route()
     }
 
-    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)> + Clone) -> Result<IriRelativeString, Error> {
+    pub(crate) fn fill(&self, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
         let inner = self.inner.read().expect("not poisoned");
-        inner.fill_uritemplate(FillPolicy::NoMissing, VarsList(vars))
+        inner.fill_uritemplate(FillPolicy::NoMissing, vars)
     }
 
     pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
@@ -188,9 +191,9 @@ impl Single {
         inner.extract(url)
     }
 
-    pub(crate) fn prefixed(&self, prefix: &str) -> Single {
+    pub(crate) fn prefixed(&self, prefix: &str) -> Entry {
         let mut inner = self.inner.write().expect("not poisoned");
-        Single{
+        Entry{
             inner: Arc::new(RwLock::new(inner.prefixed(prefix)))
         }
     }
@@ -233,27 +236,6 @@ impl InnerSingle {
             .chain(self.path_expressions().iter())
             .chain(self.query_expressions().iter())
             .cloned().collect()
-
-    }
-
-    fn vars(&self) -> HashSet<String> {
-        let mut allvars: HashSet<String> = Default::default();
-        for exp in self.expressions() {
-            match exp {
-                Part::Expression(exp) |
-                Part::SegVar(exp) |
-                Part::SegRest(exp) |
-                Part::SegPathVar(exp) |
-                Part::SegPathRest(exp) => {
-                    for var in exp.varspecs {
-                        allvars.insert(var.varname.to_string());
-                    }
-                }
-                Part::Lit(_) => ()
-
-            }
-        }
-        allvars
     }
 
     fn hydra_type(&self) -> String {
@@ -330,12 +312,12 @@ impl InnerSingle {
     }
 
     fn fill_uritemplate(&self, policy: FillPolicy, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
-        let pol = PolicyContext::new(vars);
+        let mut pol = PolicyContext::new(vars);
 
         let templ = &self.template()?;
-        let expanded = templ.expand::<IriSpec,_>(&pol)?;
+        let expanded = templ.expand_dynamic_to_string::<IriSpec,_>(&mut pol)?;
         pol.check(policy)?;
-        Ok(expanded.to_string().try_into()?)
+        Ok(expanded.try_into()?)
     }
 
     fn axum_route(&self) -> String {

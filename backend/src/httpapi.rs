@@ -1,5 +1,3 @@
-use core::fmt::Debug;
-
 use axum::{response::IntoResponse, Json};
 use axum_extra::{headers::ETag, TypedHeader};
 use base64ct::{Base64, Encoding};
@@ -8,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
+use iri_string::template::Context;
 
-use crate::{db, routing::{self, route_config, RouteTemplate}};
+use crate::{db, routing::{self, route_config, RouteTemplate, Listable}};
 
 use semweb_api_derives::{Context, Listable};
 
@@ -20,7 +19,7 @@ pub(crate) use semweb::Error;
 const RESOURCE: &str = "Resource";
 
 #[derive(Serialize, Clone)]
-struct ResourceType(&'static str);
+pub(crate) struct ResourceType(&'static str);
 
 impl Default for ResourceType {
     fn default() -> Self {
@@ -29,18 +28,30 @@ impl Default for ResourceType {
 }
 
 #[derive(Serialize, Clone)]
-struct ResourceFields {
+pub(crate) struct ResourceFields<L: Serialize + Clone> {
     pub id: IriReferenceString,
     pub r#type: ResourceType,
     pub operation: Vec<Operation>,
+    pub find_me: IriTemplate,
+    pub nick: L
 }
 
-impl ResourceFields {
-    fn new(id: impl TryInto<IriReferenceString> + Debug + Clone, ops: Vec<Operation>) -> Result<Self, Error> {
+impl<L: Serialize + Clone + Listable + Context> ResourceFields<L> {
+    fn new(route: &routing::Entry, nick: L, api_name: &str, operation: Vec<Operation>) -> Result<Self, Error> {
+        let id = route.fill(nick.clone())?
+            .clone().try_into().map_err(|e| Error::IriConversion(format!("{:?}", e)))?;
+        let template = route.template()?;
+
         Ok(Self{
-            id: id.clone().try_into().map_err(|_| Error::IriConversion(format!("{:?}", id)))?,
+            id,
+            nick,
+            operation,
             r#type: Default::default(),
-            operation: ops
+            find_me: IriTemplate {
+                template,
+                id: api_name.try_into()?,
+                operation: vec![ op(ActionType::Find) ]
+            },
         })
     }
 }
@@ -94,29 +105,28 @@ impl RouteTemplate for RouteMap {
     }
 }
 
-#[derive(Serialize, Clone)]
-struct EmptyLocate {}
+#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+pub(crate) struct EmptyLocate {}
 
-#[derive(Serialize, Clone)]
-struct ProfileLocate {
-    user_id: u16
-}
-
-#[derive(Serialize, Clone)]
-struct EventLocate {
-    event_id: u16
-}
-
-
-#[derive(Serialize, Clone, Listable, Context)]
-struct EventGamesLocate {
-    event_id: u16,
+#[derive(Default, Serialize, Clone, Listable, Context)]
+pub(crate) struct ProfileLocate {
     user_id: String
 }
 
-#[derive(Serialize, Clone)]
-struct GameLocate {
-    game_id: u16
+#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+pub(crate) struct EventLocate {
+    event_id: i64
+}
+
+#[derive(Default, Serialize, Clone, Listable, Context)]
+pub(crate) struct EventGamesLocate {
+    event_id: i64,
+    user_id: String
+}
+
+#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+pub(crate) struct GameLocate {
+    game_id: i64
 }
 
 pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
@@ -152,20 +162,29 @@ pub(crate) struct AuthnRequest {
     pub password: String
 }
 
-#[derive(Default, Serialize, Clone)]
+#[derive(Serialize, Clone)]
 pub(crate) struct UserResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<ProfileLocate>,
+
     pub name: Option<String>,
     pub bgg_username: Option<String>,
     pub email: String,
 }
 
-impl From<db::User> for UserResponse {
-    fn from(value: db::User) -> Self {
-        Self{
+impl UserResponse {
+    pub(crate) fn from_query(nested_at: &str, value: db::User) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &route_config(RouteMap::Profile).prefixed(nested_at),
+                ProfileLocate{ user_id: value.email.clone() },
+                "api:profileByEmailTemplate",
+                vec![ op(ActionType::View) ]
+            )?,
             name: value.name,
             bgg_username: value.bgg_username,
             email: value.email
-        }
+        })
     }
 }
 
@@ -173,7 +192,7 @@ impl From<db::User> for UserResponse {
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventListResponse {
     #[serde(flatten)]
-    pub resource_fields: ResourceFields,
+    pub resource_fields: ResourceFields<EmptyLocate>,
 
     pub event_by_id: IriTemplate,
     pub events: Vec<EventResponse>,
@@ -182,16 +201,23 @@ pub(crate) struct EventListResponse {
 impl EventListResponse {
     pub fn from_query(nested_at: &str, list: Vec<db::Event>) -> Result<Self, Error> {
         let event_route = route_config(RouteMap::Event).prefixed(nested_at);
-        let id = event_route.fill(vec![])?;
         let event_tmpl = event_route.template()?;
+
         Ok(Self{
-            resource_fields: ResourceFields::new(id, vec![ op(ActionType::View), op(ActionType::Add) ])?,
+            resource_fields: ResourceFields::new(
+                &route_config(RouteMap::Events).prefixed(nested_at),
+                EmptyLocate{},
+                "api:eventsList",
+                vec![ op(ActionType::View), op(ActionType::Add) ]
+            )?,
             event_by_id: IriTemplate {
                 id: "api:eventByIdTemplate".try_into()?,
                 template: event_tmpl,
                 operation: vec![ op(ActionType::Find) ]
             },
-            events: list.into_iter().map(|ev| EventResponse::from_query(&event_route,ev)).collect::<Result<_,_>>()?,
+            events: list.into_iter().map(|ev|
+                EventResponse::from_query(&event_route,ev))
+                .collect::<Result<_,_>>()?,
         })
     }
 }
@@ -200,8 +226,7 @@ impl EventListResponse {
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventResponse {
     #[serde(flatten)]
-    pub resource_fields: ResourceFields,
-    pub event_by_id: IriTemplate,
+    pub resource_fields: ResourceFields<EventLocate>,
 
     pub name: Option<String>,
     pub time: Option<NaiveDateTime>,
@@ -210,17 +235,17 @@ pub(crate) struct EventResponse {
 }
 
 impl EventResponse {
-    pub(crate) fn from_query(idtmpl: &routing::Single, value: db::Event) -> Result<Self, Error> {
-        let id = idtmpl.fill(vec![("event_id".to_string(), value.id.to_string())])?;
+    pub(crate) fn from_query(idtmpl: &routing::Entry, value: db::Event) -> Result<Self, Error> {
         Ok(Self{
-            resource_fields: ResourceFields::new(id, vec![ op(ActionType::View), op(ActionType::Update) ])?,
+            resource_fields: ResourceFields::new(
+                idtmpl,
+                EventLocate{ event_id: value.id },
+                "api:eventByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+
             name: value.name,
             location: value.r#where,
-            event_by_id: IriTemplate {
-                id: "api:eventByIdTemplate".try_into()?,
-                template: idtmpl.template()?,
-                operation: vec![ op(ActionType::Find) ]
-            },
             time: value.date,
             description: value.description.clone()
         })
@@ -252,52 +277,21 @@ impl EventUpdateRequest {
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventGameListResponse {
     #[serde(flatten)]
-    pub resource_fields: ResourceFields,
-    pub event_games_by_id: IriTemplate,
-    // location: Type
+    pub resource_fields: ResourceFields<EventGamesLocate>,
 
     pub games: Vec<EventGameResponse>
 }
 
-/*
-#[derive(Locator)]
-struct EventGameListLocator {
-  event_id: u16,
-  user_id: String,
-}
-
-impl IntoIterator for EventGameListLocator {
-  Item = (String, String)
-
-  fn into_iter() -> LocatorIter
-}
-
-struct LocatorIter {
-  over: EventGameListLocator
-  index: 0
-}
-
-impl Iterator for LocatorIter {
-  fn next() -> Option<(String, String)> {
-  }
-}
-*/
-
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: u16, user_id: String, list: Vec<db::Game>) -> Result<Self, Error> {
-        let route = &route_config(RouteMap::EventGames).prefixed(nested_at);
-        let id = route.fill([
-            ("event_id".to_string(), event_id.to_string()),
-            ("user_id".to_string(), user_id)
-        ])?;
+    pub fn from_query(nested_at: &str, event_id: i64, user_id: String, list: Vec<db::Game>) -> Result<Self, Error> {
         let game_tmpl = route_config(RouteMap::Game).prefixed(nested_at);
         Ok(Self{
-            resource_fields: ResourceFields::new(id, vec![ op(ActionType::View), op(ActionType::Add) ])?,
-            event_games_by_id: IriTemplate {
-                id: "api:eventGamesByIdTemplate".try_into()?,
-                template: route.template()?,
-                operation: vec![ op(ActionType::Find) ]
-            },
+            resource_fields: ResourceFields::new(
+                &route_config(RouteMap::EventGames).prefixed(nested_at),
+                EventGamesLocate{ event_id, user_id },
+                "api:gamesListByEventIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Add) ]
+            )?,
             games: list.into_iter().map(|game|
                 EventGameResponse::from_query(&game_tmpl,game)
             ).collect::<Result<_,_>>()?
@@ -309,30 +303,46 @@ impl EventGameListResponse {
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventGameResponse {
     #[serde(flatten)]
-    pub resource_fields: ResourceFields,
-/*
-    pub id: i64,
+    pub resource_fields: ResourceFields<GameLocate>,
+
     pub name: Option<String>,
     pub min_players: Option<i32>,
     pub max_players: Option<i32>,
     pub bgg_link: Option<String>,
     pub duration_secs: Option<i32>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-    pub event_id: i64,
-    pub suggestor_id: i64,
     pub bgg_id: Option<String>,
     pub pitch: Option<String>,
     pub interested: Option<bool>,
     pub can_teach: Option<bool>,
+
+/*
+    // it might be nice to include name/email of suggestor
+    //   debatable though: are we trying to play games,
+    //   or play with specific people?
+    //
+    pub suggestor_id: i64,
 */
 }
 
 impl EventGameResponse {
-    pub fn from_query(tmpl: &routing::Single, value: db::Game) -> Result<Self, Error> {
-        let id = tmpl.fill([("game_id".to_string(), value.id.to_string())])?;
+    pub fn from_query(route: &routing::Entry, value: db::Game) -> Result<Self, Error> {
         Ok(Self{
-            resource_fields: ResourceFields::new(id, vec![ op(ActionType::View), op(ActionType::Update) ])?,
+            resource_fields: ResourceFields::new(
+                route,
+                GameLocate{ game_id: value.id },
+                "api:gameByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+
+            name: value.name,
+            min_players: value.min_players,
+            max_players: value.max_players,
+            bgg_link: value.bgg_link,
+            duration_secs: value.duration_secs,
+            bgg_id: value.bgg_id,
+            pitch: value.pitch,
+            interested: value.interested,
+            can_teach: value.can_teach,
         })
     }
 }

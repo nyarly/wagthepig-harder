@@ -70,8 +70,7 @@ pub fn context_derive(item: StdTokenStream) -> StdTokenStream {
         impl ::iri_string::template::context::Context for #struct_name {
             fn visit<V: iri_string::template::context::Visitor>(&self, visitor: V) -> V::Result {
                 match visitor.var_name().as_str() {
-                    #( stringify!(#vars) => visitor.visit_string(self.#vars.clone())),*
-                    ,
+                    #( stringify!(#vars) => visitor.visit_string(self.#vars.clone()), )*
                     _ => visitor.visit_undefined()
                 }
             }
@@ -88,10 +87,10 @@ fn parse(input: StdTokenStream) -> (Ident, Vec<Ident>) {
     #[cfg(debug_output)]
     eprintln!("INPUT: {:?}\n\n", proc2_item);
     let mut tok_iter = proc2_item.into_iter().peekable();
-    while let Some(_) = tok_iter.next_if(|tok| match tok {
+    while tok_iter.next_if(|tok| match tok {
         TokenTree::Ident(s) => s != "struct",
         _ => true
-    }) {};
+    }).is_some() {};
 
     let qstruct = match tok_iter.next() {
         Some(TokenTree::Ident(s)) => s,

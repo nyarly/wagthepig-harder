@@ -21,7 +21,7 @@ use futures::future::TryFutureExt;
 use biscuits::Authentication;
 use httpapi::{RouteMap, EtaggedJson};
 
-use crate::{httpapi::etag_for, routing::route_config};
+use crate::{httpapi::etag_for, routing::{route_config, VarsList}};
 
 // crate candidates
 mod biscuits;
@@ -98,29 +98,32 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
 
   use RouteMap::*;
   let profile_path = path(Profile);
-  Router::new()
-    .route(&profile_path,
-      get(get_profile))
+    Router::new()
+        .route(&profile_path,
+            get(get_profile))
 
-    .route(&path(Events),
-      get(get_event_list)
-      .post(create_new_event)
-    )
+        .route(&path(Events),
+            get(get_event_list)
+                .post(create_new_event)
+        )
 
-    .route(&path(Event),
-      get(get_event)
-      .put(update_event)
-    )
+        .route(&path(Event),
+            get(get_event)
+                .put(update_event)
+        )
 
-    .layer(tower::ServiceBuilder::new()
-      .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
-      .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
+        .route(&path(EventGames),
+            get(get_event_games)
+        )
+
+        .layer(tower::ServiceBuilder::new()
+            .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
+            .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
             allow if route({profile_path}), path_param("useri_id", $user), user($user);
             deny if route({profile_path});
             allow if user($user);
             "#, profile_path = profile_path))
-      )
-    )
+            ))
 }
 
 #[debug_handler(state = AppState)]
@@ -131,11 +134,12 @@ async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
 #[debug_handler(state = AppState)]
 async fn get_profile(
   State(db): State<Pool<Postgres>>,
+  nested_at: extract::NestedPath,
   Path(user_id): Path<String>
 ) -> impl IntoResponse {
   db::User::by_email(&db, user_id)
         .and_then(|profile| async {
-            Ok(EtaggedJson(httpapi::UserResponse::from(profile)))
+            Ok(EtaggedJson(httpapi::UserResponse::from_query(nested_at.as_str(), profile)?))
         }).await
 }
 
@@ -209,20 +213,18 @@ async fn retrieve_event(
     .await
 }
 
-/*
 #[debug_handler(state = AppState)]
 async fn get_event_games(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
   Path((event_id, user_id)): extract::Path<(i64, String)>,
 ) -> impl IntoResponse {
-  db::Game::get_all_for_event_and_user(&db, event_id, user_id)
+  db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone())
     .and_then(|games| async {
-      Ok(Json(httpapi::EventGamesResponse::from_query(nested_at.as_str(), games)?))
+      Ok(Json(httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?))
     })
     .await
 }
-*/
 
 
 #[debug_handler(state = AppState)]
@@ -236,7 +238,7 @@ async fn create_new_event(
         .and_then(|new_id| async move {
             route_config(RouteMap::Event)
                 .prefixed(nested_at.as_str())
-                .fill(vec![("event_id".to_string(), new_id.to_string())])
+                .fill(VarsList(vec![("event_id".to_string(), new_id.to_string())]))
                 .map(|location_uri| {
                     (StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())])
                 })
@@ -252,13 +254,14 @@ async fn authenticate(
   State(db): State<Pool<Postgres>>,
   State(auth): State<Authentication>,
   ConnectInfo(addr): ConnectInfo<SocketAddr>,
+  nested_at: extract::NestedPath,
   Json(authreq): Json<httpapi::AuthnRequest>
 ) -> impl IntoResponse {
   db::User::by_email(&db, authreq.email.clone())
     .and_then(|user| async move {
       if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
         let token = biscuits::authority(&auth, user.email.clone(), ONE_WEEK, Some(addr))?;
-        Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from(user))))
+        Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from_query(nested_at.as_str(), user)?)))
       } else {
         Err((StatusCode::FORBIDDEN, "Authorization rejected".to_string()).into())
       }

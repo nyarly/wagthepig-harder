@@ -16,11 +16,14 @@ struct AListable {
     user_id: String
 }
 
-#[derive(Default, Context)]
+#[derive(Context)]
 struct AContext {
     event_id: u16,
     user_id: String
 }
+
+#[derive(Context)]
+struct EmptyContext {}
 
 #[test]
 fn smoke_listable(){
@@ -37,5 +40,11 @@ fn smoke_context(){
     let template = UriTemplateStr::new("{event_id}xxx-{user_id}").expect("new");
     assert_eq!(template.expand::<IriSpec,_>(&ctx).expect("expand").to_string(),
         "17xxx-mikey".to_string()
-    )
+    );
+
+    let empty = EmptyContext{};
+    let template = UriTemplateStr::new("xxx-").expect("new");
+    assert_eq!(template.expand::<IriSpec,_>(&empty).expect("expand").to_string(),
+        "xxx-".to_string()
+    );
 }
