@@ -1,0 +1,17 @@
+[package]
+name = "semweb_api_derives"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.86"
+quote = "1.0.37"
+
+[dev-dependencies]
+iri-string = { version = "0.7.4", features = ["serde"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(debug_output)'] }

@@ -185,7 +185,9 @@ fn route_template(i: &str) -> NomResult<(Option<Vec<Part>>, Vec<Part>, Option<Ve
 }
 //
 //
-// authority-part = *( literals / expression ) '//' authority
+// XXX consider adding alternative of auth-lit? (auth-exp auth-lit)?
+// XXX iow: 0 or 1 expressions if there are no //.
+// authority-part = *( authority-literals / expression ) '//' authority
 fn authority_part(i: &str) -> NomResult<Vec<Part>> {
     map(
         separated_pair(
@@ -215,7 +217,7 @@ fn path(i: &str) -> NomResult<Vec<Part>> {
     ))(i)
 }
 
-// query_part =  '?'/'#' *(literals / expression)
+// query_part =  '?'/'#' *(authority-literals / expression)
 fn query_part(i: &str) -> NomResult<Vec<Part>> {
     many1(alt((authority_literals, authority_expression)))(i)
 }
@@ -246,18 +248,6 @@ fn segment_literal(i: &str) -> NomResult<Part> {
 // literals      =  %x21 / %x23-24 / %x26 / %x28-3B / %x3D / %x3F-5B
 // /  %x5D / %x5F / %x61-7A / %x7E / ucschar / iprivate
 // /  pct-encoded
-fn literals(i: &str) -> NomResult<Part> {
-    map(
-        recognize(many1_count(
-            alt((satisfy(|ch| matches!(ch,
-                '\u{21}' | '\u{23}'..='\u{24}' | '\u{26}' | '\u{28}'..='\u{3B}' | '\u{3D}' | '\u{3F}'..='\u{5B}'
-                | '\u{5D}' | '\u{5F}' | '\u{61}'..='\u{7A}' | '\u{7E}')), ucschar, iprivate,
-                pct_encoded))
-        )),
-        Part::to_lit
-    )(i)
-}
-
 // authority-literals = literals - "/"
 fn authority_literals(i: &str) -> NomResult<Part> {
     map(

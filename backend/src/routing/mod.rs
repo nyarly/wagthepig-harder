@@ -1,17 +1,15 @@
 use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock, RwLock}
+    collections::{HashMap, HashSet}, sync::{Arc, Mutex, OnceLock, RwLock}
 };
 
 use axum::{http, response::IntoResponse};
 use iri_string::{
     spec::IriSpec,
+    types::IriRelativeString,
     template::{
-        simple_context::SimpleContext,
         UriTemplateStr,
         UriTemplateString
-    },
-    types::UriRelativeString
+    }
 };
 use regex::Regex;
 use serde::de::DeserializeOwned;
@@ -42,7 +40,7 @@ fn the_map() -> Arc<Mutex<Map>> {
 }
 
 impl Map {
-    fn named(& mut self, rt: impl RouteTemplate) -> Result<Arc<RwLock<InnerSingle>>, Error> {
+    fn named(&mut self, rt: impl RouteTemplate) -> Result<Arc<RwLock<InnerSingle>>, Error> {
         let template = rt.route_template();
         let template = self.templates.entry(template.clone()).or_insert(template);
         if self.store.contains_key(template) {
@@ -71,12 +69,85 @@ pub(crate) fn route_config(rm: impl RouteTemplate) -> Single {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) enum FillPolicy {
     Relaxed,
     NoMissing,
     NoExtra,
     Strict
 }
+
+use iri_string::template::context::{Visitor, Context};
+
+pub(crate) trait Listable {
+    fn list_vars(&self) -> Vec<String>;
+}
+
+pub(crate) struct VarsList<L: IntoIterator<Item = (String, String)>>( L );
+
+impl<L: Clone + IntoIterator<Item = (String, String)>> Listable for VarsList<L> {
+    fn list_vars(&self) -> Vec<String> {
+        self.0.clone().into_iter().map(|(k,_)| k.clone()).collect()
+    }
+}
+
+impl<L: Clone + IntoIterator<Item = (String, String)>> Context for VarsList<L> {
+    fn visit<V: Visitor>(&self, visitor: V) -> V::Result {
+        let visited = visitor.var_name().as_str();
+        // barf - complexity here is awful
+        match self.0.clone().into_iter().find(|(k,_)| k == visited) {
+            Some((_,v)) => visitor.visit_string(v),
+            None => visitor.visit_undefined()
+        }
+    }
+}
+
+pub(crate) struct PolicyContext<C: Context + Listable> {
+    provided: HashSet<String>,
+    extra: Arc<Mutex<HashSet<String>>>,
+    missing: Arc<Mutex<HashSet<String>>>,
+    inner: C
+}
+
+impl<C: Context + Listable> PolicyContext<C> {
+    fn new(inner: C) -> Self {
+        let provided = HashSet::from_iter(inner.list_vars());
+        Self{
+            provided: provided.clone(),
+            extra: Arc::new(Mutex::new(provided)),
+            missing: Arc::new(Mutex::new(HashSet::new())),
+            inner
+        }
+    }
+
+    fn check(&self, policy: FillPolicy) -> Result<(), Error> {
+        let missing = self.missing.lock().expect("lock not poisoned");
+        let extra = self.extra.lock().expect("lock not poisoned");
+        match (policy, missing.is_empty(), extra.is_empty()) {
+            (FillPolicy::Strict, false, _) |
+            (FillPolicy::NoMissing, false, _) =>
+                Err(Error::MissingCaptures(missing.iter().cloned().collect())),
+            (FillPolicy::Strict, _, false) |
+            (FillPolicy::NoMissing, _, false) =>
+                Err(Error::ExtraCaptures(extra.iter().cloned().collect())),
+            _ => Ok(())
+        }
+    }
+}
+
+impl<C: Context + Listable> Context for PolicyContext<C> {
+    fn visit<V: Visitor>(&self, visitor: V) -> V::Result {
+        let k = visitor.var_name().as_str();
+        let mut extra = self.extra.lock().expect("lock not poisoned");
+        extra.remove(k);
+        if !self.provided.contains(k) {
+            let mut missing = self.missing.lock().expect("lock not poisoned");
+            missing.insert(k.to_string());
+        }
+        self.inner.visit(visitor)
+    }
+}
+
 
 // We have a RwLock here because we would like to be able to cache rendering in the InnerSingle To
 // do that, we'd need to be able to accept a &mut self, or else replace the innersingle with a
@@ -96,9 +167,9 @@ impl Single {
         inner.axum_route()
     }
 
-    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
+    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)> + Clone) -> Result<IriRelativeString, Error> {
         let inner = self.inner.read().expect("not poisoned");
-        inner.fill(vars)
+        inner.fill_uritemplate(FillPolicy::NoMissing, VarsList(vars))
     }
 
     pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
@@ -111,8 +182,13 @@ impl Single {
         inner.hydra_type()
     }
 
-    pub(crate) fn prefixed(&self, prefix: &str) -> Single
-    {
+    #[allow(dead_code)]
+    pub(crate) fn extract<T: DeserializeOwned>(&self, url: &str) -> Result<T, Error> {
+        let inner = self.inner.read().expect("not poisoned");
+        inner.extract(url)
+    }
+
+    pub(crate) fn prefixed(&self, prefix: &str) -> Single {
         let mut inner = self.inner.write().expect("not poisoned");
         Single{
             inner: Arc::new(RwLock::new(inner.prefixed(prefix)))
@@ -180,7 +256,7 @@ impl InnerSingle {
         allvars
     }
 
-    pub(crate) fn hydra_type(&self) -> String {
+    fn hydra_type(&self) -> String {
         if self.expressions().is_empty() {
             "Link".to_string()
         } else {
@@ -188,7 +264,7 @@ impl InnerSingle {
         }
     }
 
-    pub(crate) fn prefixed(&mut self, prefix: &str) -> Self {
+    fn prefixed(&mut self, prefix: &str) -> Self {
         let prefix_owned = prefix.to_owned();
         if self.prefixes.contains_key(&prefix_owned) {
             self.prefixes.get(&prefix_owned)
@@ -247,42 +323,22 @@ impl InnerSingle {
         .collect::<Vec<_>>().join("")
     }
 
-    pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
+    fn template(&self) -> Result<UriTemplateString, Error> {
         let string = self.template_string();
         let t = UriTemplateStr::new(&string)?;
         Ok(t.into())
     }
 
-    pub(crate) fn fill_uritemplate(&self, policy: FillPolicy, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
-        let mut missing = self.vars();
-        let mut extra: HashSet<String> = Default::default();
-        let mut context = SimpleContext::new();
+    fn fill_uritemplate(&self, policy: FillPolicy, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
+        let pol = PolicyContext::new(vars);
 
-        for (k,v) in vars {
-            if missing.remove(&k) {
-                extra.insert(k.clone());
-            }
-            context.insert(k,v);
-        }
-
-        match (policy, missing.is_empty(), extra.is_empty()) {
-            (FillPolicy::Strict, false, _) |
-            (FillPolicy::NoMissing, false, _) =>
-                Err(Error::MissingCaptures(missing.iter().cloned().collect())),
-            (FillPolicy::Strict, _, false) |
-            (FillPolicy::NoMissing, _, false) =>
-                Err(Error::ExtraCaptures(extra.iter().cloned().collect())),
-            _ => Ok(UriTemplateStr::new("")?
-                .expand::<IriSpec, _>(&context)?
-                .to_string().try_into()?),
-        }
+        let templ = &self.template()?;
+        let expanded = templ.expand::<IriSpec,_>(&pol)?;
+        pol.check(policy)?;
+        Ok(expanded.to_string().try_into()?)
     }
 
-    pub(crate) fn fill(&self, vars: impl IntoIterator<Item = (String, String)>) -> Result<UriRelativeString, Error> {
-        self.fill_uritemplate(FillPolicy::NoMissing, vars)
-    }
-
-    pub(crate) fn axum_route(&self) -> String {
+    fn axum_route(&self) -> String {
         let mut out = "".to_string();
 
         for part in &self.parsed.path { match part {
@@ -358,14 +414,25 @@ mod test {
         );
     }
 
-    /*
     #[test]
     fn extraction() {
         let route = quick_route("http://{domain}/user/{user_id}/file{/file_id}?something={good}{&mysterious}");
         let uri = "http://example.com/user/me@nowhere.org/file/17?something=weird&mysterious=100";
-        assert_eq!(route.extract(uri), ("me@nowhere.org", 17));
+        assert_eq!(
+            route.extract::<(String, String, u16)>(uri).unwrap(),
+            ("example.com".to_string(), "me@nowhere.org".to_string(), 17)
+        );
     }
-    */
+
+    #[test]
+    fn extraction_errors() {
+        let route = quick_route("http://{domain}/user/{user_id}/file{/file_id}?something={good}{&mysterious}");
+        let uri = "http://example.com/user/me@nowhere.org/file?something=weird&mysterious=100";
+        assert!(matches!(
+            route.extract::<(String, String, u16)>(uri),
+            Err(Error::NoMatch(_,_))
+        ));
+    }
 }
 
 #[derive(thiserror::Error, Debug)]

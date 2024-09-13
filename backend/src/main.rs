@@ -214,9 +214,9 @@ async fn retrieve_event(
 async fn get_event_games(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
-  Path(event_id): extract::Path<i64>,
+  Path((event_id, user_id)): extract::Path<(i64, String)>,
 ) -> impl IntoResponse {
-  db::Game::get_all_for_event(&db, event_id)
+  db::Game::get_all_for_event_and_user(&db, event_id, user_id)
     .and_then(|games| async {
       Ok(Json(httpapi::EventGamesResponse::from_query(nested_at.as_str(), games)?))
     })

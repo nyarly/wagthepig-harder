@@ -165,27 +165,33 @@ impl Event {
 #[derive(sqlx::FromRow, Default, Debug)]
 #[allow(dead_code)] // Have to match DB
 pub(crate) struct Game {
-    id: i64,
-    name: Option<String>,
-    min_players: Option<i32>,
-    max_players: Option<i32>,
-    bgg_link: Option<String>,
-    duration_secs: Option<i32>,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
-    event_id: i64,
-    suggestor_id: i64,
-    bgg_id: Option<String>,
-    pitch: Option<String>
+    pub id: i64,
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub bgg_link: Option<String>,
+    pub duration_secs: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub event_id: i64,
+    pub suggestor_id: i64,
+    pub bgg_id: Option<String>,
+    pub pitch: Option<String>,
+    pub interested: Option<bool>,
+    pub can_teach: Option<bool>,
 }
 
 impl Game {
-    pub fn get_all_for_event<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: i64)
+    pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: i64, email: String)
     -> impl TryFuture<Ok = Vec<Self>, Error = ErrorResponse> + 'a {
         sqlx::query_as!(
             Self,
-            "select * from games where event_id = $1",
-            event_id)
+            "select games.*, (interests.id is not null) as interested, (coalesce (interests.can_teach, false)) as can_teach \
+                from games \
+                left join interests on games.id = interests.game_id \
+                join users on interests.user_id = users.id and email = $2 \
+                where event_id = $1",
+            event_id, email)
             .fetch_all(db)
             .map_err(into_error_response)
     }

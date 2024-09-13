@@ -1,4 +1,5 @@
 use axum::{http, response::IntoResponse};
+use iri_string::template::UriTemplateString;
 use serde::{Deserialize, Serialize};
 pub use iri_string::types::IriReferenceString;
 
@@ -9,7 +10,7 @@ use crate::routing;
 pub(crate) struct IriTemplate {
     pub id: IriReferenceString,
     // pub r#type: String,
-    pub template: String,
+    pub template: UriTemplateString,
     pub operation: Vec<Operation>
 }
 
@@ -103,6 +104,8 @@ pub enum Error {
     CreateString(#[from] iri_string::types::CreationError<std::string::String>),
     #[error("cannot parse string as a header value: {0:?}")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+    #[error("couldn't convert value to IRI: {0:?}")]
+    IriConversion(String),
 }
 
 impl IntoResponse for Error {
@@ -111,6 +114,7 @@ impl IntoResponse for Error {
         match self {
             // might specialize these errors more going forward
             // need to consider server vs client
+            Error::IriConversion(_) |
             Error::IriValidate(_) |
             Error::IriTempate(_) |
             Error::CreateString(_) |

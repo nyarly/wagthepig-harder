@@ -1,11 +1,16 @@
 * Revocation of tokens e.g. on password reset
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * Add lightningcss for CSS bundling & compatibility
+* Or just Parcel?
 * sqlxmq for background job handling
 * Scoped tokens -> email for registration/reset
+* FE: pull auth from fragment (?)
+  - pro: fragments not sent over the wire
+  - con: not intended for secure data
 * Send email / dev mode for capture (c.f. mailpit)
+* Biscuits invalid _before_ now().
 
-WTG parity:
+WTP parity:
 B/E
 * Profile
   * change password
@@ -18,6 +23,8 @@ B/E
   * Other players
   * extra players
   * SQL for preference list
+
+* DB: update/created timestamps
 
 F/E
 * Profile
@@ -57,11 +64,30 @@ F/E
   - check if my ip = requesting id
   - check if time is in the next 60 seconds
 * Sophisticated 409 handling for conditional updates (automatic 3-way merge)
-* A URITemplate/matchit "bridge"
-  * constrain URITemplate grammar with restricted abs-path component between optional authority and query
-  * abs-path limited to matchit compatible syntax (expressions bounded by `/`, expand only at end)
-  * parse that grammar, extracting variable names
-  * build on existing RouteConfig (fill, uritemplate, axum_route), including errors, maybe sqlx-quality macros
+* For the URITemplate/matchit "bridge"
+  - consider adding the ability to "trade" '//' for a limit of 1 pre-path expression
+* Derive macro for RouteTemplate enums - like:
+```
+#[derive(Copy, Clone)]
+pub(crate) enum RouteMap {
+    // adds arm to impl RouteTemplate
+    // creates ProfileLocator struct with user_id: String field
+    #[endpoint("/profile/{user_id}"]
+    #[locator(ProfileLocator{String})]
+    Profile,
+    // adds arm, assumes you'll make the locator (likely EmptyLocator)
+    #[endpoint("/")]
+    Root,
+    #[endpoint("/event_games/{event_id}/user/{user_id}")]
+    #[locator(EventGamesLocator{u16, String})]
+    // or? #[fields(u16, String)] might assume EventGamesLocator
+    // - a little too magic maybe
+    EventGames
+    // ...
+}
+```
+
+
 
 == Design Decisions
 
@@ -73,3 +99,20 @@ Minimize the amount of adjustment that takes.
 pJSON-LD - use "id" and "type" etc
 because "@id" requires extra serde macros to make work.
 In our "notional" @context, we could `id: @id` to "fix" it.
+
+Each B/E resource needs an IriTemplate field that describes how to get back there,
+plus some SKOS Notations with the fields for it.
+This lets the F/E embed the Notations into the browser address,
+and then (e.g.) if reloaded/URL shared, fill in the template with the notations
+to reload the data from the backend.
+Open question: how to address user-context data?
+(sharing the games for an event should show you your interests, not mine.)
+
+JSON-LD _technically_ doesn't allow typemaps of scalars - IOW, where it would be nice to be able to say
+notation: {
+  event: <id>,
+  user: <id>,
+}
+and have "event" and "user" be @contexted as datatype IRIs, JSON-LD doesn't expand that way.
+*For the time being* we'll do that _anyway_ and if at some point we come in the validated fold,
+we can adjust how we process SKOS notations as more verbose structures.

@@ -23,6 +23,7 @@
     devShells.devShell.${system} = pkgs.mkShell {
       buildInputs = with pkgs; [
         cargo
+        cargo-expand
         rustc
         rust-analyzer
         clippy
