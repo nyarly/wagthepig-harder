@@ -1,23 +1,43 @@
 vars:
-  projectname: "wagthepig"
+  projectname: wagthepig
+  smtp_host: 127.0.0.1
+  smtp_port: 1025
 environment:
-  - "PGDATA=devsupport/db"
+  - PGDATA=devsupport/db
+  - SMTP_HOST=${smtp_host}
+  - SMTP_PORT=$(smtp_port}
+  # not to secure STMP,
+  # just to ensure smtp auth tested during dev
+  - SMTP_USER=smtp_user
+  - SMTP_PASS=smtp_password
+  - "MP_UI_BIND_ADDR=127.0.0.1:8025"
+  - "MP_SMTP_BIND_ADDR=127.0.0.1:1025"
 
 unifiendbackend: &unifiedbackend
   live-make:
     working_dir: frontend/
     command: watchexec -w src/ elm make src/Main.elm --output=dist/js/main.js --debug
+  mailpit:
+    command: mailpit --smtp-auth-file=devsupport/mailpit_passwords --smtp-auth-allow-insecure
+    ready_log_line: "accessible via http"
+  database:
+    command: devsupport/run_postgres.sh
+    ready_log_line: "ready to accept connections"
+    shutdown:
+      signal: 2 # SIGINT kills live clients and shuts down
+  database_setup:
+    command: devsupport/setup_postgres.sh
+    depends_on:
+      database:
+        condition: process_log_ready
   backend:
     working_dir: backend/
     command: watchexec --no-vcs-ignore --on-busy-update restart --watch target/debug/ --filter {{.projectname}}-backend target/debug/{{.projectname}}-backend
     depends_on:
-      database:
+      database_setup:
+        condition: process_completed_successfully
+      mailpit:
         condition: process_log_ready
-  database:
-    command: "devsupport/run_postgres.sh"
-    ready_log_line: "ready to accept connections"
-    shutdown:
-      signal: 2 # SIGINT kills live clients and shuts down
 
 barefrontend: &barefrontend
   elm-live:
@@ -28,7 +48,10 @@ barefrontend: &barefrontend
     command: watchexec -w dist/css touch src/Main.elm
 
 processes:
-  <<: *unifiedbackend # starting out, use barefrontend; then unifiedbackend
+  # <<: *barefrontend # use this to start on just frontend
+  <<: *unifiedbackend # use this once the backend is available unifiedbackend
+  env-check:
+    command: env | sort
   elm-tests:
     working_dir: frontend/
     command: elm-test-rs --watch

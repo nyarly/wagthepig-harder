@@ -38,6 +38,7 @@
         postgresql
         sqlx-cli
         biscuit-cli
+        mailpit
       ] ++ buildDeps;
     };
     devShells.default = devShells.devShell.${system};

@@ -35,12 +35,19 @@ struct AppState {
     auth: Authentication,
 }
 
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   tracing_subscriber::fmt()
     .with_max_level(Level::TRACE)
     .init();
 
+/*
+address:               ENV['SMTP_HOST'],
+port:                  ENV['SMTP_PORT'],
+user_name:             ENV['SMTP_USERNAME'],
+password:              ENV['SMTP_PASSWORD'],
+* */
   let db_connection_str = std::env::var("DATABASE_URL").expect("DATABASE_URL must be provided");
   let frontend_path = std::env::var("FRONTEND_PATH").expect("FRONTEND_PATH must be provided");
   let authentication_path = std::env::var("AUTH_KEYPAIR").expect("AUTH_KEYPAIR must be provided");
