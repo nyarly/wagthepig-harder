@@ -18,19 +18,16 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, Level};
 use futures::future::TryFutureExt;
 
-use biscuits::Authentication;
 use httpapi::{RouteMap, EtaggedJson};
 
-use crate::{httpapi::etag_for, routing::{route_config, VarsList}};
+use crate::httpapi::etag_for;
+use semweb_api::{biscuits, routing::{route_config, VarsList}, spa};
+use semweb_api::biscuits::Authentication;
 
-// crate candidates
-mod biscuits;
-mod spa;
 
 // app modules
 mod db;
 mod httpapi;
-mod routing;
 
 #[derive(FromRef, Clone)]
 struct AppState {
@@ -61,8 +58,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   let auth = biscuits::Authentication::new(authentication_path)?;
   let state = AppState{pool, auth: auth.clone()};
-
-
 
   let app = Router::new()
     .nest("/api",

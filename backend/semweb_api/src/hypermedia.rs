@@ -1,13 +1,13 @@
-use axum::{http, response::IntoResponse};
-use iri_string::template::UriTemplateString;
+use axum::http;
+use iri_string::template::{Context, UriTemplateString};
 use serde::{Deserialize, Serialize};
 pub use iri_string::types::IriReferenceString;
 
-use crate::routing;
+use crate::{error::Error, routing::{self, Listable}};
 
 #[derive(Serialize, Clone)]
 #[serde(tag="type")]
-pub(crate) struct IriTemplate {
+pub struct IriTemplate {
     pub id: IriReferenceString,
     // pub r#type: String,
     pub template: UriTemplateString,
@@ -16,13 +16,13 @@ pub(crate) struct IriTemplate {
 
 
 #[derive(Default, Serialize, Clone)]
-pub(crate) struct Operation {
+pub struct Operation {
     pub method: Method,
     pub r#type: ActionType,
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct Method(http::Method);
+pub struct Method(http::Method);
 
 impl From<http::Method> for Method {
     fn from(value: http::Method) -> Self {
@@ -39,7 +39,7 @@ impl Serialize for Method {
 
 
 #[derive(Default, Serialize, Deserialize, Clone)]
-pub(crate) enum ActionType {
+pub enum ActionType {
     #[default]
     #[serde(rename = "ViewAction")]
     View,
@@ -57,7 +57,7 @@ pub(crate) enum ActionType {
 }
 
 /// op is used to create a most-common operation for each action type
-pub(super) fn op(action: ActionType) -> Operation {
+pub fn op(action: ActionType) -> Operation {
     use ActionType::*;
     use axum::http::Method;
     match action {
@@ -88,40 +88,41 @@ pub(super) fn op(action: ActionType) -> Operation {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("couldn't serialize JSON: {0:?}")]
-    JSONSerialization(#[from] serde_json::Error),
-    #[error("badly formatted ETag: {0:?}")]
-    BadETagFormat(String),
-    #[error("route config: {0:?}")]
-    Routing(#[from] routing::Error),
-    #[error("couldn't validate IRI: {0:?}")]
-    IriValidate(#[from] iri_string::validate::Error),
-    #[error("error processing IRI template: {0:?}")]
-    IriTempate(#[from] iri_string::template::Error),
-    #[error("creating a string for an IRI: {0:?}")]
-    CreateString(#[from] iri_string::types::CreationError<std::string::String>),
-    #[error("cannot parse string as a header value: {0:?}")]
-    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
-    #[error("couldn't convert value to IRI: {0:?}")]
-    IriConversion(String),
+const RESOURCE: &str = "Resource";
+
+#[derive(Serialize, Clone)]
+pub struct ResourceType(&'static str);
+
+impl Default for ResourceType {
+    fn default() -> Self {
+        Self(RESOURCE)
+    }
 }
 
-impl IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        use http::status::StatusCode;
-        match self {
-            // might specialize these errors more going forward
-            // need to consider server vs client
-            Error::IriConversion(_) |
-            Error::IriValidate(_) |
-            Error::IriTempate(_) |
-            Error::CreateString(_) |
-            Error::InvalidHeaderValue(_) |
-            Error::Routing(_) |
-            Error::BadETagFormat(_) |
-            Error::JSONSerialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self)).into_response(),
-        }
+#[derive(Serialize, Clone)]
+pub struct ResourceFields<L: Serialize + Clone> {
+    pub id: IriReferenceString,
+    pub r#type: ResourceType,
+    pub operation: Vec<Operation>,
+    pub find_me: IriTemplate,
+    pub nick: L
+}
+
+impl<L: Serialize + Clone + Listable + Context> ResourceFields<L> {
+    pub fn new(route: &routing::Entry, nick: L, api_name: &str, operation: Vec<Operation>) -> Result<Self, Error> {
+        let id = route.fill(nick.clone())?.into();
+        let template = route.template()?;
+
+        Ok(Self{
+            id,
+            nick,
+            operation,
+            r#type: Default::default(),
+            find_me: IriTemplate {
+                template,
+                id: api_name.try_into()?,
+                operation: vec![ op(ActionType::Find) ]
+            },
+        })
     }
 }

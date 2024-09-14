@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, HashSet}, sync::{Arc, Mutex, OnceLock, RwLock}
 };
 
-use axum::{http, response::IntoResponse};
 use iri_string::{
     spec::IriSpec,
     template::{
@@ -12,6 +11,8 @@ use iri_string::{
 use regex::Regex;
 use serde::de::DeserializeOwned;
 
+use crate::error::Error;
+
 use self::{
     parser::{Parsed, Part},
     render::{auth_re_string, axum7_rest, axum7_vars, original_string, path_re_string, re_names}
@@ -20,8 +21,9 @@ use self::{
 mod parser;
 mod render;
 mod de;
+pub use de::CaptureDeserializationError;
 
-pub(crate) trait RouteTemplate: Copy {
+pub trait RouteTemplate: Copy {
     fn route_template(&self) -> String;
 }
 
@@ -58,7 +60,7 @@ impl Map {
     }
 }
 
-pub(crate) fn route_config(rm: impl RouteTemplate) -> Entry {
+pub fn route_config(rm: impl RouteTemplate) -> Entry {
     let arcmutex = the_map();
     let mut map = arcmutex.lock().expect("route map not to be poisoned");
     let inner = map.named(rm).expect("routes to be parseable");
@@ -77,11 +79,11 @@ pub(crate) enum FillPolicy {
 
 use iri_string::template::context::{Visitor, Context};
 
-pub(crate) trait Listable {
+pub trait Listable {
     fn list_vars(&self) -> Vec<String>;
 }
 
-pub(crate) struct VarsList<L: IntoIterator<Item = (String, String)>>( pub L );
+pub struct VarsList<L: IntoIterator<Item = (String, String)>>( pub L );
 
 impl<L: Clone + IntoIterator<Item = (String, String)>> Listable for VarsList<L> {
     fn list_vars(&self) -> Vec<String> {
@@ -160,38 +162,37 @@ impl<C: Context + Listable> DynamicContext for PolicyContext<C> {
 // all the things a given route might need and cache that. For the time being, we'll render each
 // time (and just get read locks), but at some point in the future there's another round of
 // over-engineering to tackle
-pub(crate) struct Entry {
+pub struct Entry {
     inner: Arc<RwLock<InnerSingle>>,
 }
 
 impl Entry {
-    pub(crate) fn axum_route(&self) -> String {
+    pub fn axum_route(&self) -> String {
         let inner = self.inner.read().expect("not poisoned");
         inner.axum_route()
     }
 
-    pub(crate) fn fill(&self, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
+    pub fn fill(&self, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
         let inner = self.inner.read().expect("not poisoned");
         inner.fill_uritemplate(FillPolicy::NoMissing, vars)
     }
 
-    pub(crate) fn template(&self) -> Result<UriTemplateString, Error> {
+    pub fn template(&self) -> Result<UriTemplateString, Error> {
         let inner = self.inner.read().expect("not poisoned");
         inner.template()
     }
 
-    pub(crate) fn hydra_type(&self) -> String {
+    pub fn hydra_type(&self) -> String {
         let inner = self.inner.read().expect("not poisoned");
         inner.hydra_type()
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn extract<T: DeserializeOwned>(&self, url: &str) -> Result<T, Error> {
+    pub fn extract<T: DeserializeOwned>(&self, url: &str) -> Result<T, Error> {
         let inner = self.inner.read().expect("not poisoned");
         inner.extract(url)
     }
 
-    pub(crate) fn prefixed(&self, prefix: &str) -> Entry {
+    pub fn prefixed(&self, prefix: &str) -> Entry {
         let mut inner = self.inner.write().expect("not poisoned");
         Entry{
             inner: Arc::new(RwLock::new(inner.prefixed(prefix)))
@@ -414,50 +415,5 @@ mod test {
             route.extract::<(String, String, u16)>(uri),
             Err(Error::NoMatch(_,_))
         ));
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("trouble parsing: {0:?}")]
-    Parsing(String),
-    #[error("couldn't validate IRI: {0:?}")]
-    IriValidate(#[from] iri_string::validate::Error),
-    #[error("error processing IRI template: {0:?}")]
-    IriTempate(#[from] iri_string::template::Error),
-    #[error("creating a string for an IRI: {0:?}")]
-    CreateString(#[from] iri_string::types::CreationError<std::string::String>),
-    #[error("missing captures: {0:?}")]
-    MissingCaptures(Vec<String>),
-    #[error("extra captures: {0:?}")]
-    ExtraCaptures(Vec<String>),
-    #[error("cannot parse string as a header value: {0:?}")]
-    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
-    #[error("regex parse: {0:?}")]
-    RegexParse(#[from] regex::Error),
-    #[error("no match: {0:?} vs {1:?}")]
-    NoMatch(String, String),
-    #[error("capture deserialization: {0:?}")]
-    Deserialization(#[from] de::CaptureDeserializationError),
-}
-
-
-impl IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        use http::status::StatusCode;
-        match self {
-            // might specialize these errors more going forward
-            // need to consider server vs client
-            Error::Deserialization(_) |
-            Error::NoMatch(_,_) |
-            Error::RegexParse(_) |
-            Error::Parsing(_) |
-            Error::InvalidHeaderValue(_) |
-            Error::IriTempate(_) |
-            Error::CreateString(_) |
-            Error::ExtraCaptures(_) |
-            Error::MissingCaptures(_) |
-            Error::IriValidate(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response(),
-        }
     }
 }

@@ -6,56 +6,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
-use iri_string::template::Context;
 
-use crate::{db, routing::{self, route_config, RouteTemplate, Listable}};
+use crate::db;
 
 use semweb_api_derives::{Context, Listable};
+use semweb_api::{
+    hypermedia::{op, ActionType, IriTemplate, ResourceFields},
+    routing::{self, route_config, RouteTemplate}
+};
 
-mod semweb;
-use semweb::*;
-pub(crate) use semweb::Error;
-
-const RESOURCE: &str = "Resource";
-
-#[derive(Serialize, Clone)]
-pub(crate) struct ResourceType(&'static str);
-
-impl Default for ResourceType {
-    fn default() -> Self {
-        Self(RESOURCE)
-    }
-}
-
-#[derive(Serialize, Clone)]
-pub(crate) struct ResourceFields<L: Serialize + Clone> {
-    pub id: IriReferenceString,
-    pub r#type: ResourceType,
-    pub operation: Vec<Operation>,
-    pub find_me: IriTemplate,
-    pub nick: L
-}
-
-impl<L: Serialize + Clone + Listable + Context> ResourceFields<L> {
-    fn new(route: &routing::Entry, nick: L, api_name: &str, operation: Vec<Operation>) -> Result<Self, Error> {
-        let id = route.fill(nick.clone())?
-            .clone().try_into().map_err(|e| Error::IriConversion(format!("{:?}", e)))?;
-        let template = route.template()?;
-
-        Ok(Self{
-            id,
-            nick,
-            operation,
-            r#type: Default::default(),
-            find_me: IriTemplate {
-                template,
-                id: api_name.try_into()?,
-                operation: vec![ op(ActionType::Find) ]
-            },
-        })
-    }
-}
-
+pub(crate) use semweb_api::Error;
 pub struct EtaggedJson<T: Serialize + Clone>(pub T);
 
 impl<T: Serialize + Clone> EtaggedJson<T> {
