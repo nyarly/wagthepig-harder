@@ -66,6 +66,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e1496f8fb1fbf272686b8d37f523dab3e4a7443300055e74cdaa449f3114356"
 
 [[package]]
+name = "anymap2"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d301b3b94cb4b2f23d7917810addbbaff90738e0ca2be692bd027e70d7e0330c"
+
+[[package]]
 name = "async-trait"
 version = "0.1.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1735,22 +1741,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
-name = "pgmq"
-version = "0.29.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d264c88419c1e1021c2175f93e3072743a8caa02d62e9d565f4f9472106c4a"
-dependencies = [
- "chrono",
- "log",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "pin-project"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2319,6 +2309,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2423,6 +2422,7 @@ dependencies = [
  "indexmap",
  "log",
  "memchr",
+ "native-tls",
  "once_cell",
  "paste",
  "percent-encoding",
@@ -2438,6 +2438,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "uuid",
  "webpki-roots",
 ]
 
@@ -2520,6 +2521,7 @@ dependencies = [
  "stringprep",
  "thiserror",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -2559,6 +2561,7 @@ dependencies = [
  "stringprep",
  "thiserror",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -2584,6 +2587,34 @@ dependencies = [
  "sqlx-core",
  "tracing",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sqlxmq"
+version = "0.5.0"
+source = "git+https://github.com/nyarly/sqlxmq.git#716cf7e08a812408681b489489f3263584e90f7d"
+dependencies = [
+ "anymap2",
+ "chrono",
+ "dotenvy",
+ "log",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlxmq_macros",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sqlxmq_macros"
+version = "0.5.0"
+source = "git+https://github.com/nyarly/sqlxmq.git#716cf7e08a812408681b489489f3263584e90f7d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2777,7 +2808,9 @@ dependencies = [
  "libc",
  "mio",
  "num_cpus",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.48.0",
@@ -3031,6 +3064,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
+name = "uuid"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
+dependencies = [
+ "getrandom 0.2.15",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3063,13 +3105,13 @@ dependencies = [
  "hyper",
  "iri-string",
  "lettre",
- "pgmq",
  "semweb_api",
  "semweb_api_derives",
  "serde",
  "serde_json",
  "sha2 0.10.8",
  "sqlx",
+ "sqlxmq",
  "thiserror",
  "tokio",
  "tower",

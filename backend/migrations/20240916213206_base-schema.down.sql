@@ -1,0 +1,10 @@
+DROP TABLE public.users
+DROP TABLE public.schema_migrations
+DROP TABLE public.interests
+DROP TABLE public.games
+DROP TABLE public.events
+DROP TABLE public.ar_internal_metadata
+DROP SEQUENCE public.users_id_seq
+DROP SEQUENCE public.interests_id_seq
+DROP SEQUENCE public.events_id_seq
+DROP SEQUENCE public.games_id_seq
