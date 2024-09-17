@@ -44,6 +44,7 @@ F/E
 
 == Future work
 
+* consider sqldef for DB migrations?
 * Middleware for conditional requests
   * c.f. `tower_etag_cache`
   * On GET, calculate and insert ETag and Last-Modified(?)

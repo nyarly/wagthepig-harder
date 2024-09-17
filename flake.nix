@@ -39,6 +39,7 @@
         sqlx-cli
         biscuit-cli
         mailpit
+        sqldef
       ] ++ buildDeps;
     };
     devShells.default = devShells.devShell.${system};
