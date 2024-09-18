@@ -18,10 +18,10 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, Level};
 use futures::future::TryFutureExt;
 
-use httpapi::{RouteMap, EtaggedJson};
+use httpapi::{EtaggedJson, EventLocate, GameLocate, RouteMap};
 
 use crate::httpapi::etag_for;
-use semweb_api::{biscuits, routing::{route_config, VarsList}, spa};
+use semweb_api::{biscuits, routing::route_config, spa};
 use semweb_api::biscuits::Authentication;
 
 
@@ -188,7 +188,7 @@ async fn update_event(
         }).await?;
 
     body.db_param()
-        .with_id(event_id)
+        .with_id(event_id.into())
         .update(&db)
         .and_then(|event| async move {
             let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
@@ -201,7 +201,7 @@ async fn retrieve_event(
     nested_at: extract::NestedPath,
     event_id: i64
 ) -> Result<httpapi::EventResponse, ErrorResponse> {
-  db::Event::get_by_id(db, event_id)
+  db::Event::get_by_id(db, event_id.into())
     .and_then(|maybe_event| async {
       match maybe_event {
         Some(event) => {
@@ -228,6 +228,27 @@ async fn get_event_games(
     .await
 }
 
+#[debug_handler(state = AppState)]
+async fn create_new_game(
+  State(db): State<Pool<Postgres>>,
+  nested_at: extract::NestedPath,
+  Path((event_id, user_id)): extract::Path<(i64, String)>,
+  Json(body): extract::Json<httpapi::GameUpdateRequest>
+) -> impl IntoResponse {
+    body.db_param(event_id)
+        .add_new(&db, user_id)
+        .and_then(|new_id| async move {
+            route_config(RouteMap::Game)
+                .prefixed(nested_at.as_str())
+                .fill(GameLocate{ game_id: new_id.into() })
+                .map(|location_uri| {
+                    (StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())])
+                })
+                .map_err(|e| e.into())
+        }).await
+}
+
+
 
 #[debug_handler(state = AppState)]
 async fn create_new_event(
@@ -240,7 +261,7 @@ async fn create_new_event(
         .and_then(|new_id| async move {
             route_config(RouteMap::Event)
                 .prefixed(nested_at.as_str())
-                .fill(VarsList(vec![("event_id".to_string(), new_id.to_string())]))
+                .fill( EventLocate{ event_id: new_id.into() })
                 .map(|location_uri| {
                     (StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())])
                 })

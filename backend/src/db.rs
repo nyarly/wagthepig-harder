@@ -1,10 +1,57 @@
 use core::fmt;
+use std::convert::Infallible;
 use axum::response::{ErrorResponse, IntoResponse};
 use chrono::NaiveDateTime;
 use futures::{TryFuture, TryFutureExt as _};
 use sqlx::{Executor, Postgres};
 
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+
+
+
+pub trait IdType: Copy {
+    type Id;
+
+    fn id(self) -> Self::Id;
+}
+
+impl<T: Into<i64> + Copy> IdType for T {
+    type Id = i64;
+
+    fn id(self) -> Self::Id {
+        self.into()
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Default, Debug)]
+pub struct NoId;
+
+impl From<NoId> for Infallible{
+    fn from(_val: NoId) -> Self {
+        unreachable!("it's not an id")
+    }
+}
+
+macro_rules! id_type {
+    ($name:ident($wraps:ident)) => {
+        #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, sqlx::Type)]
+        #[sqlx(transparent)]
+        pub struct $name($wraps);
+
+        impl From<$wraps> for $name {
+            fn from(n: $wraps) -> Self {
+                Self(n)
+            }
+        }
+
+        impl From<$name> for $wraps {
+            fn from(val: $name) -> Self {
+                val.0
+            }
+        }
+    };
+}
 
 pub enum Error {
     Sqlx(sqlx::Error)
@@ -55,6 +102,10 @@ where Error: From<E> {
     Error::from(e).into()
 }
 
+
+
+
+
 #[derive(Zeroize, ZeroizeOnDrop, Default)]
 pub(crate) struct Password(String);
 
@@ -78,10 +129,15 @@ impl fmt::Debug for Password {
     }
 }
 
+
+
+
+id_type!(UserId(i64));
+
 #[derive(sqlx::FromRow, Default, Debug)]
 #[allow(dead_code)] // Have to match DB
-pub(crate) struct User {
-    pub id: i64,
+pub(crate) struct User<T> {
+    pub id: T,
     pub name: Option<String>,
     pub bgg_username: Option<String>,
     pub email: String,
@@ -93,7 +149,7 @@ pub(crate) struct User {
     pub reset_password_token: Option<String>
 }
 
-impl User {
+impl User<UserId> {
     pub fn by_email<'a>(db: impl Executor<'a, Database = Postgres> + 'a, email: String)
     -> impl TryFuture<Ok = Self, Error = ErrorResponse> + 'a {
         sqlx::query_as!(
@@ -105,10 +161,12 @@ impl User {
     }
 }
 
+id_type!(EventId(i64));
+
 #[derive(sqlx::FromRow, Default, Debug)]
 #[allow(dead_code)] // Have to match DB
-pub(crate) struct Event {
-    pub id: i64,
+pub(crate) struct Event<T> {
+    pub id: T,
     pub name: Option<String>,
     pub date: Option<NaiveDateTime>,
     pub r#where: Option<String>,
@@ -117,11 +175,34 @@ pub(crate) struct Event {
     pub description: Option<String>,
 }
 
-impl Event {
-    pub fn with_id(&mut self, id: i64) -> &Self {
-        self.id = id; self
+impl<F> Event<F> {
+    pub fn with_id<T: IdType>(&self, id: T) -> Event<T> {
+        Event::<T>{
+            id,
+            name: self.name.clone(),
+            date: self.date,
+            r#where: self.r#where.clone(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            description: self.description.clone(),
+        }
+    }
+}
+
+impl Event<NoId> {
+    pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a)
+    -> impl TryFuture<Ok = EventId, Error = ErrorResponse> + 'a {
+        sqlx::query_scalar!(
+            r#"insert into events ("name", "date", "where", "description") values ($1, $2, $3, $4) returning id"#,
+            self.name, self.date, self.r#where, self.description)
+            .fetch_one(db)
+            .map_ok(|n| n.into())
+            .map_err(into_error_response)
     }
 
+}
+
+impl Event<EventId> {
     pub fn get_all<'a>(db: impl Executor<'a, Database = Postgres> + 'a)
     -> impl TryFuture<Ok = Vec<Self>, Error = ErrorResponse> + 'a {
         sqlx::query_as!(
@@ -131,22 +212,13 @@ impl Event {
             .map_err(into_error_response)
     }
 
-    pub fn get_by_id<'a>(db: impl Executor<'a, Database = Postgres> + 'a, id: i64)
+    pub fn get_by_id<'a>(db: impl Executor<'a, Database = Postgres> + 'a, id: EventId)
     -> impl TryFuture<Ok = Option<Self>, Error = ErrorResponse> + 'a {
         sqlx::query_as!(
             Self,
             "select * from events where id = $1",
-            id)
+            id.id())
             .fetch_optional(db)
-            .map_err(into_error_response)
-    }
-
-    pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a)
-    -> impl TryFuture<Ok = i64, Error = ErrorResponse> + 'a {
-        sqlx::query_scalar!(
-            r#"insert into events ("name", "date", "where", "description") values ($1, $2, $3, $4) returning id"#,
-            self.name, self.date, self.r#where, self.description)
-            .fetch_one(db)
             .map_err(into_error_response)
     }
 
@@ -155,44 +227,114 @@ impl Event {
         sqlx::query_as!(
             Self,
             r#"update events set ("name", "date", "where", "description") = ($1, $2, $3, $4) where id = $5 returning *"#,
-            self.name, self.date, self.r#where, self.description, self.id)
+            self.name, self.date, self.r#where, self.description, self.id.id())
             .fetch_one(db)
             .map_err(into_error_response)
     }
 
 }
 
+id_type!(GameId(i64));
+
 #[derive(sqlx::FromRow, Default, Debug)]
 #[allow(dead_code)] // Have to match DB
-pub(crate) struct Game {
-    pub id: i64,
-    pub name: Option<String>,
-    pub min_players: Option<i32>,
-    pub max_players: Option<i32>,
-    pub bgg_link: Option<String>,
-    pub duration_secs: Option<i32>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+pub(crate) struct Game<T> {
+    pub id: T,
     pub event_id: i64,
     pub suggestor_id: i64,
     pub bgg_id: Option<String>,
+    pub bgg_link: Option<String>,
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub duration_secs: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
     pub pitch: Option<String>,
     pub interested: Option<bool>,
     pub can_teach: Option<bool>,
+    pub notes: Option<String>,
 }
 
-impl Game {
+impl<F> Game<F> {
+    pub fn with_id<T: IdType>(&self, id: T) -> Game<T> {
+        Game::<T>{
+            id,
+            name: self.name.clone(),
+            min_players: self.min_players,
+            max_players: self.max_players,
+            bgg_link: self.bgg_link.clone(),
+            duration_secs: self.duration_secs,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            event_id: self.event_id,
+            suggestor_id: self.suggestor_id,
+            bgg_id: self.bgg_id.clone(),
+            pitch: self.pitch.clone(),
+            interested: self.interested,
+            can_teach: self.can_teach,
+            notes: self.notes.clone(),
+        }
+    }
+}
+
+impl Game<NoId> {
+    pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
+    -> impl TryFuture<Ok = GameId, Error = ErrorResponse> + 'a {
+        // insert a game that reference the event and the user (means a subselect)
+        // insert an interest for the game, event and user
+        sqlx::query_scalar!(
+            r#"insert into games
+                ("name", "min_players", "max_players", "bgg_link",
+                "duration_secs", "event_id",  "bgg_id", "pitch", "suggestor_id")
+                values ($1, $2, $3, $4,
+                $5, $6, $7, $8, (select id from users where email = $9))
+                returning id"#,
+            self.name, self.min_players, self.max_players, self.bgg_link,
+            self.duration_secs, self.event_id, self.bgg_id, self.pitch, user_id)
+            .fetch_one(db)
+            .map_ok(|n| n.into())
+            .map_err(into_error_response)
+    }
+}
+
+impl Game<GameId> {
     pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: i64, email: String)
     -> impl TryFuture<Ok = Vec<Self>, Error = ErrorResponse> + 'a {
         sqlx::query_as!(
             Self,
-            "select games.*, (interests.id is not null) as interested, (coalesce (interests.can_teach, false)) as can_teach \
-                from games \
-                left join interests on games.id = interests.game_id \
-                join users on interests.user_id = users.id and email = $2 \
-                where event_id = $1",
+            r#"select games.*,
+                (interests.id is not null) as interested,
+                (coalesce (interests.can_teach, false)) as can_teach,
+                interests.notes
+                from games
+                left join interests on games.id = interests.game_id
+                join users on interests.user_id = users.id and email = $2
+                where event_id = $1"#,
             event_id, email)
             .fetch_all(db)
             .map_err(into_error_response)
     }
+
+    pub fn update_interests<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
+    -> impl TryFuture<Ok = (), Error = ErrorResponse> + 'a {
+        (if Some(true) == self.interested {
+            sqlx::query!(
+            r#"insert into interests
+                    ("game_id", "notes", "can_teach", "user_id")
+                    values ($1, $2, $3, (select id from users where email = $4))
+                on conflict (game_id, user_id) do update set
+                    ("notes", "can_teach") =
+                    ($2, $3)"#,
+                self.id.id(), self.notes, self.can_teach, user_id)
+        } else {
+            sqlx::query!(
+                r#"delete from interests where game_id = $1"#,
+                self.id.id())
+        })
+            .execute(db)
+            .map_ok(|_| ())
+            .map_err(into_error_response)
+    }
+
 }

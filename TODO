@@ -2,7 +2,6 @@
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * Add lightningcss for CSS bundling & compatibility
 * Or just Parcel?
-* sqlxmq for background job handling
 * Scoped tokens -> email for registration/reset
 * FE: pull auth from fragment (?)
   - pro: fragments not sent over the wire
@@ -13,7 +12,9 @@
 WTP parity:
 B/E
 * Profile
+  * register
   * change password
+  * reset password
 * Add game
 * Update game
 * What should we play?
@@ -25,7 +26,9 @@ B/E
 
 F/E
 * Profile
+  * register
   * change password
+  * reset password
 * Events list view
   * Sorted table
   * Add
