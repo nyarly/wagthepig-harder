@@ -2162,6 +2162,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "axum-extra",
+ "base64ct",
  "biscuit-auth",
  "futures",
  "futures-util",
@@ -2175,6 +2176,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2 0.10.8",
  "thiserror",
  "tower",
  "tower-http",

@@ -15,6 +15,7 @@ use semweb_api::{
     routing::{self, route_config, RouteTemplate}
 };
 
+// XXX remove
 pub(crate) use semweb_api::Error;
 pub struct EtaggedJson<T: Serialize + Clone>(pub T);
 
@@ -148,7 +149,7 @@ impl UserResponse {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize,Clone)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventListResponse {
     #[serde(flatten)]

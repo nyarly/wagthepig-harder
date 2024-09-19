@@ -6,6 +6,8 @@ use crate::routing;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("unknown error: {0}")]
+    Unknown(String),
     #[error("trouble parsing: {0:?}")]
     Parsing(String),
     #[error("couldn't validate IRI: {0:?}")]
@@ -52,12 +54,22 @@ pub enum Error {
     NoToken,
     #[error("authorization failed")]
     AuthorizationFailed,
+    #[error("precondition failed: {0}")]
+    PreconditionFailed(String),
+    #[error("malformed header: {0}")]
+    Header(#[from] axum_extra::typed_header::TypedHeaderRejection),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         use http::status::StatusCode;
         match self {
+            // best errors: we know how they match up to status codes
+            Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
+            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
+            Error::PreconditionFailed(s) => (StatusCode::PRECONDITION_FAILED, s).into_response(),
+
+            // upstream knows better
             Error::Token(err) => {
                 match err {
                     biscuit_auth::error::Token::ConversionError(_) => (StatusCode::BAD_REQUEST, "couldn't convert token").into_response(),
@@ -72,16 +84,18 @@ impl IntoResponse for Error {
             Error::PathParams(e) => e.into_response(),
             Error::Host(e) => e.into_response(),
             Error::Query(e) => e.into_response(),
-            Error::MissingContext => (StatusCode::INTERNAL_SERVER_ERROR, "missing authorization context").into_response(), // 500
-            Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
-            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
-            // might specialize these errors more going forward
-            // need to consider server vs client
+
+            // presumed client errors
             Error::BadETagFormat(_) |
+            Error::InvalidHeaderValue(_) |
+            Error::Header(_) => (StatusCode::BAD_REQUEST, self.to_string()).into_response(),
+
+            // presumed server errors
+            Error::MissingContext |
+            Error::Unknown(_) |
             Error::CreateString(_) |
             Error::Deserialization(_) |
             Error::ExtraCaptures(_) |
-            Error::InvalidHeaderValue(_) |
             Error::IriConversion(_) |
             Error::IriTempate(_) |
             Error::IriValidate(_) |
