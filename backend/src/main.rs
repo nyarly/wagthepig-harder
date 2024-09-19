@@ -6,11 +6,12 @@ use axum::{
   Router,
   routing::{get, post},
   extract::{self, ConnectInfo, FromRef, Json, Path, State},
-  response::{ErrorResponse, IntoResponse, Result},
+  response::{IntoResponse, Result},
 };
 
 use axum_extra::{headers::IfMatch, TypedHeader};
 use biscuit_auth::macros::authorizer;
+use db::EventId;
 use hyper::header;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use tower_http::trace::TraceLayer;
@@ -85,6 +86,42 @@ password:              ENV['SMTP_PASSWORD'],
   axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?; Ok(())
 }
 
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("database error: ${0:?}")]
+    DB(#[from] db::Error),
+    #[error("http error: ${0:?}")]
+    HTTP(#[from] semweb_api::Error),
+    #[error("status code: ${0:?} - ${1}")]
+    StatusCode(StatusCode, String),
+}
+
+
+impl From<(StatusCode, &'static str)> for Error {
+    fn from((code, text): (StatusCode, &'static str)) -> Self {
+        Self::StatusCode(code, text.to_string())
+
+    }
+}
+
+impl From<(StatusCode, String)> for Error {
+    fn from((code, text): (StatusCode, String)) -> Self {
+        Self::StatusCode(code, text)
+
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            Error::DB(e) => e.into_response(),
+            Error::HTTP(e) => e.into_response(),
+            Error::StatusCode(c, t) => (c,t).into_response(),
+        }
+    }
+}
+
 fn open_api_router() -> Router<AppState> {
   let path = |rm| route_config(rm).axum_route();
 
@@ -138,30 +175,25 @@ async fn get_profile(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
   Path(user_id): Path<String>
-) -> impl IntoResponse {
-  db::User::by_email(&db, user_id)
-        .and_then(|profile| async {
-            Ok(EtaggedJson(httpapi::UserResponse::from_query(nested_at.as_str(), profile)?))
-        }).await
+) -> Result<impl IntoResponse, Error> {
+    let profile = db::User::by_email(&db, user_id).await?;
+    Ok(EtaggedJson(httpapi::UserResponse::from_query(nested_at.as_str(), profile)?))
 }
 
 #[debug_handler(state = AppState)]
 async fn get_event_list(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath
-) -> impl IntoResponse {
-  db::Event::get_all(&db)
-    .and_then(|events| async {
-      Ok(Json(httpapi::EventListResponse::from_query(nested_at.as_str(), events)?))
-    })
-    .await
+) -> Result<impl IntoResponse, Error> {
+    let events = db::Event::get_all(&db).await?;
+    Ok(Json(httpapi::EventListResponse::from_query(nested_at.as_str(), events)?))
 }
 
 #[debug_handler(state = AppState)]
 async fn get_event(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
-  Path(event_id): extract::Path<i64>,
+  Path(event_id): extract::Path<EventId>,
 ) -> impl IntoResponse {
     retrieve_event(&db, nested_at, event_id)
         .and_then(|event_response| async {
@@ -175,77 +207,72 @@ async fn update_event(
   State(db): State<Pool<Postgres>>,
   TypedHeader(if_match): TypedHeader<IfMatch>,
   nested_at: extract::NestedPath,
-  Path(event_id): extract::Path<i64>,
+  Path(event_id): extract::Path<EventId>,
   Json(body): extract::Json<httpapi::EventUpdateRequest>
-) -> impl IntoResponse {
-    retrieve_event(&db, nested_at.clone(), event_id)
-        .and_then(|event| async {
-            if if_match.precondition_passes( &etag_for(event)?) {
-                Ok(())
-            } else {
-                Err(ErrorResponse::from(StatusCode::PRECONDITION_FAILED))
-            }
-        }).await?;
+) -> Result<impl IntoResponse, Error> {
+    let event = retrieve_event(&db, nested_at.clone(), event_id).await?;
 
-    body.db_param()
+    if !if_match.precondition_passes( &etag_for(event)?) {
+        return Err((StatusCode::PRECONDITION_FAILED, "etag didn't match for update").into())
+    }
+
+    let event = body.db_param()
         .with_id(event_id.into())
-        .update(&db)
-        .and_then(|event| async move {
-            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
-            Ok(Json(httpapi::EventResponse::from_query(&event_tmpl, event)?))
-        }).await
+        .update(&db).await?;
+
+    let event_route = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+    Ok(Json(httpapi::EventResponse::from_query(&event_route, event)?))
 }
 
 async fn retrieve_event(
     db: &Pool<Postgres>,
     nested_at: extract::NestedPath,
-    event_id: i64
-) -> Result<httpapi::EventResponse, ErrorResponse> {
-  db::Event::get_by_id(db, event_id.into())
-    .and_then(|maybe_event| async {
-      match maybe_event {
+    event_id: EventId
+) -> Result<httpapi::EventResponse, Error> {
+    let maybe_event = db::Event::get_by_id(db, event_id.into()).await?;
+
+    match maybe_event {
         Some(event) => {
-          let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
-          httpapi::EventResponse::from_query(&event_tmpl, event)
-                    .map_err(|e| e.into())
+            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+            httpapi::EventResponse::from_query(&event_tmpl, event)
+                .map_err(|e| e.into())
         }
-        None => Err(ErrorResponse::from(StatusCode::NOT_FOUND))
-      }
-    })
-    .await
+        None => Err((StatusCode::NOT_FOUND, "not found").into())
+    }
 }
 
 #[debug_handler(state = AppState)]
 async fn get_event_games(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
-  Path((event_id, user_id)): extract::Path<(i64, String)>,
-) -> impl IntoResponse {
-  db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone())
-    .and_then(|games| async {
-      Ok(Json(httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?))
-    })
-    .await
+  Path((event_id, user_id)): extract::Path<(EventId, String)>,
+) -> Result<impl IntoResponse, Error> {
+    let games = db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
+    Ok(Json(httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?))
 }
 
 #[debug_handler(state = AppState)]
 async fn create_new_game(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
-  Path((event_id, user_id)): extract::Path<(i64, String)>,
+  Path((event_id, user_id)): extract::Path<(EventId, String)>,
   Json(body): extract::Json<httpapi::GameUpdateRequest>
-) -> impl IntoResponse {
-    body.db_param(event_id)
-        .add_new(&db, user_id)
-        .and_then(|new_id| async move {
-            route_config(RouteMap::Game)
-                .prefixed(nested_at.as_str())
-                .fill(GameLocate{ game_id: new_id.into() })
-                .map(|location_uri| {
-                    (StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())])
-                })
-                .map_err(|e| e.into())
-        }).await
+) -> Result<impl IntoResponse, Error> {
+    let mut tx = db.begin().map_err(db::Error::from).await?;
+
+    let game = body.db_param(event_id);
+    let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
+    let game = game.with_id(new_id);
+    game.update_interests(&mut *tx, user_id).await?;
+
+    tx.commit().map_err(db::Error::from).await?;
+
+    let location_uri = route_config(RouteMap::Game)
+        .prefixed(nested_at.as_str())
+        .fill(GameLocate{ game_id: new_id })
+        .map_err(Error::from)?;
+
+    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
 }
 
 
@@ -255,18 +282,15 @@ async fn create_new_event(
   State(db): State<Pool<Postgres>>,
   nested_at: extract::NestedPath,
   Json(body): extract::Json<httpapi::EventUpdateRequest>
-) -> impl IntoResponse {
-    body.db_param()
-        .add_new(&db)
-        .and_then(|new_id| async move {
-            route_config(RouteMap::Event)
-                .prefixed(nested_at.as_str())
-                .fill( EventLocate{ event_id: new_id.into() })
-                .map(|location_uri| {
-                    (StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())])
-                })
-                .map_err(|e| e.into())
-        }).await
+) -> Result<impl IntoResponse, Error> {
+    let new_id = body.db_param()
+        .add_new(&db).await?;
+
+    let location_uri = route_config(RouteMap::Event)
+        .prefixed(nested_at.as_str())
+        .fill( EventLocate{ event_id: new_id })?;
+
+    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
 }
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
@@ -279,20 +303,18 @@ async fn authenticate(
   ConnectInfo(addr): ConnectInfo<SocketAddr>,
   nested_at: extract::NestedPath,
   Json(authreq): Json<httpapi::AuthnRequest>
-) -> impl IntoResponse {
-  db::User::by_email(&db, authreq.email.clone())
-    .and_then(|user| async move {
-      if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
+) -> Result<impl IntoResponse, Error> {
+    let user = db::User::by_email(&db, authreq.email.clone()).await?;
+
+    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
         let token = biscuits::authority(&auth, user.email.clone(), ONE_WEEK, Some(addr))?;
         Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from_query(nested_at.as_str(), user)?)))
-      } else {
-        Err((StatusCode::FORBIDDEN, "Authorization rejected".to_string()).into())
-      }
-    })
-  .await
+    } else {
+        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
+    }
 }
 
-fn internal_error<E: std::error::Error>(err: E) -> ErrorResponse {
+fn internal_error<E: std::error::Error>(err: E) -> Error {
     debug!("internal error: {:?}", err);
   (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into()
 }

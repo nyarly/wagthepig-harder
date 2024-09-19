@@ -1,7 +1,8 @@
 use axum::{http, response::IntoResponse};
+use axum_extra::extract as extra_extract;
+use axum::extract;
 
 use crate::routing;
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -31,13 +32,49 @@ pub enum Error {
     BadETagFormat(String),
     #[error("couldn't convert value to IRI: {0:?}")]
     IriConversion(String),
+    #[error("issue building token: {0:?}")]
+    Token(#[from] biscuit_auth::error::Token),
+    #[error("routing match error")]
+    MatchedPath(#[from] extract::rejection::MatchedPathRejection),
+    #[error("nested path error")]
+    NestedPath(#[from] extract::rejection::NestedPathRejection),
+    #[error("extension error")]
+    Extension(#[from] extract::rejection::ExtensionRejection),
+    #[error("extracting path params")]
+    PathParams(#[from] extract::rejection::RawPathParamsRejection),
+    #[error("extracting host")]
+    Host(#[from] extract::rejection::HostRejection),
+    #[error("extracting query params")]
+    Query(#[from] extra_extract::QueryRejection),
+    #[error("no authentication context found")]
+    MissingContext,
+    #[error("no authentication credential token found")]
+    NoToken,
+    #[error("authorization failed")]
+    AuthorizationFailed,
 }
-
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         use http::status::StatusCode;
         match self {
+            Error::Token(err) => {
+                match err {
+                    biscuit_auth::error::Token::ConversionError(_) => (StatusCode::BAD_REQUEST, "couldn't convert token").into_response(),
+                    biscuit_auth::error::Token::Base64(_) => (StatusCode::BAD_REQUEST, "invalid token encoding").into_response(),
+                    biscuit_auth::error::Token::Format(_) => (StatusCode::BAD_REQUEST, "invalid token format").into_response(),
+                    _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal authentication error").into_response()
+                }
+            }
+            Error::MatchedPath(mpe) => mpe.into_response(),
+            Error::NestedPath(e) => e.into_response(),
+            Error::Extension(ee) => ee.into_response(),
+            Error::PathParams(e) => e.into_response(),
+            Error::Host(e) => e.into_response(),
+            Error::Query(e) => e.into_response(),
+            Error::MissingContext => (StatusCode::INTERNAL_SERVER_ERROR, "missing authorization context").into_response(), // 500
+            Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
+            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
             // might specialize these errors more going forward
             // need to consider server vs client
             Error::BadETagFormat(_) |

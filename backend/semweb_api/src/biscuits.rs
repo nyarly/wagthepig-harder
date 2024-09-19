@@ -13,7 +13,6 @@ use axum::{
 use futures::future::ok;
 use futures::{ready, Future, FutureExt};
 use futures_util::future::BoxFuture;
-use hyper::StatusCode;
 use pin_project_lite::pin_project;
 use tower::{Service, Layer};
 use tracing::debug;
@@ -27,6 +26,8 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
+
+use crate::Error;
 
 /// A convenience method for building a authentication token
 /// The result is a biscuit_auth::Biscuit.to_base64()
@@ -379,54 +380,6 @@ where
                     Ok(response)
                 })
             }
-        }
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("issue building token: {0:?}")]
-    Token(#[from] biscuit_auth::error::Token),
-    #[error("routing match error")]
-    MatchedPath(#[from] extract::rejection::MatchedPathRejection),
-    #[error("nested path error")]
-    NestedPath(#[from] extract::rejection::NestedPathRejection),
-    #[error("extension error")]
-    Extension(#[from] extract::rejection::ExtensionRejection),
-    #[error("extracting path params")]
-    PathParams(#[from] extract::rejection::RawPathParamsRejection),
-    #[error("extracting host")]
-    Host(#[from] extract::rejection::HostRejection),
-    #[error("extracting query params")]
-    Query(#[from] extra_extract::QueryRejection),
-    #[error("no authentication context found")]
-    MissingContext,
-    #[error("no authentication credential token found")]
-    NoToken,
-    #[error("authorization failed")]
-    AuthorizationFailed,
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        match self {
-            Error::Token(err) => {
-                match err {
-                    error::Token::ConversionError(_) => (StatusCode::BAD_REQUEST, "couldn't convert token").into_response(),
-                    error::Token::Base64(_) => (StatusCode::BAD_REQUEST, "invalid token encoding").into_response(),
-                    error::Token::Format(_) => (StatusCode::BAD_REQUEST, "invalid token format").into_response(),
-                    _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal authentication error").into_response()
-                }
-            }
-            Error::MatchedPath(mpe) => mpe.into_response(),
-            Error::NestedPath(e) => e.into_response(),
-            Error::Extension(ee) => ee.into_response(),
-            Error::PathParams(e) => e.into_response(),
-            Error::Host(e) => e.into_response(),
-            Error::Query(e) => e.into_response(),
-            Error::MissingContext => (StatusCode::INTERNAL_SERVER_ERROR, "missing authorization context").into_response(), // 500
-            Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
-            Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
         }
     }
 }

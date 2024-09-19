@@ -64,7 +64,7 @@ F/E
 * Biscuit WASM port for Elm e.g.
   - check if my ip = requesting id
   - check if time is in the next 60 seconds
-* Sophisticated 409 handling for conditional updates (automatic 3-way merge)
+* Sophisticated 409 handling in F/E for conditional updates (automatic 3-way merge)
 * For the URITemplate/matchit "bridge"
   - consider adding the ability to "trade" '//' for a limit of 1 pre-path expression
 * Derive macro for RouteTemplate enums - like:
@@ -87,8 +87,8 @@ pub(crate) enum RouteMap {
     // ...
 }
 ```
-
-
+* Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
+  Event<GameId> would work :/
 
 == Design Decisions
 

@@ -7,7 +7,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::db::{self, EventId, GameId, IdType as _, NoId, UserId};
+use crate::db::{self, EventId, GameId, NoId, UserId};
 
 use semweb_api_derives::{Context, Listable};
 use semweb_api::{
@@ -73,20 +73,20 @@ pub(crate) struct ProfileLocate {
     pub user_id: String
 }
 
-#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+#[derive(Serialize, Copy, Clone, Listable, Context)]
 pub(crate) struct EventLocate {
-    pub event_id: i64
+    pub event_id: EventId
 }
 
-#[derive(Default, Serialize, Clone, Listable, Context)]
+#[derive(Serialize, Clone, Listable, Context)]
 pub(crate) struct EventGamesLocate {
-    pub event_id: i64,
+    pub event_id: EventId,
     pub user_id: String
 }
 
-#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+#[derive(Serialize, Copy, Clone, Listable, Context)]
 pub(crate) struct GameLocate {
-    pub game_id: i64
+    pub game_id: GameId
 }
 
 pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
@@ -199,7 +199,7 @@ impl EventResponse {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 idtmpl,
-                EventLocate{ event_id: value.id.into() },
+                EventLocate{ event_id: value.id },
                 "api:eventByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
@@ -249,8 +249,10 @@ pub(crate) struct GameUpdateRequest {
 }
 
 impl GameUpdateRequest {
-    pub(crate) fn db_param(&self, event_id: i64) -> db::Game<NoId> {
+    pub(crate) fn db_param(&self, event_id: EventId) -> db::Game<NoId> {
         db::Game {
+            id: NoId,
+            suggestor_id: 0.into(),
             event_id,
             name: self.name.clone(),
             min_players: self.min_players,
@@ -262,7 +264,8 @@ impl GameUpdateRequest {
             interested: self.interested,
             can_teach: self.can_teach,
             notes: self.notes.clone(),
-            ..db::Game::default()
+            created_at: NaiveDateTime::default(),
+            updated_at: NaiveDateTime::default(),
         }
     }
 }
@@ -278,7 +281,7 @@ pub(crate) struct EventGameListResponse {
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: i64, user_id: String, list: Vec<db::Game<GameId>>) -> Result<Self, Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId>>) -> Result<Self, Error> {
         let game_tmpl = route_config(RouteMap::Game).prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -324,7 +327,7 @@ impl EventGameResponse {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 route,
-                GameLocate{ game_id: value.id.id() },
+                GameLocate{ game_id: value.id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
