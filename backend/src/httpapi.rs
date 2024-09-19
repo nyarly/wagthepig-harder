@@ -250,11 +250,31 @@ pub(crate) struct GameUpdateRequest {
 }
 
 impl GameUpdateRequest {
-    pub(crate) fn db_param(&self, event_id: EventId) -> db::Game<NoId> {
+    pub(crate) fn for_insert_on_event(&self, event_id: EventId) -> db::Game<NoId, EventId> {
         db::Game {
             id: NoId,
             suggestor_id: 0.into(),
             event_id,
+            name: self.name.clone(),
+            min_players: self.min_players,
+            max_players: self.max_players,
+            bgg_link: self.bgg_link.clone(),
+            duration_secs: self.duration_secs,
+            bgg_id: self.bgg_id.clone(),
+            pitch: self.pitch.clone(),
+            interested: self.interested,
+            can_teach: self.can_teach,
+            notes: self.notes.clone(),
+            created_at: NaiveDateTime::default(),
+            updated_at: NaiveDateTime::default(),
+        }
+    }
+
+    pub(crate) fn for_update(&self) -> db::Game<NoId, NoId> {
+        db::Game {
+            id: NoId,
+            event_id: NoId,
+            suggestor_id: 0.into(),
             name: self.name.clone(),
             min_players: self.min_players,
             max_players: self.max_players,
@@ -278,11 +298,11 @@ pub(crate) struct EventGameListResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<EventGamesLocate>,
 
-    pub games: Vec<EventGameResponse>
+    pub games: Vec<GameResponse>
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId>>) -> Result<Self, Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId>>) -> Result<Self, Error> {
         let game_tmpl = route_config(RouteMap::Game).prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -292,7 +312,7 @@ impl EventGameListResponse {
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
             games: list.into_iter().map(|game|
-                EventGameResponse::from_query(&game_tmpl,game)
+                GameResponse::from_query(&game_tmpl,game)
             ).collect::<Result<_,_>>()?
         })
     }
@@ -300,7 +320,7 @@ impl EventGameListResponse {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all="camelCase")]
-pub(crate) struct EventGameResponse {
+pub(crate) struct GameResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<GameLocate>,
 
@@ -323,8 +343,8 @@ pub(crate) struct EventGameResponse {
 */
 }
 
-impl EventGameResponse {
-    pub fn from_query(route: &routing::Entry, value: db::Game<GameId>) -> Result<Self, Error> {
+impl GameResponse {
+    pub fn from_query<E>(route: &routing::Entry, value: db::Game<GameId, E>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 route,

@@ -42,7 +42,7 @@ impl<S: Send + Sync> FromRequestParts<S> for CondUpdateHeader {
 }
 
 impl CondUpdateHeader {
-    pub fn allow_update(&self, body: impl Serialize) -> Result<(), Error> {
+    pub fn guard_update(&self, body: impl Serialize) -> Result<(), Error> {
         match self {
             CondUpdateHeader::IfMatch(if_match) => if if_match.precondition_passes( &etag_for(body)?) {
                     Ok(())

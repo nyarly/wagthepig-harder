@@ -10,7 +10,7 @@ use axum::{
 };
 
 use biscuit_auth::macros::authorizer;
-use db::EventId;
+use db::{EventId, GameId};
 use hyper::header;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use tower_http::trace::TraceLayer;
@@ -20,7 +20,7 @@ use futures::future::TryFutureExt;
 
 use httpapi::{EventLocate, GameLocate, RouteMap};
 
-use semweb_api::{biscuits::{self, Authentication}, condreq::{self, EtaggedJson}, routing::route_config, spa};
+use semweb_api::{biscuits::{self, Authentication}, condreq::{self, EtaggedJson}, routing::{self, route_config}, spa};
 
 
 // app modules
@@ -211,7 +211,7 @@ async fn update_event(
 ) -> Result<impl IntoResponse, Error> {
     let event = retrieve_event(&db, nested_at.clone(), event_id).await?;
 
-    if_match.allow_update(event)?;
+    if_match.guard_update(event)?;
 
     let event_route = route_config(RouteMap::Event).prefixed(nested_at.as_str());
     let event = body.db_param()
@@ -239,13 +239,32 @@ async fn retrieve_event(
 }
 
 #[debug_handler(state = AppState)]
+async fn create_new_event(
+    State(db): State<Pool<Postgres>>,
+    nested_at: extract::NestedPath,
+    Json(body): extract::Json<httpapi::EventUpdateRequest>
+) -> Result<impl IntoResponse, Error> {
+    let new_id = body.db_param()
+        .add_new(&db).await?;
+
+    let location_uri = route_config(RouteMap::Event)
+        .prefixed(nested_at.as_str())
+        .fill( EventLocate{ event_id: new_id })?;
+
+    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
+}
+
+
+#[debug_handler(state = AppState)]
 async fn get_event_games(
     State(db): State<Pool<Postgres>>,
+    if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath,
     Path((event_id, user_id)): extract::Path<(EventId, String)>,
 ) -> Result<impl IntoResponse, Error> {
     let games = db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
-    Ok(Json(httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?))
+    let resp = httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
+    if_none_match.respond(resp).map_err(Error::from)
 }
 
 #[debug_handler(state = AppState)]
@@ -257,7 +276,7 @@ async fn create_new_game(
 ) -> Result<impl IntoResponse, Error> {
     let mut tx = db.begin().map_err(db::Error::from).await?;
 
-    let game = body.db_param(event_id);
+    let game = body.for_insert_on_event(event_id);
     let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
     let game = game.with_id(new_id);
     game.update_interests(&mut *tx, user_id).await?;
@@ -272,22 +291,43 @@ async fn create_new_game(
     Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
 }
 
-
-
+/*
 #[debug_handler(state = AppState)]
-async fn create_new_event(
+async fn update_game(
     State(db): State<Pool<Postgres>>,
+    if_match: condreq::CondUpdateHeader,
     nested_at: extract::NestedPath,
-    Json(body): extract::Json<httpapi::EventUpdateRequest>
+    Path((game_id, user_id)): extract::Path<(GameId, String)>,
+    Json(body): extract::Json<httpapi::GameUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let new_id = body.db_param()
-        .add_new(&db).await?;
+    let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
+    let game = retrieve_game(&db, &game_route, game_id, user_id).await?;
 
-    let location_uri = route_config(RouteMap::Event)
-        .prefixed(nested_at.as_str())
-        .fill( EventLocate{ event_id: new_id })?;
+    if_match.guard_update(game)?;
 
-    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
+    let game = body.for_update()
+        .with_id(game_id)
+        .update(&db).await?;
+
+    Ok(Json(httpapi::GameResponse::from_query(&game_route, game)))
+}
+*/
+
+async fn retrieve_game(
+    db: &Pool<Postgres>,
+    game_route: &routing::Entry,
+    game_id: GameId,
+    user_id: String,
+) -> Result<httpapi::GameResponse, Error> {
+    let maybe_game = db::Game::get_by_id_and_user(db, game_id, user_id).await?;
+
+    match maybe_game {
+        Some(game) => {
+            httpapi::GameResponse::from_query(game_route, game)
+                .map_err(Error::from)
+        }
+        None => Err((StatusCode::NOT_FOUND, "not found").into())
+    }
 }
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week

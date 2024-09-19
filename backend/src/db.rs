@@ -233,16 +233,18 @@ id_type!(GameId(i64));
 
 #[derive(sqlx::FromRow, Debug)]
 #[allow(dead_code)] // Have to match DB
-pub(crate) struct Game<T> {
+pub(crate) struct Game<T, U> {
     pub id: T,
-    pub event_id: EventId,
+    pub event_id: U,
     pub suggestor_id: UserId,
+
+    pub name: Option<String>,
     pub bgg_id: Option<String>,
     pub bgg_link: Option<String>,
-    pub name: Option<String>,
     pub min_players: Option<i32>,
     pub max_players: Option<i32>,
     pub duration_secs: Option<i32>,
+
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub pitch: Option<String>,
@@ -251,10 +253,12 @@ pub(crate) struct Game<T> {
     pub notes: Option<String>,
 }
 
-impl<F> Game<F> {
-    pub fn with_id<T: PrimaryKey>(&self, id: T) -> Game<T> {
-        Game::<T>{
+impl<F, E: Copy> Game<F, E> {
+    pub fn with_id<T: PrimaryKey>(&self, id: T) -> Game<T, E> {
+        Game::<T, E>{
             id,
+            event_id: self.event_id,
+            suggestor_id: self.suggestor_id,
             name: self.name.clone(),
             min_players: self.min_players,
             max_players: self.max_players,
@@ -262,8 +266,6 @@ impl<F> Game<F> {
             duration_secs: self.duration_secs,
             created_at: self.created_at,
             updated_at: self.updated_at,
-            event_id: self.event_id,
-            suggestor_id: self.suggestor_id,
             bgg_id: self.bgg_id.clone(),
             pitch: self.pitch.clone(),
             interested: self.interested,
@@ -273,7 +275,29 @@ impl<F> Game<F> {
     }
 }
 
-impl Game<NoId> {
+impl<G: Copy, F> Game<G, F> {
+    pub fn with_event_id<T: PrimaryKey>(&self, event_id: T) -> Game<G, T> {
+        Game::<G, T>{
+            event_id,
+            id: self.id,
+            suggestor_id: self.suggestor_id,
+            name: self.name.clone(),
+            min_players: self.min_players,
+            max_players: self.max_players,
+            bgg_link: self.bgg_link.clone(),
+            duration_secs: self.duration_secs,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            bgg_id: self.bgg_id.clone(),
+            pitch: self.pitch.clone(),
+            interested: self.interested,
+            can_teach: self.can_teach,
+            notes: self.notes.clone(),
+        }
+    }
+}
+
+impl Game<NoId, EventId> {
     pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
     -> impl Future<Output = Result<GameId, Error>> + 'a {
         // insert a game that reference the event and the user (means a subselect)
@@ -293,7 +317,45 @@ impl Game<NoId> {
     }
 }
 
-impl Game<GameId> {
+/*
+impl Game<GameId, NoId> {
+    pub fn update<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId)
+    -> impl Future<Output = Result<Game<GameId, EventId>, Error>> + 'a {
+        sqlx::query_as!(
+            Self,
+            r#"update games
+            set ( "name", "bgg_id", "bgg_link", "min_players", "max_players", "duration_secs")
+                = ( $1, $2, $3, $4, $5, $6 )
+            where id = $7
+                returning *,
+                $8 as pitch, $9 as interested, $10 as can_teach, $11 as notes"#,
+            self.name, self.bgg_id, self.bgg_link, self.min_players, self.max_players, self.duration_secs,
+                self.id.id(),
+            self.pitch, self.interested, self.can_teach, self.notes)
+            .fetch_one(db)
+            .map_err(Error::from)
+    }
+}
+*/
+
+impl Game<GameId, EventId> {
+    pub fn get_by_id_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId, user_id: String)
+    -> impl Future<Output = Result<Option<Self>, Error>> + 'a {
+        sqlx::query_as!(
+            Self,
+            r#"select games.*,
+                (interests.id is not null) as interested,
+                (coalesce (interests.can_teach, false)) as can_teach,
+                interests.notes
+            from games
+                left join interests on games.id = interests.game_id
+                join users on interests.user_id = users.id and email = $2
+            where games.id = $1"#,
+            game_id.id(), user_id)
+            .fetch_optional(db)
+            .map_err(Error::from)
+    }
+
     pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, email: String)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         sqlx::query_as!(
@@ -302,10 +364,10 @@ impl Game<GameId> {
                 (interests.id is not null) as interested,
                 (coalesce (interests.can_teach, false)) as can_teach,
                 interests.notes
-                from games
+            from games
                 left join interests on games.id = interests.game_id
                 join users on interests.user_id = users.id and email = $2
-                where event_id = $1"#,
+            where event_id = $1"#,
             event_id.id(), email)
             .fetch_all(db)
             .map_err(Error::from)
