@@ -32,6 +32,11 @@ impl From<NoId> for Infallible{
     }
 }
 
+/// Use as a generic type to skip fields that might sometimes be included
+#[derive(sqlx::FromRow, Debug, Default, Clone, Copy)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct Omit{}
+
 macro_rules! id_type {
     ($name:ident($wraps:ident)) => {
         #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, sqlx::Type, Deserialize, Serialize)]
@@ -233,116 +238,147 @@ id_type!(GameId(i64));
 
 #[derive(sqlx::FromRow, Debug)]
 #[allow(dead_code)] // Have to match DB
-pub(crate) struct Game<T, U> {
-    pub id: T,
-    pub event_id: U,
-    pub suggestor_id: UserId,
+pub(crate) struct Game<PK, FE, FU, I> {
+    pub id: PK,
+    pub event_id: FE,
+    pub suggestor_id: FU,
 
+    #[sqlx(flatten)]
+    pub data: GameData,
+
+    #[sqlx(flatten)]
+    pub interest: I
+}
+
+
+#[derive(sqlx::FromRow, Debug, Default, Clone)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct GameData {
     pub name: Option<String>,
     pub bgg_id: Option<String>,
     pub bgg_link: Option<String>,
     pub min_players: Option<i32>,
     pub max_players: Option<i32>,
     pub duration_secs: Option<i32>,
+    pub pitch: Option<String>,
 
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub pitch: Option<String>,
+}
+
+#[derive(sqlx::FromRow, Debug, Default, Clone)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct InterestData {
     pub interested: Option<bool>,
     pub can_teach: Option<bool>,
     pub notes: Option<String>,
 }
 
-impl<F, E: Copy> Game<F, E> {
-    pub fn with_id<T: PrimaryKey>(&self, id: T) -> Game<T, E> {
-        Game::<T, E>{
+impl Default for Game<NoId, NoId, NoId, Omit> {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            event_id: Default::default(),
+            suggestor_id: Default::default(),
+            data: Default::default(),
+            interest: Default::default()
+        }
+    }
+}
+
+impl Default for Game<NoId, NoId, NoId, InterestData> {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            event_id: Default::default(),
+            suggestor_id: Default::default(),
+            data: Default::default(),
+            interest: Default::default()
+        }
+    }
+}
+
+impl<From, E: Copy, U: Copy, I: Clone> Game<From, E, U, I> {
+    pub fn with_id<To: PrimaryKey>(self, id: To) -> Game<To, E, U, I> {
+        Game::<To, E, U, I>{
             id,
             event_id: self.event_id,
             suggestor_id: self.suggestor_id,
-            name: self.name.clone(),
-            min_players: self.min_players,
-            max_players: self.max_players,
-            bgg_link: self.bgg_link.clone(),
-            duration_secs: self.duration_secs,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            bgg_id: self.bgg_id.clone(),
-            pitch: self.pitch.clone(),
-            interested: self.interested,
-            can_teach: self.can_teach,
-            notes: self.notes.clone(),
+            data: self.data,
+            interest: self.interest
         }
     }
 }
 
-impl<G: Copy, F> Game<G, F> {
-    pub fn with_event_id<T: PrimaryKey>(&self, event_id: T) -> Game<G, T> {
-        Game::<G, T>{
+impl<G: Copy, From, U: Copy, I: Clone> Game<G, From, U, I> {
+    pub fn with_event_id<To: PrimaryKey>(self, event_id: To) -> Game<G, To, U, I> {
+        Game::<G, To, U, I>{
             event_id,
             id: self.id,
             suggestor_id: self.suggestor_id,
-            name: self.name.clone(),
-            min_players: self.min_players,
-            max_players: self.max_players,
-            bgg_link: self.bgg_link.clone(),
-            duration_secs: self.duration_secs,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            bgg_id: self.bgg_id.clone(),
-            pitch: self.pitch.clone(),
-            interested: self.interested,
-            can_teach: self.can_teach,
-            notes: self.notes.clone(),
+            data: self.data,
+            interest: self.interest
         }
     }
 }
 
-impl Game<NoId, EventId> {
+impl<G: Copy, E: Copy, U: Copy, From> Game<G, E, U, From> {
+    pub fn with_interest_data(self, interest: InterestData) -> Game<G, E, U, InterestData> {
+        Game::<G,E,U,InterestData>{
+            id: self.id,
+            event_id: self.event_id,
+            suggestor_id: self.suggestor_id,
+            data: self.data,
+            interest
+        }
+    }
+}
+
+impl<U, I> Game<NoId, EventId, U, I> {
     pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
     -> impl Future<Output = Result<GameId, Error>> + 'a {
-        // insert a game that reference the event and the user (means a subselect)
-        // insert an interest for the game, event and user
+        let data = &self.data;
         sqlx::query_scalar!(
             r#"insert into games
                 ("name", "min_players", "max_players", "bgg_link",
-                "duration_secs", "event_id",  "bgg_id", "pitch", "suggestor_id")
+                "duration_secs", "bgg_id", "pitch", "event_id",  "suggestor_id")
                 values ($1, $2, $3, $4,
                 $5, $6, $7, $8, (select id from users where email = $9))
                 returning id"#,
-            self.name, self.min_players, self.max_players, self.bgg_link,
-            self.duration_secs, self.event_id.id(), self.bgg_id, self.pitch, user_id)
+            data.name, data.min_players, data.max_players, data.bgg_link,
+            data.duration_secs, data.bgg_id, data.pitch, self.event_id.id(), user_id)
             .fetch_one(db)
             .map_ok(|n| n.into())
             .map_err(Error::from)
     }
 }
 
-/*
-impl Game<GameId, NoId> {
-    pub fn update<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId)
-    -> impl Future<Output = Result<Game<GameId, EventId>, Error>> + 'a {
-        sqlx::query_as!(
-            Self,
+impl Game<GameId, NoId, NoId, Omit> {
+    pub fn update<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a)
+    -> impl Future<Output = Result<Game<GameId, EventId, UserId, Omit>, Error>> + 'a {
+        let data = &self.data;
+        sqlx::query_as(
             r#"update games
             set ( "name", "bgg_id", "bgg_link", "min_players", "max_players", "duration_secs")
                 = ( $1, $2, $3, $4, $5, $6 )
             where id = $7
-                returning *,
-                $8 as pitch, $9 as interested, $10 as can_teach, $11 as notes"#,
-            self.name, self.bgg_id, self.bgg_link, self.min_players, self.max_players, self.duration_secs,
-                self.id.id(),
-            self.pitch, self.interested, self.can_teach, self.notes)
+                returning *"#)
+            .bind(data.name.clone())
+            .bind(data.bgg_id.clone())
+            .bind(data.bgg_link.clone())
+            .bind(data.min_players)
+            .bind(data.max_players)
+            .bind(data.duration_secs)
+            .bind(self.id.id())
             .fetch_one(db)
             .map_err(Error::from)
     }
 }
-*/
 
-impl Game<GameId, EventId> {
+impl Game<GameId, EventId, UserId, InterestData> {
     pub fn get_by_id_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId, user_id: String)
     -> impl Future<Output = Result<Option<Self>, Error>> + 'a {
-        sqlx::query_as!(
-            Self,
+        sqlx::query_as(
             r#"select games.*,
                 (interests.id is not null) as interested,
                 (coalesce (interests.can_teach, false)) as can_teach,
@@ -350,16 +386,16 @@ impl Game<GameId, EventId> {
             from games
                 left join interests on games.id = interests.game_id
                 join users on interests.user_id = users.id and email = $2
-            where games.id = $1"#,
-            game_id.id(), user_id)
+            where games.id = $1"#)
+            .bind( game_id.id() )
+            .bind( user_id )
             .fetch_optional(db)
             .map_err(Error::from)
     }
 
     pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, email: String)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
-        sqlx::query_as!(
-            Self,
+        sqlx::query_as(
             r#"select games.*,
                 (interests.id is not null) as interested,
                 (coalesce (interests.can_teach, false)) as can_teach,
@@ -367,15 +403,19 @@ impl Game<GameId, EventId> {
             from games
                 left join interests on games.id = interests.game_id
                 join users on interests.user_id = users.id and email = $2
-            where event_id = $1"#,
-            event_id.id(), email)
+            where event_id = $1"#)
+            .bind(event_id.id())
+            .bind(email)
             .fetch_all(db)
             .map_err(Error::from)
     }
+}
 
+impl<E, U> Game<GameId, E, U, InterestData> {
     pub fn update_interests<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
     -> impl Future<Output = Result<(), Error>> + 'a {
-        (if Some(true) == self.interested {
+        let interest = &self.interest;
+        (if Some(true) == interest.interested {
             sqlx::query!(
             r#"insert into interests
                     ("game_id", "notes", "can_teach", "user_id")
@@ -383,15 +423,13 @@ impl Game<GameId, EventId> {
                 on conflict (game_id, user_id) do update set
                     ("notes", "can_teach") =
                     ($2, $3)"#,
-                self.id.id(), self.notes, self.can_teach, user_id)
+                self.id.id(), interest.notes, interest.can_teach, user_id)
         } else {
             sqlx::query!(
                 r#"delete from interests where game_id = $1"#,
                 self.id.id())
-        })
-            .execute(db)
+            }).execute(db)
             .map_ok(|_| ())
             .map_err(Error::from)
     }
-
 }

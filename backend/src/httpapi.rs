@@ -7,7 +7,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::db::{self, EventId, GameId, NoId, UserId};
+use crate::db::{self, NoId, Omit, EventId, GameId, UserId};
 
 use semweb_api_derives::{Context, Listable};
 use semweb_api::{
@@ -61,7 +61,7 @@ impl RouteTemplate for RouteMap {
             Events => "/events",
             Event => "/event/{event_id}",
             EventGames => "/event_games/{event_id}/user/{user_id}",
-            Game => "/games/{game_id}",
+            Game => "/games/{game_id}/user/{user_id}",
         }.to_string()
     }
 }
@@ -250,43 +250,31 @@ pub(crate) struct GameUpdateRequest {
 }
 
 impl GameUpdateRequest {
-    pub(crate) fn for_insert_on_event(&self, event_id: EventId) -> db::Game<NoId, EventId> {
-        db::Game {
-            id: NoId,
-            suggestor_id: 0.into(),
-            event_id,
-            name: self.name.clone(),
-            min_players: self.min_players,
-            max_players: self.max_players,
-            bgg_link: self.bgg_link.clone(),
-            duration_secs: self.duration_secs,
-            bgg_id: self.bgg_id.clone(),
-            pitch: self.pitch.clone(),
-            interested: self.interested,
-            can_teach: self.can_teach,
-            notes: self.notes.clone(),
-            created_at: NaiveDateTime::default(),
-            updated_at: NaiveDateTime::default(),
-        }
-    }
-
-    pub(crate) fn for_update(&self) -> db::Game<NoId, NoId> {
+    pub(crate) fn db_param(&self) -> db::Game<NoId, NoId, NoId, Omit> {
         db::Game {
             id: NoId,
             event_id: NoId,
-            suggestor_id: 0.into(),
-            name: self.name.clone(),
-            min_players: self.min_players,
-            max_players: self.max_players,
-            bgg_link: self.bgg_link.clone(),
-            duration_secs: self.duration_secs,
-            bgg_id: self.bgg_id.clone(),
-            pitch: self.pitch.clone(),
+            suggestor_id: NoId,
+            data: db::GameData{
+                name: self.name.clone(),
+                min_players: self.min_players,
+                max_players: self.max_players,
+                bgg_link: self.bgg_link.clone(),
+                duration_secs: self.duration_secs,
+                bgg_id: self.bgg_id.clone(),
+                pitch: self.pitch.clone(),
+                created_at: NaiveDateTime::default(),
+                updated_at: NaiveDateTime::default(),
+            },
+            interest: Omit{}
+        }
+    }
+
+    pub(crate) fn interest_part(&self) -> db::InterestData {
+        db::InterestData {
             interested: self.interested,
             can_teach: self.can_teach,
-            notes: self.notes.clone(),
-            created_at: NaiveDateTime::default(),
-            updated_at: NaiveDateTime::default(),
+            notes: self.notes.clone()
         }
     }
 }
@@ -302,7 +290,7 @@ pub(crate) struct EventGameListResponse {
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId>>) -> Result<Self, Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, Error> {
         let game_tmpl = route_config(RouteMap::Game).prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -333,6 +321,7 @@ pub(crate) struct GameResponse {
     pub pitch: Option<String>,
     pub interested: Option<bool>,
     pub can_teach: Option<bool>,
+    pub notes: Option<String>,
 
 /*
     // it might be nice to include name/email of suggestor
@@ -344,7 +333,7 @@ pub(crate) struct GameResponse {
 }
 
 impl GameResponse {
-    pub fn from_query<E>(route: &routing::Entry, value: db::Game<GameId, E>) -> Result<Self, Error> {
+    pub fn from_query<E, U>(route: &routing::Entry, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 route,
@@ -353,15 +342,16 @@ impl GameResponse {
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
 
-            name: value.name,
-            min_players: value.min_players,
-            max_players: value.max_players,
-            bgg_link: value.bgg_link,
-            duration_secs: value.duration_secs,
-            bgg_id: value.bgg_id,
-            pitch: value.pitch,
-            interested: value.interested,
-            can_teach: value.can_teach,
+            name: value.data.name,
+            min_players: value.data.min_players,
+            max_players: value.data.max_players,
+            bgg_link: value.data.bgg_link,
+            duration_secs: value.data.duration_secs,
+            bgg_id: value.data.bgg_id,
+            pitch: value.data.pitch,
+            interested: value.interest.interested,
+            can_teach: value.interest.can_teach,
+            notes: value.interest.notes,
         })
     }
 }

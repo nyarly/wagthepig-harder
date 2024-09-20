@@ -1,12 +1,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::{
-    http::StatusCode,
-    debug_handler,
-    Router,
-    routing::{get, post},
-    extract::{self, ConnectInfo, FromRef, Json, Path, State},
-    response::{IntoResponse, Result},
+    debug_handler, extract::{self, ConnectInfo, FromRef, Json, Path, State}, http::StatusCode, response::{IntoResponse, Result}, routing::{get, post, put}, Router
 };
 
 use biscuit_auth::macros::authorizer;
@@ -153,6 +148,9 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
                 .post(create_new_game)
         )
 
+        .route(&path(EventGames),
+            put(update_game)
+        )
 
         .layer(tower::ServiceBuilder::new()
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
@@ -276,9 +274,9 @@ async fn create_new_game(
 ) -> Result<impl IntoResponse, Error> {
     let mut tx = db.begin().map_err(db::Error::from).await?;
 
-    let game = body.for_insert_on_event(event_id);
+    let game = body.db_param().with_event_id(event_id);
     let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
-    let game = game.with_id(new_id);
+    let game = game.with_id(new_id).with_interest_data(body.interest_part());
     game.update_interests(&mut *tx, user_id).await?;
 
     tx.commit().map_err(db::Error::from).await?;
@@ -291,7 +289,6 @@ async fn create_new_game(
     Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
 }
 
-/*
 #[debug_handler(state = AppState)]
 async fn update_game(
     State(db): State<Pool<Postgres>>,
@@ -301,17 +298,25 @@ async fn update_game(
     Json(body): extract::Json<httpapi::GameUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
     let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
-    let game = retrieve_game(&db, &game_route, game_id, user_id).await?;
+    let game = retrieve_game(&db, &game_route, game_id, user_id.clone()).await?;
 
     if_match.guard_update(game)?;
 
-    let game = body.for_update()
+    let mut tx = db.begin().map_err(db::Error::from).await?;
+    let game = body.db_param()
         .with_id(game_id)
-        .update(&db).await?;
+        .update(&mut *tx).await
+        .map_err(Error::from)?;
 
-    Ok(Json(httpapi::GameResponse::from_query(&game_route, game)))
+    let game = game.with_interest_data(body.interest_part());
+
+    game.update_interests(&mut *tx, user_id).await
+        .map_err(Error::from)?;
+
+    tx.commit().map_err(db::Error::from).await?;
+
+    Ok(Json(httpapi::GameResponse::from_query(&game_route, game)?))
 }
-*/
 
 async fn retrieve_game(
     db: &Pool<Postgres>,
