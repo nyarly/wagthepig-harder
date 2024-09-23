@@ -23,7 +23,7 @@ XXX consider helper attrs to customize inclusion etc
 
 #[proc_macro_derive(Listable)]
 pub fn listable_derive(annotated_item: StdTokenStream) -> StdTokenStream {
-    let (struct_name, vars) = parse(annotated_item);
+    let (struct_name, vars, _) = parse(annotated_item);
 
     let expanded = quote! {
         impl ::semweb_api::routing::Listable for #struct_name {
@@ -64,7 +64,7 @@ XXX consider helper attrs to customize visit type
 
 #[proc_macro_derive(Context)]
 pub fn context_derive(item: StdTokenStream) -> StdTokenStream {
-    let (struct_name, vars) = parse(item);
+    let (struct_name, vars, _) = parse(item);
 
     let expanded = quote! {
         impl ::iri_string::template::context::Context for #struct_name {
@@ -82,7 +82,26 @@ pub fn context_derive(item: StdTokenStream) -> StdTokenStream {
     expanded.into()
 }
 
-fn parse(input: StdTokenStream) -> (Ident, Vec<Ident>) {
+#[proc_macro_derive(Extract)]
+pub fn extract_derive(item: StdTokenStream) -> StdTokenStream {
+    let (struct_name, vars, var_types) = parse(item);
+
+    let expanded = quote! {
+        impl<'de> ::serde::Deserialize<'de> for #struct_name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where D: ::serde::Deserializer<'de> {
+                let ( #( #vars ),* ) = <( #( #var_types ),* ) as ::serde::Deserialize>::deserialize(deserializer)?;
+                Ok(Self{ #( #vars ),* })
+            }
+        }
+    };
+
+    #[cfg(debug_output)]
+    eprintln!("{}", expanded);
+    expanded.into()
+}
+
+fn parse(input: StdTokenStream) -> (Ident, Vec<Ident>, Vec<TokenTree>) {
     let proc2_item = TokenStream::from(input);
     #[cfg(debug_output)]
     eprintln!("INPUT: {:?}\n\n", proc2_item);
@@ -111,10 +130,13 @@ fn parse(input: StdTokenStream) -> (Ident, Vec<Ident>) {
     };
     let mut body_iter = body.stream().into_iter().peekable();
     let mut vars = vec![];
+    let mut var_types = vec![];
     while let Some(tok) = body_iter.next() {
         match (tok, body_iter.peek()) {
             (TokenTree::Ident(var), Some(TokenTree::Punct(punct))) if punct.as_char() == ':' => {
-                vars.push(var)
+                vars.push(var);
+                body_iter.next(); // consume the ':'
+                var_types.push(body_iter.next().expect("a single ident type after :")) // naive assumption
             },
             _ => ()
         }
@@ -125,5 +147,5 @@ fn parse(input: StdTokenStream) -> (Ident, Vec<Ident>) {
     #[cfg(debug_output)]
     eprintln!("VARS: {:?}", vars);
 
-    (struct_name, vars)
+    (struct_name, vars, var_types)
 }

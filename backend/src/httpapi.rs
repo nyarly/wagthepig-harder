@@ -2,6 +2,7 @@ use axum::{response::IntoResponse, Json};
 use axum_extra::{headers::ETag, TypedHeader};
 use base64ct::{Base64, Encoding};
 use chrono::NaiveDateTime;
+use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -9,9 +10,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::db::{self, NoId, Omit, EventId, GameId, UserId};
 
-use semweb_api_derives::{Context, Listable};
+use semweb_api_derives::{Context, Extract, Listable};
 use semweb_api::{
-    hypermedia::{op, ActionType, IriTemplate, ResourceFields},
+    hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields},
     routing::{self, route_config, RouteTemplate}
 };
 
@@ -45,10 +46,12 @@ pub(crate) enum RouteMap {
     Root,
     Authenticate,
     Profile,
+    User,
     Events,
     Event,
     EventGames,
-    Game
+    Game,
+    Recommend
 }
 
 impl RouteTemplate for RouteMap {
@@ -57,37 +60,49 @@ impl RouteTemplate for RouteMap {
         match self {
             Root => "/",
             Authenticate => "/authenticate",
-            Profile => "/profile/{user_id}",
+            Profile => "/profile/{user_id}", // by login
+            User => "/profile/{user_id}", // by ID
             Events => "/events",
             Event => "/event/{event_id}",
             EventGames => "/event_games/{event_id}/user/{user_id}",
             Game => "/games/{game_id}/user/{user_id}",
+            Recommend => "/recommend/{event_id}/for/{user_id}"
         }.to_string()
     }
 }
 
-#[derive(Default, Serialize, Copy, Clone, Listable, Context)]
+#[derive(Default, Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct EmptyLocate {}
 
-#[derive(Default, Serialize, Clone, Listable, Context)]
+#[derive(Default, Serialize, Clone, Listable, Context, Extract)]
 pub(crate) struct ProfileLocate {
     pub user_id: String
 }
 
-#[derive(Serialize, Copy, Clone, Listable, Context)]
+#[derive(Serialize, Clone, Listable, Context, Extract)]
+pub(crate) struct UserLocate {
+    pub user_id: UserId
+}
+
+#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct EventLocate {
     pub event_id: EventId
 }
 
-#[derive(Serialize, Clone, Listable, Context)]
+#[derive(Serialize, Clone, Listable, Context, Extract)]
 pub(crate) struct EventGamesLocate {
     pub event_id: EventId,
     pub user_id: String
 }
 
-#[derive(Serialize, Copy, Clone, Listable, Context)]
+#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct GameLocate {
     pub game_id: GameId
+}
+
+#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
+pub(crate) struct RecommendLocate {
+    pub event_id: EventId
 }
 
 pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
@@ -286,6 +301,7 @@ pub(crate) struct EventGameListResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<EventGamesLocate>,
 
+    pub make_recommendation: Link,
     pub games: Vec<GameResponse>
 }
 
@@ -299,6 +315,15 @@ impl EventGameListResponse {
                 "api:gamesListByEventIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
+            make_recommendation: Link {
+                id: route_config(RouteMap::Recommend).prefixed(nested_at).fill(RecommendLocate{ event_id })?.into(),
+                operation: vec![
+                    hypermedia::Operation{
+                        r#type: "PlayAction".to_string(),
+                        method: axum::http::Method::POST.into()
+                    }
+                ]
+            },
             games: list.into_iter().map(|game|
                 GameResponse::from_query(&game_tmpl,game)
             ).collect::<Result<_,_>>()?
@@ -322,14 +347,6 @@ pub(crate) struct GameResponse {
     pub interested: Option<bool>,
     pub can_teach: Option<bool>,
     pub notes: Option<String>,
-
-/*
-    // it might be nice to include name/email of suggestor
-    //   debatable though: are we trying to play games,
-    //   or play with specific people?
-    //
-    pub suggestor_id: i64,
-*/
 }
 
 impl GameResponse {
@@ -352,6 +369,82 @@ impl GameResponse {
             interested: value.interest.interested,
             can_teach: value.interest.can_teach,
             notes: value.interest.notes,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct RecommendRequest {
+    pub players: Vec<IriReferenceString>,
+    pub extra_players: u8,
+}
+
+impl RecommendRequest {
+    pub(crate) fn player_ids(&self, nested_at: &str) -> Result<Vec<UserId>, Error> {
+        let user_route = route_config(RouteMap::User).prefixed(nested_at);
+        self.players.clone().into_iter().map(|iri| {
+            user_route.extract::<UserLocate>(iri.as_str()).map(|loc| loc.user_id)
+        }).collect::<Result<Vec<_>,_>>()
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct RecommendListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<RecommendLocate>,
+
+    pub games: Vec<RecommendResponse>
+}
+
+impl RecommendListResponse {
+    pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::Game<GameId, EventId, UserId, Omit>>) -> Result<Self, Error> {
+        let game_route = route_config(RouteMap::Game).prefixed(nested_at);
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &route_config(RouteMap::Recommend).prefixed(nested_at),
+                RecommendLocate{ event_id },
+                "api:recommendByEventId",
+                vec![ op(ActionType::Add) ]
+            )?,
+
+            games: list.into_iter().map(|game|
+              RecommendResponse::from_query(&game_route, game)
+            ).collect::<Result<_,_>>()?
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct RecommendResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<GameLocate>,
+
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub bgg_link: Option<String>,
+    pub duration_secs: Option<i32>,
+    pub bgg_id: Option<String>,
+}
+
+impl RecommendResponse {
+    pub fn from_query<E, U>(route: &routing::Entry, value: db::Game<GameId, E, U, Omit>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                route,
+                GameLocate{ game_id: value.id },
+                "api:gameByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+            name: value.data.name,
+            min_players: value.data.min_players,
+            max_players: value.data.max_players,
+            bgg_link: value.data.bgg_link,
+            duration_secs: value.data.duration_secs,
+            bgg_id: value.data.bgg_id,
         })
     }
 }

@@ -8,21 +8,22 @@
   - con: not intended for secure data
 * Send email / dev mode for capture (c.f. mailpit)
 * Biscuits invalid _before_ now().
+* Maintain revocations
+* sqlx migrations
+* refactor to `resources` module + children
 
 WTP parity:
 B/E
 * Profile
-  * register
   * change password
+  * register
   * reset password
-* What should we play?
-  * Other players
-  * extra players
-  * SQL for preference list
+* List Users for Event
 
 * DB: update/created timestamps
 
 F/E
+* Get creds from fragment
 * Profile
   * register
   * change password
@@ -45,15 +46,6 @@ F/E
 
 == Future work
 
-* consider sqldef for DB migrations?
-* Middleware for conditional requests
-  * c.f. `tower_etag_cache`
-  * On GET, calculate and insert ETag and Last-Modified(?)
-  * Cache generated/included ETags
-  * If-Match & If-None-Match - check cache, and short circuit
-  * If-Match & If-None-Match - check response/generated and empty bodies
-* actually write a JSON-LD @context
-* add JSON-LD tooling - at least validate our API
 * investigate elm-concurrent-task (enables JSON-LD and Biscuits in Elm)
 * Client-side JSON-LD
   - flatten/expand responses
@@ -87,6 +79,14 @@ pub(crate) enum RouteMap {
 ```
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
+* Middleware for conditional requests
+  * c.f. `tower_etag_cache`
+  * On GET, calculate and insert ETag and Last-Modified(?)
+  * Cache generated/included ETags
+  * If-Match & If-None-Match - check cache, and short circuit
+  * If-Match & If-None-Match - check response/generated and empty bodies
+* actually write a JSON-LD @context
+* add JSON-LD tooling - at least validate our API
 
 == Design Decisions
 

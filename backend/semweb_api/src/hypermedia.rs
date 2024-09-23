@@ -1,6 +1,6 @@
 use axum::http;
 use iri_string::template::{Context, UriTemplateString};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 pub use iri_string::types::IriReferenceString;
 
 use crate::{error::Error, routing::{self, Listable}};
@@ -14,11 +14,19 @@ pub struct IriTemplate {
     pub operation: Vec<Operation>
 }
 
+#[derive(Serialize, Clone)]
+#[serde(tag="type")]
+pub struct Link {
+    pub id: IriReferenceString,
+    // pub r#type: String,
+    pub operation: Vec<Operation>
+}
+
 
 #[derive(Default, Serialize, Clone)]
 pub struct Operation {
     pub method: Method,
-    pub r#type: ActionType,
+    pub r#type: String,
 }
 
 #[derive(Default, Clone)]
@@ -37,8 +45,7 @@ impl Serialize for Method {
     }
 }
 
-
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Clone)]
 pub enum ActionType {
     #[default]
     #[serde(rename = "ViewAction")]
@@ -51,10 +58,142 @@ pub enum ActionType {
     Find,
     #[serde(rename = "AddAction")]
     Add,
-    #[serde(rename = "LoginAction")]
     // this is not a schema.org Action type
+    #[serde(rename = "LoginAction")]
     Login
 }
+
+impl std::fmt::Display for ActionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActionType::View => write!(f, "ViewAction"),
+            ActionType::Create => write!(f, "CreateAction"),
+            ActionType::Update => write!(f, "UpdateAction"),
+            ActionType::Find => write!(f, "FindAction"),
+            ActionType::Add => write!(f, "AddAction"),
+            ActionType::Login => write!(f, "LoginAction"),
+        }
+    }
+}
+
+/*
+schema.org ActionType:
+(note: because RDF, these cannot be exhaustive)
+
+AchieveAction
+    LoseAction
+    TieAction
+    WinAction
+AssessAction
+    ChooseAction
+        VoteAction
+    IgnoreAction
+    ReactAction
+        AgreeAction
+        DisagreeAction
+        DislikeAction
+        EndorseAction
+        LikeAction
+        WantAction
+    ReviewAction
+ConsumeAction
+    DrinkAction
+    EatAction
+    InstallAction
+    ListenAction
+    PlayGameAction
+    ReadAction
+    UseAction
+        WearAction
+    ViewAction
+    WatchAction
+ControlAction
+    ActivateAction
+    DeactivateAction
+    ResumeAction
+    SuspendAction
+CreateAction
+    CookAction
+    DrawAction
+    FilmAction
+    PaintAction
+    PhotographAction
+    WriteAction
+FindAction
+    CheckAction
+    DiscoverAction
+    TrackAction
+InteractAction
+    BefriendAction
+    CommunicateAction
+        AskAction
+        CheckInAction
+        CheckOutAction
+        CommentAction
+        InformAction
+            ConfirmAction
+            RsvpAction
+        InviteAction
+        ReplyAction
+        ShareAction
+    FollowAction
+    JoinAction
+    LeaveAction
+    MarryAction
+    RegisterAction
+    SubscribeAction
+    UnRegisterAction
+MoveAction
+    ArriveAction
+    DepartAction
+    TravelAction
+OrganizeAction
+    AllocateAction
+        AcceptAction
+        AssignAction
+        AuthorizeAction
+        RejectAction
+    ApplyAction
+    BookmarkAction
+    PlanAction
+        CancelAction
+        ReserveAction
+        ScheduleAction
+PlayAction
+    ExerciseAction
+    PerformAction
+SearchAction
+SeekToAction
+SolveMathAction
+TradeAction
+    BuyAction
+    OrderAction
+    PayAction
+    PreOrderAction
+    QuoteAction
+    RentAction
+    SellAction
+    TipAction
+TransferAction
+    BorrowAction
+    DonateAction
+    DownloadAction
+    GiveAction
+    LendAction
+    MoneyTransfer
+    ReceiveAction
+    ReturnAction
+    SendAction
+    TakeAction
+UpdateAction
+    AddAction
+        InsertAction
+            AppendAction
+            PrependAction
+    DeleteAction
+    ReplaceAction
+
+* */
 
 /// op is used to create a most-common operation for each action type
 pub fn op(action: ActionType) -> Operation {
@@ -63,27 +202,27 @@ pub fn op(action: ActionType) -> Operation {
     match action {
         View => Operation {
             method: Method::GET.into(),
-            r#type: action
+            r#type: action.to_string()
         },
         Create => Operation{
             method: Method::PUT.into(),
-            r#type: action
+            r#type: action.to_string()
         },
         Update => Operation{
             method: Method::PUT.into(),
-            r#type: action
+            r#type: action.to_string()
         },
         Find => Operation{
             method: Method::GET.into(),
-            r#type: action
+            r#type: action.to_string()
         },
         Add => Operation{
             method: Method::POST.into(),
-            r#type: action
+            r#type: action.to_string()
         },
         Login => Operation{
             method: Method::POST.into(),
-            r#type: action
+            r#type: action.to_string()
         }
     }
 }

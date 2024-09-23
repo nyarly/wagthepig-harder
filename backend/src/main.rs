@@ -148,9 +148,9 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
                 .post(create_new_game)
         )
 
-        .route(&path(EventGames),
-            put(update_game)
-        )
+        .route(&path(Game), put(update_game))
+
+        .route(&path(Recommend), post(make_recommendation))
 
         .layer(tower::ServiceBuilder::new()
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
@@ -266,6 +266,22 @@ async fn get_event_games(
 }
 
 #[debug_handler(state = AppState)]
+async fn make_recommendation(
+    State(db): State<Pool<Postgres>>,
+    if_none_match: condreq::CondRetreiveHeader,
+    nested_at: extract::NestedPath,
+    Path(event_id): extract::Path<EventId>,
+    Json(body): extract::Json<httpapi::RecommendRequest>
+) -> Result<impl IntoResponse, Error> {
+    let recommend = db::Game::get_recommendation(&db, event_id, body.player_ids(nested_at.as_str())?, body.extra_players).await?;
+
+    let resp = httpapi::RecommendListResponse::from_query(nested_at.as_str(), event_id, recommend)?;
+    if_none_match.respond(resp).map_err(Error::from)
+}
+
+
+
+#[debug_handler(state = AppState)]
 async fn create_new_game(
     State(db): State<Pool<Postgres>>,
     nested_at: extract::NestedPath,
@@ -334,6 +350,7 @@ async fn retrieve_game(
         None => Err((StatusCode::NOT_FOUND, "not found").into())
     }
 }
+
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
 

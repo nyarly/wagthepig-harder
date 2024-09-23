@@ -375,6 +375,35 @@ impl Game<GameId, NoId, NoId, Omit> {
     }
 }
 
+impl Game<GameId, EventId, UserId, Omit> {
+    pub fn get_recommendation<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, user_ids: Vec<UserId>, extra_players: u8)
+    -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
+        let must_play = (user_ids.len() + (extra_players as usize)) as i32;
+        let user_slice = user_ids.into_iter().map(|uid| uid.id()).collect::<Vec<_>>();
+        sqlx::query_as(r#"
+            select
+                games.*,
+                count('games.id') as interest_level,
+                count('games.id') FILTER (WHERE interests.can_teach is true) as teachers
+            from
+                games
+                left join interests on games.id = interests.game_id
+                join users on interests.user_id = users.id
+            where
+                coalesce(games.max_players, 9999) >= $1
+                and event_id = $2
+                and users.id = any($3)
+            group by (games.id)
+            order by interest_level desc, teachers desc
+            "#)
+            .bind(must_play)
+            .bind(event_id.id())
+            .bind(user_slice)
+            .fetch_all(db)
+            .map_err(Error::from)
+    }
+}
+
 impl Game<GameId, EventId, UserId, InterestData> {
     pub fn get_by_id_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId, user_id: String)
     -> impl Future<Output = Result<Option<Self>, Error>> + 'a {
