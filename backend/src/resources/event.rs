@@ -1,14 +1,14 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, routing::route_config};
+use semweb_api::condreq;
 use sqlx::{Pool, Postgres};
 
-use crate::{AppState, Error};
-use crate::httpapi::RouteMap;
+use crate::{routing::EventLocate, AppState, Error};
+use crate::RouteMap;
 
 use crate::{
     db::{Event, EventId},
-    httpapi::{EventListResponse, EventLocate, EventResponse, EventUpdateRequest}
+    httpapi::{EventListResponse, EventResponse, EventUpdateRequest}
 };
 
 
@@ -21,8 +21,7 @@ pub(crate) async fn create_new(
     let new_id = body.db_param()
         .add_new(&db).await?;
 
-    let location_uri = route_config(RouteMap::Event)
-        .prefixed(nested_at.as_str())
+    let location_uri = RouteMap::Event.prefixed(nested_at.as_str())
         .fill( EventLocate{ event_id: new_id })?;
 
     Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
@@ -62,7 +61,7 @@ pub(crate) async fn update(
 
     if_match.guard_update(event)?;
 
-    let event_route = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+    let event_route = RouteMap::Event.prefixed(nested_at.as_str());
     let event = body.db_param()
         .with_id(event_id)
         .update(&db).await?;
@@ -79,7 +78,7 @@ async fn retrieve(
 
     match maybe_event {
         Some(event) => {
-            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+            let event_tmpl = RouteMap::Event.prefixed(nested_at.as_str());
             EventResponse::from_query(&event_tmpl, event)
                 .map_err(|e| e.into())
         },

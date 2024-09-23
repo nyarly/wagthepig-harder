@@ -25,6 +25,10 @@ pub use de::CaptureDeserializationError;
 
 pub trait RouteTemplate: Copy {
     fn route_template(&self) -> String;
+
+    fn prefixed(self, at: &str) -> Entry {
+        route_config(self).prefixed(at)
+    }
 }
 
 #[derive(Default)]

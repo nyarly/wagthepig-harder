@@ -14,15 +14,16 @@ use tower_http::trace::TraceLayer;
 
 use tracing::{debug, Level};
 
-use httpapi::RouteMap;
+use crate::routing::RouteMap;
 
 use semweb_api::{biscuits::{self, Authentication}, routing::route_config, spa};
 
 
 // app modules
+mod routing;
+mod resources;
 mod db;
 mod httpapi;
-mod resources;
 
 #[derive(FromRef, Clone)]
 struct AppState {
@@ -81,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
-    httpapi::api_doc(nested_at.as_str())
+    routing::api_doc(nested_at.as_str())
 }
 
 fn open_api_router() -> Router<AppState> {
@@ -119,7 +120,7 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
         )
 
         .route(&path(EventGames),
-            get(game::get_list)
+            get(game::get_scoped_list)
                 .post(game::create_new)
         )
 

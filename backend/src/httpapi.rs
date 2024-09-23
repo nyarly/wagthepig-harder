@@ -1,136 +1,16 @@
-use axum::{response::IntoResponse, Json};
-use axum_extra::{headers::ETag, TypedHeader};
-use base64ct::{Base64, Encoding};
 use chrono::NaiveDateTime;
 use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::db::{self, NoId, Omit, EventId, GameId, UserId};
+use crate::{db::{self, EventId, GameId, NoId, Omit, UserId}, routing::{EmptyLocate, EventGamesLocate, EventLocate, GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate}};
 
-use semweb_api_derives::{Context, Extract, Listable};
 use semweb_api::{
     hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields},
-    routing::{self, route_config, RouteTemplate}
+    routing
 };
 
-// XXX remove
 pub(crate) use semweb_api::Error;
-pub struct EtaggedJson<T: Serialize + Clone>(pub T);
-
-impl<T: Serialize + Clone> EtaggedJson<T> {
-    fn inner_response(self) -> Result<impl IntoResponse, Error> {
-        Ok((TypedHeader(etag_for(self.0.clone())?), Json(self.0)))
-    }
-}
-
-impl<T: Serialize + Clone> IntoResponse for EtaggedJson<T> {
-    fn into_response(self) -> axum::response::Response {
-        self.inner_response().into_response()
-    }
-}
-
-pub(crate) fn etag_for<T: Serialize>(v: T) -> Result<ETag, Error> {
-    let mut hasher = Sha256::new();
-    serde_json::to_writer(&mut hasher, &v)?;
-    let bytes = hasher.finalize();
-    format!("\"{}\"", Base64::encode_string(&bytes[..])).parse()
-        .map_err(|e| Error::BadETagFormat(format!("{:?}", e)))
-
-}
-
-#[derive(Copy, Clone)]
-pub(crate) enum RouteMap {
-    Root,
-    Authenticate,
-    Profile,
-    User,
-    Events,
-    Event,
-    EventGames,
-    Game,
-    Recommend
-}
-
-impl RouteTemplate for RouteMap {
-    fn route_template(&self) -> String {
-        use RouteMap::*;
-        match self {
-            Root => "/",
-            Authenticate => "/authenticate",
-            Profile => "/profile/{user_id}", // by login
-            User => "/profile/{user_id}", // by ID
-            Events => "/events",
-            Event => "/event/{event_id}",
-            EventGames => "/event_games/{event_id}/user/{user_id}",
-            Game => "/games/{game_id}/user/{user_id}",
-            Recommend => "/recommend/{event_id}/for/{user_id}"
-        }.to_string()
-    }
-}
-
-#[derive(Default, Serialize, Copy, Clone, Listable, Context, Extract)]
-pub(crate) struct EmptyLocate {}
-
-#[derive(Default, Serialize, Clone, Listable, Context, Extract)]
-pub(crate) struct ProfileLocate {
-    pub user_id: String
-}
-
-#[derive(Serialize, Clone, Listable, Context, Extract)]
-pub(crate) struct UserLocate {
-    pub user_id: UserId
-}
-
-#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
-pub(crate) struct EventLocate {
-    pub event_id: EventId
-}
-
-#[derive(Serialize, Clone, Listable, Context, Extract)]
-pub(crate) struct EventGamesLocate {
-    pub event_id: EventId,
-    pub user_id: String
-}
-
-#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
-pub(crate) struct GameLocate {
-    pub game_id: GameId
-}
-
-#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
-pub(crate) struct RecommendLocate {
-    pub event_id: EventId
-}
-
-pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
-    use RouteMap::*;
-    use ActionType::*;
-    let entry = |rm, ops| {
-        let prefixed = route_config(rm).prefixed(nested_at);
-        let url_attr = if prefixed.hydra_type() == "Link" {
-            "id"
-        } else {
-            "template"
-        };
-        let url_template = prefixed.template().expect("a legit URITemplate");
-        json!({
-            "type": prefixed.hydra_type(),
-            url_attr: url_template,
-            "operation": ops
-        })
-    };
-
-    Json(json!({
-      "root": entry(Root, vec![ op(View) ]),
-      "authenticate": entry(Authenticate, vec![op(Login)]),
-      "profile": entry(Profile, vec![op(Find)]),
-      "events": entry(Events, vec![ op(View), op(Add) ]),
-      "event": entry(Event, vec![ op(Find), op(Update) ]),
-    }))
-}
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AuthnRequest {
@@ -152,7 +32,7 @@ impl UserResponse {
     pub(crate) fn from_query(nested_at: &str, value: db::User<UserId>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
-                &route_config(RouteMap::Profile).prefixed(nested_at),
+                &RouteMap::Profile.prefixed(nested_at),
                 ProfileLocate{ user_id: value.email.clone() },
                 "api:profileByEmailTemplate",
                 vec![ op(ActionType::View) ]
@@ -176,12 +56,12 @@ pub(crate) struct EventListResponse {
 
 impl EventListResponse {
     pub fn from_query(nested_at: &str, list: Vec<db::Event<EventId>>) -> Result<Self, Error> {
-        let event_route = route_config(RouteMap::Event).prefixed(nested_at);
+        let event_route = RouteMap::Event.prefixed(nested_at);
         let event_tmpl = event_route.template()?;
 
         Ok(Self{
             resource_fields: ResourceFields::new(
-                &route_config(RouteMap::Events).prefixed(nested_at),
+                &RouteMap::Events.prefixed(nested_at),
                 EmptyLocate{},
                 "api:eventsList",
                 vec![ op(ActionType::View), op(ActionType::Add) ]
@@ -307,16 +187,16 @@ pub(crate) struct EventGameListResponse {
 
 impl EventGameListResponse {
     pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, Error> {
-        let game_tmpl = route_config(RouteMap::Game).prefixed(nested_at);
+        let game_tmpl = RouteMap::Game.prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
-                &route_config(RouteMap::EventGames).prefixed(nested_at),
+                &RouteMap::EventGames.prefixed(nested_at),
                 EventGamesLocate{ event_id, user_id },
                 "api:gamesListByEventIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
             make_recommendation: Link {
-                id: route_config(RouteMap::Recommend).prefixed(nested_at).fill(RecommendLocate{ event_id })?.into(),
+                id: RouteMap::Recommend.prefixed(nested_at).fill(RecommendLocate{ event_id })?.into(),
                 operation: vec![
                     hypermedia::Operation{
                         r#type: "PlayAction".to_string(),
@@ -382,7 +262,7 @@ pub(crate) struct RecommendRequest {
 
 impl RecommendRequest {
     pub(crate) fn player_ids(&self, nested_at: &str) -> Result<Vec<UserId>, Error> {
-        let user_route = route_config(RouteMap::User).prefixed(nested_at);
+        let user_route = RouteMap::User.prefixed(nested_at);
         self.players.clone().into_iter().map(|iri| {
             user_route.extract::<UserLocate>(iri.as_str()).map(|loc| loc.user_id)
         }).collect::<Result<Vec<_>,_>>()
@@ -400,10 +280,10 @@ pub(crate) struct RecommendListResponse {
 
 impl RecommendListResponse {
     pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::Game<GameId, EventId, UserId, Omit>>) -> Result<Self, Error> {
-        let game_route = route_config(RouteMap::Game).prefixed(nested_at);
+        let game_route = RouteMap::Game.prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
-                &route_config(RouteMap::Recommend).prefixed(nested_at),
+                &RouteMap::Recommend.prefixed(nested_at),
                 RecommendLocate{ event_id },
                 "api:recommendByEventId",
                 vec![ op(ActionType::Add) ]

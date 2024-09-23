@@ -1,13 +1,13 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, routing::{self, route_config}};
+use semweb_api::{condreq, routing::{self}};
 use sqlx::{Pool, Postgres};
 
-use crate::{AppState, Error};
+use crate::{routing::{GameLocate, RouteMap}, AppState, Error};
 
 use crate::{
     db::{self, EventId, Game, GameId},
-    httpapi::{EventGameListResponse, GameLocate, GameResponse, GameUpdateRequest, RouteMap}
+    httpapi::{EventGameListResponse, GameResponse, GameUpdateRequest}
 };
 
 #[debug_handler(state = AppState)]
@@ -26,8 +26,7 @@ pub(crate) async fn create_new(
 
     tx.commit().await.map_err(db::Error::from)?;
 
-    let location_uri = route_config(RouteMap::Game)
-        .prefixed(nested_at.as_str())
+    let location_uri = RouteMap::Game.prefixed(nested_at.as_str())
         .fill(GameLocate{ game_id: new_id })
         .map_err(Error::from)?;
 
@@ -35,7 +34,7 @@ pub(crate) async fn create_new(
 }
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn get_list(
+pub(crate) async fn get_scoped_list(
     State(db): State<Pool<Postgres>>,
     if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath,
@@ -54,7 +53,7 @@ pub(crate) async fn update(
     Path((game_id, user_id)): extract::Path<(GameId, String)>,
     Json(body): extract::Json<GameUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
+    let game_route = RouteMap::Game.prefixed(nested_at.as_str());
     let game = retrieve(&db, &game_route, game_id, user_id.clone()).await?;
 
     if_match.guard_update(game)?;
