@@ -1,21 +1,22 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::{
-    debug_handler, extract::{self, ConnectInfo, FromRef, Json, Path, State}, http::StatusCode, response::{IntoResponse, Result}, routing::{get, post, put}, Router
+    extract::{self, FromRef},
+    http::StatusCode,
+    response::{IntoResponse, Result},
+    routing::{get, post, put},
+    Router
 };
 
 use biscuit_auth::macros::authorizer;
-use db::{EventId, GameId};
-use hyper::header;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use tower_http::trace::TraceLayer;
 
 use tracing::{debug, Level};
-use futures::future::TryFutureExt;
 
-use httpapi::{EventLocate, GameLocate, RouteMap};
+use httpapi::RouteMap;
 
-use semweb_api::{biscuits::{self, Authentication}, condreq::{self, EtaggedJson}, routing::{self, route_config}, spa};
+use semweb_api::{biscuits::{self, Authentication}, routing::route_config, spa};
 
 
 // app modules
@@ -114,43 +115,51 @@ impl IntoResponse for Error {
     }
 }
 
+async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
+    httpapi::api_doc(nested_at.as_str())
+}
+
 fn open_api_router() -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
+
+    use resources::authentication;
 
     use RouteMap::*;
     Router::new()
         .route(&path(Root), get(sitemap))
 
-        .route(&path(Authenticate), post(authenticate))
+        .route(&path(Authenticate), post(authentication::authenticate))
 }
 
 fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
 
+    use resources::{event, game, profile, recommendation};
+
     use RouteMap::*;
     let profile_path = path(Profile);
     Router::new()
         .route(&profile_path,
-            get(get_profile))
+            get(profile::get_profile))
 
         .route(&path(Events),
-            get(get_event_list)
-                .post(create_new_event)
+            get(event::get_event_list)
+                .post(event::create_new_event)
         )
 
         .route(&path(Event),
-            get(get_event)
-                .put(update_event)
+            get(event::get_event)
+                .put(event::update_event)
         )
 
         .route(&path(EventGames),
-            get(get_event_games)
-                .post(create_new_game)
+            get(resources::game::get_event_games)
+                .post(game::create_new_game)
         )
 
-        .route(&path(Game), put(update_game))
+        .route(&path(Game), put(game::update_game))
 
-        .route(&path(Recommend), post(make_recommendation))
+        .route(&path(Recommend), post(recommendation::make_recommendation))
 
         .layer(tower::ServiceBuilder::new()
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
@@ -162,218 +171,259 @@ fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
             ))
 }
 
-#[debug_handler(state = AppState)]
-async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
-    httpapi::api_doc(nested_at.as_str())
-}
+mod resources {
+    pub(crate) mod profile {
+        use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse};
+        use semweb_api::condreq;
+        use sqlx::{Pool, Postgres};
 
-#[debug_handler(state = AppState)]
-async fn get_profile(
-    State(db): State<Pool<Postgres>>,
-    nested_at: extract::NestedPath,
-    Path(user_id): Path<String>
-) -> Result<impl IntoResponse, Error> {
-    let profile = db::User::by_email(&db, user_id).await?;
-    Ok(EtaggedJson(httpapi::UserResponse::from_query(nested_at.as_str(), profile)?))
-}
+        use crate::{db, httpapi, AppState, Error};
 
-#[debug_handler(state = AppState)]
-async fn get_event_list(
-    State(db): State<Pool<Postgres>>,
-    if_none_match: condreq::CondRetreiveHeader,
-    nested_at: extract::NestedPath
-) -> Result<impl IntoResponse, Error> {
-    let events = db::Event::get_all(&db).await?;
-    let resp = httpapi::EventListResponse::from_query(nested_at.as_str(), events)?;
-    if_none_match.respond(resp).map_err(Error::from)
-}
-
-#[debug_handler(state = AppState)]
-async fn get_event(
-    State(db): State<Pool<Postgres>>,
-    if_none_match: condreq::CondRetreiveHeader,
-    nested_at: extract::NestedPath,
-    Path(event_id): extract::Path<EventId>,
-) -> Result<impl IntoResponse, Error> {
-    let event_response = retrieve_event(&db, nested_at, event_id).await?;
-    if_none_match.respond(event_response).map_err(Error::from)
-}
-
-#[debug_handler(state = AppState)]
-async fn update_event(
-    State(db): State<Pool<Postgres>>,
-    if_match: condreq::CondUpdateHeader,
-    nested_at: extract::NestedPath,
-    Path(event_id): extract::Path<EventId>,
-    Json(body): extract::Json<httpapi::EventUpdateRequest>
-) -> Result<impl IntoResponse, Error> {
-    let event = retrieve_event(&db, nested_at.clone(), event_id).await?;
-
-    if_match.guard_update(event)?;
-
-    let event_route = route_config(RouteMap::Event).prefixed(nested_at.as_str());
-    let event = body.db_param()
-        .with_id(event_id)
-        .update(&db).await?;
-
-    Ok(Json(httpapi::EventResponse::from_query(&event_route, event)?))
-}
-
-async fn retrieve_event(
-    db: &Pool<Postgres>,
-    nested_at: extract::NestedPath,
-    event_id: EventId
-) -> Result<httpapi::EventResponse, Error> {
-    let maybe_event = db::Event::get_by_id(db, event_id).await?;
-
-    match maybe_event {
-        Some(event) => {
-            let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
-            httpapi::EventResponse::from_query(&event_tmpl, event)
-                .map_err(|e| e.into())
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn get_profile(
+            State(db): State<Pool<Postgres>>,
+            if_none_match: condreq::CondRetreiveHeader,
+            nested_at: extract::NestedPath,
+            Path(user_id): Path<String>
+        ) -> Result<impl IntoResponse, Error> {
+            let profile = db::User::by_email(&db, user_id).await?;
+            if_none_match.respond(httpapi::UserResponse::from_query(nested_at.as_str(), profile)?).map_err(Error::from)
         }
-        None => Err((StatusCode::NOT_FOUND, "not found").into())
+
     }
-}
 
-#[debug_handler(state = AppState)]
-async fn create_new_event(
-    State(db): State<Pool<Postgres>>,
-    nested_at: extract::NestedPath,
-    Json(body): extract::Json<httpapi::EventUpdateRequest>
-) -> Result<impl IntoResponse, Error> {
-    let new_id = body.db_param()
-        .add_new(&db).await?;
+    pub(crate) mod event {
+        use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
+        use hyper::{header, StatusCode};
+        use semweb_api::{condreq, routing::route_config};
+        use sqlx::{Pool, Postgres};
 
-    let location_uri = route_config(RouteMap::Event)
-        .prefixed(nested_at.as_str())
-        .fill( EventLocate{ event_id: new_id })?;
-
-    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
-}
+        use crate::{db::{self, EventId}, httpapi::{self, EventLocate, RouteMap}, AppState, Error};
 
 
-#[debug_handler(state = AppState)]
-async fn get_event_games(
-    State(db): State<Pool<Postgres>>,
-    if_none_match: condreq::CondRetreiveHeader,
-    nested_at: extract::NestedPath,
-    Path((event_id, user_id)): extract::Path<(EventId, String)>,
-) -> Result<impl IntoResponse, Error> {
-    let games = db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
-    let resp = httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
-    if_none_match.respond(resp).map_err(Error::from)
-}
-
-#[debug_handler(state = AppState)]
-async fn make_recommendation(
-    State(db): State<Pool<Postgres>>,
-    if_none_match: condreq::CondRetreiveHeader,
-    nested_at: extract::NestedPath,
-    Path(event_id): extract::Path<EventId>,
-    Json(body): extract::Json<httpapi::RecommendRequest>
-) -> Result<impl IntoResponse, Error> {
-    let recommend = db::Game::get_recommendation(&db, event_id, body.player_ids(nested_at.as_str())?, body.extra_players).await?;
-
-    let resp = httpapi::RecommendListResponse::from_query(nested_at.as_str(), event_id, recommend)?;
-    if_none_match.respond(resp).map_err(Error::from)
-}
-
-
-
-#[debug_handler(state = AppState)]
-async fn create_new_game(
-    State(db): State<Pool<Postgres>>,
-    nested_at: extract::NestedPath,
-    Path((event_id, user_id)): extract::Path<(EventId, String)>,
-    Json(body): extract::Json<httpapi::GameUpdateRequest>
-) -> Result<impl IntoResponse, Error> {
-    let mut tx = db.begin().map_err(db::Error::from).await?;
-
-    let game = body.db_param().with_event_id(event_id);
-    let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
-    let game = game.with_id(new_id).with_interest_data(body.interest_part());
-    game.update_interests(&mut *tx, user_id).await?;
-
-    tx.commit().map_err(db::Error::from).await?;
-
-    let location_uri = route_config(RouteMap::Game)
-        .prefixed(nested_at.as_str())
-        .fill(GameLocate{ game_id: new_id })
-        .map_err(Error::from)?;
-
-    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
-}
-
-#[debug_handler(state = AppState)]
-async fn update_game(
-    State(db): State<Pool<Postgres>>,
-    if_match: condreq::CondUpdateHeader,
-    nested_at: extract::NestedPath,
-    Path((game_id, user_id)): extract::Path<(GameId, String)>,
-    Json(body): extract::Json<httpapi::GameUpdateRequest>
-) -> Result<impl IntoResponse, Error> {
-    let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
-    let game = retrieve_game(&db, &game_route, game_id, user_id.clone()).await?;
-
-    if_match.guard_update(game)?;
-
-    let mut tx = db.begin().map_err(db::Error::from).await?;
-    let game = body.db_param()
-        .with_id(game_id)
-        .update(&mut *tx).await
-        .map_err(Error::from)?;
-
-    let game = game.with_interest_data(body.interest_part());
-
-    game.update_interests(&mut *tx, user_id).await
-        .map_err(Error::from)?;
-
-    tx.commit().map_err(db::Error::from).await?;
-
-    Ok(Json(httpapi::GameResponse::from_query(&game_route, game)?))
-}
-
-async fn retrieve_game(
-    db: &Pool<Postgres>,
-    game_route: &routing::Entry,
-    game_id: GameId,
-    user_id: String,
-) -> Result<httpapi::GameResponse, Error> {
-    let maybe_game = db::Game::get_by_id_and_user(db, game_id, user_id).await?;
-
-    match maybe_game {
-        Some(game) => {
-            httpapi::GameResponse::from_query(game_route, game)
-                .map_err(Error::from)
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn get_event_list(
+            State(db): State<Pool<Postgres>>,
+            if_none_match: condreq::CondRetreiveHeader,
+            nested_at: extract::NestedPath
+        ) -> Result<impl IntoResponse, Error> {
+            let events = db::Event::get_all(&db).await?;
+            let resp = httpapi::EventListResponse::from_query(nested_at.as_str(), events)?;
+            if_none_match.respond(resp).map_err(Error::from)
         }
-        None => Err((StatusCode::NOT_FOUND, "not found").into())
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn get_event(
+            State(db): State<Pool<Postgres>>,
+            if_none_match: condreq::CondRetreiveHeader,
+            nested_at: extract::NestedPath,
+            Path(event_id): extract::Path<EventId>,
+        ) -> Result<impl IntoResponse, Error> {
+            let event_response = retrieve_event(&db, nested_at, event_id).await?;
+            if_none_match.respond(event_response).map_err(Error::from)
+        }
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn update_event(
+            State(db): State<Pool<Postgres>>,
+            if_match: condreq::CondUpdateHeader,
+            nested_at: extract::NestedPath,
+            Path(event_id): extract::Path<EventId>,
+            Json(body): extract::Json<httpapi::EventUpdateRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let event = retrieve_event(&db, nested_at.clone(), event_id).await?;
+
+            if_match.guard_update(event)?;
+
+            let event_route = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+            let event = body.db_param()
+                .with_id(event_id)
+                .update(&db).await?;
+
+            Ok(Json(httpapi::EventResponse::from_query(&event_route, event)?))
+        }
+
+        async fn retrieve_event(
+            db: &Pool<Postgres>,
+            nested_at: extract::NestedPath,
+            event_id: EventId
+        ) -> Result<httpapi::EventResponse, Error> {
+            let maybe_event = db::Event::get_by_id(db, event_id).await?;
+
+            match maybe_event {
+                Some(event) => {
+                    let event_tmpl = route_config(RouteMap::Event).prefixed(nested_at.as_str());
+                    httpapi::EventResponse::from_query(&event_tmpl, event)
+                        .map_err(|e| e.into())
+                }
+                None => Err((StatusCode::NOT_FOUND, "not found").into())
+            }
+        }
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn create_new_event(
+            State(db): State<Pool<Postgres>>,
+            nested_at: extract::NestedPath,
+            Json(body): extract::Json<httpapi::EventUpdateRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let new_id = body.db_param()
+                .add_new(&db).await?;
+
+            let location_uri = route_config(RouteMap::Event)
+                .prefixed(nested_at.as_str())
+                .fill( EventLocate{ event_id: new_id })?;
+
+            Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
+        }
     }
-}
 
+    pub(crate) mod recommendation {
+        use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
+        use semweb_api::condreq;
+        use sqlx::{Pool, Postgres};
 
-const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
+        use crate::{db::{self, EventId}, httpapi::{self}, AppState, Error};
 
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn make_recommendation(
+            State(db): State<Pool<Postgres>>,
+            if_none_match: condreq::CondRetreiveHeader,
+            nested_at: extract::NestedPath,
+            Path(event_id): extract::Path<EventId>,
+            Json(body): extract::Json<httpapi::RecommendRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let recommend = db::Game::get_recommendation(&db, event_id, body.player_ids(nested_at.as_str())?, body.extra_players).await?;
 
-#[debug_handler(state = AppState)]
-async fn authenticate(
-    State(db): State<Pool<Postgres>>,
-    State(auth): State<Authentication>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    nested_at: extract::NestedPath,
-    Json(authreq): Json<httpapi::AuthnRequest>
-) -> Result<impl IntoResponse, Error> {
-    let user = db::User::by_email(&db, authreq.email.clone()).await?;
-
-    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
-        let token = biscuits::authority(&auth, user.email.clone(), ONE_WEEK, Some(addr))?;
-        Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from_query(nested_at.as_str(), user)?)))
-    } else {
-        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
+            let resp = httpapi::RecommendListResponse::from_query(nested_at.as_str(), event_id, recommend)?;
+            if_none_match.respond(resp).map_err(Error::from)
+        }
     }
-}
 
-fn internal_error<E: std::error::Error>(err: E) -> Error {
-    debug!("internal error: {:?}", err);
-    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into()
+    pub(crate) mod authentication {
+        use std::net::SocketAddr;
+
+        use axum::{debug_handler, extract::{self, ConnectInfo, State}, response::IntoResponse, Json};
+        use hyper::StatusCode;
+        use semweb_api::biscuits::{self, Authentication};
+        use sqlx::{Pool, Postgres};
+        use tracing::debug;
+
+        use crate::{db::{self}, httpapi::{self}, AppState, Error};
+
+        const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn authenticate(
+            State(db): State<Pool<Postgres>>,
+            State(auth): State<Authentication>,
+            ConnectInfo(addr): ConnectInfo<SocketAddr>,
+            nested_at: extract::NestedPath,
+            Json(authreq): Json<httpapi::AuthnRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let user = db::User::by_email(&db, authreq.email.clone()).await?;
+
+            if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref()).map_err(internal_error)? {
+                let token = biscuits::authority(&auth, user.email.clone(), ONE_WEEK, Some(addr))?;
+                Ok(([("set-authorization", token)], Json(httpapi::UserResponse::from_query(nested_at.as_str(), user)?)))
+            } else {
+                Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
+            }
+        }
+
+        fn internal_error<E: std::error::Error>(err: E) -> Error {
+            debug!("internal error: {:?}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into()
+        }
+    }
+
+    pub(crate) mod game {
+        use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
+        use hyper::{header, StatusCode};
+        use semweb_api::{condreq, routing::{self, route_config}};
+        use sqlx::{Pool, Postgres};
+
+        use crate::{db::{self, EventId, GameId}, httpapi::{self, GameLocate, RouteMap}, AppState, Error};
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn get_event_games(
+            State(db): State<Pool<Postgres>>,
+            if_none_match: condreq::CondRetreiveHeader,
+            nested_at: extract::NestedPath,
+            Path((event_id, user_id)): extract::Path<(EventId, String)>,
+        ) -> Result<impl IntoResponse, Error> {
+            let games = db::Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
+            let resp = httpapi::EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
+            if_none_match.respond(resp).map_err(Error::from)
+        }
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn create_new_game(
+            State(db): State<Pool<Postgres>>,
+            nested_at: extract::NestedPath,
+            Path((event_id, user_id)): extract::Path<(EventId, String)>,
+            Json(body): extract::Json<httpapi::GameUpdateRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let mut tx = db.begin().await.map_err(db::Error::from)?;
+
+            let game = body.db_param().with_event_id(event_id);
+            let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
+            let game = game.with_id(new_id).with_interest_data(body.interest_part());
+            game.update_interests(&mut *tx, user_id).await?;
+
+            tx.commit().await.map_err(db::Error::from)?;
+
+            let location_uri = route_config(RouteMap::Game)
+                .prefixed(nested_at.as_str())
+                .fill(GameLocate{ game_id: new_id })
+                .map_err(Error::from)?;
+
+            Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
+        }
+
+        #[debug_handler(state = AppState)]
+        pub(crate) async fn update_game(
+            State(db): State<Pool<Postgres>>,
+            if_match: condreq::CondUpdateHeader,
+            nested_at: extract::NestedPath,
+            Path((game_id, user_id)): extract::Path<(GameId, String)>,
+            Json(body): extract::Json<httpapi::GameUpdateRequest>
+        ) -> Result<impl IntoResponse, Error> {
+            let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
+            let game = retrieve_game(&db, &game_route, game_id, user_id.clone()).await?;
+
+            if_match.guard_update(game)?;
+
+            let mut tx = db.begin().await.map_err(db::Error::from)?;
+            let game = body.db_param()
+                .with_id(game_id)
+                .update(&mut *tx).await
+                .map_err(Error::from)?;
+
+            let game = game.with_interest_data(body.interest_part());
+
+            game.update_interests(&mut *tx, user_id).await
+                .map_err(Error::from)?;
+
+            tx.commit().await.map_err(db::Error::from)?;
+
+            Ok(Json(httpapi::GameResponse::from_query(&game_route, game)?))
+        }
+
+        async fn retrieve_game(
+            db: &Pool<Postgres>,
+            game_route: &routing::Entry,
+            game_id: GameId,
+            user_id: String,
+        ) -> Result<httpapi::GameResponse, Error> {
+            let maybe_game = db::Game::get_by_id_and_user(db, game_id, user_id).await?;
+
+            match maybe_game {
+                Some(game) => {
+                    httpapi::GameResponse::from_query(game_route, game)
+                        .map_err(Error::from)
+                }
+                None => Err((StatusCode::NOT_FOUND, "not found").into())
+            }
+        }
+    }
 }
