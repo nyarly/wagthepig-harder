@@ -80,6 +80,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?; Ok(())
 }
 
+async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
+    httpapi::api_doc(nested_at.as_str())
+}
+
+fn open_api_router() -> Router<AppState> {
+    let path = |rm| route_config(rm).axum_route();
+
+    use resources::authentication;
+
+    use RouteMap::*;
+    Router::new()
+        .route(&path(Root), get(sitemap))
+
+        .route(&path(Authenticate), post(authentication::authenticate))
+}
+
+fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
+    use resources::{event, game, profile, recommendation};
+    use RouteMap::*;
+
+    let path = |rm| route_config(rm).axum_route();
+
+    let profile_path = path(Profile);
+
+    Router::new()
+        .route(&profile_path,
+            get(profile::get))
+
+        .route(&path(Events),
+            get(event::get_list)
+                .post(event::create_new)
+        )
+
+        .route(&path(Event),
+            get(event::get)
+                .put(event::update)
+        )
+
+        .route(&path(EventGames),
+            get(game::get_list)
+                .post(game::create_new)
+        )
+
+        .route(&path(Game), put(game::update))
+
+        .route(&path(Recommend), post(recommendation::make))
+
+        .layer(tower::ServiceBuilder::new()
+            .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
+            .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
+            allow if route({profile_path}), path_param("useri_id", $user), user($user);
+            deny if route({profile_path});
+            allow if user($user);
+            "#)))
+        )
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -114,60 +170,4 @@ impl IntoResponse for Error {
             Error::StatusCode(c, t) => (c,t).into_response(),
         }
     }
-}
-
-async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
-    httpapi::api_doc(nested_at.as_str())
-}
-
-fn open_api_router() -> Router<AppState> {
-    let path = |rm| route_config(rm).axum_route();
-
-    use resources::authentication;
-
-    use RouteMap::*;
-    Router::new()
-        .route(&path(Root), get(sitemap))
-
-        .route(&path(Authenticate), post(authentication::authenticate))
-}
-
-fn secured_api_router(auth: biscuits::Authentication) -> Router<AppState> {
-    let path = |rm| route_config(rm).axum_route();
-
-    use resources::{event, game, profile, recommendation};
-
-    use RouteMap::*;
-    let profile_path = path(Profile);
-    Router::new()
-        .route(&profile_path,
-            get(profile::get_profile))
-
-        .route(&path(Events),
-            get(event::get_event_list)
-                .post(event::create_new_event)
-        )
-
-        .route(&path(Event),
-            get(event::get_event)
-                .put(event::update_event)
-        )
-
-        .route(&path(EventGames),
-            get(resources::game::get_event_games)
-                .post(game::create_new_game)
-        )
-
-        .route(&path(Game), put(game::update_game))
-
-        .route(&path(Recommend), post(recommendation::make_recommendation))
-
-        .layer(tower::ServiceBuilder::new()
-            .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
-            .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
-            allow if route({profile_path}), path_param("useri_id", $user), user($user);
-            deny if route({profile_path});
-            allow if user($user);
-            "#, profile_path = profile_path))
-            ))
 }

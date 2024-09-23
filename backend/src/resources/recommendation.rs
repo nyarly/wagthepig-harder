@@ -5,7 +5,7 @@ use sqlx::{Pool, Postgres};
 use crate::{db::{self, EventId}, httpapi::{self}, AppState, Error};
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn make_recommendation(
+pub(crate) async fn make(
     State(db): State<Pool<Postgres>>,
     if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath,

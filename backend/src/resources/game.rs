@@ -11,19 +11,7 @@ use crate::{
 };
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn get_event_games(
-    State(db): State<Pool<Postgres>>,
-    if_none_match: condreq::CondRetreiveHeader,
-    nested_at: extract::NestedPath,
-    Path((event_id, user_id)): extract::Path<(EventId, String)>,
-) -> Result<impl IntoResponse, Error> {
-    let games = Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
-    let resp = EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
-    if_none_match.respond(resp).map_err(Error::from)
-}
-
-#[debug_handler(state = AppState)]
-pub(crate) async fn create_new_game(
+pub(crate) async fn create_new(
     State(db): State<Pool<Postgres>>,
     nested_at: extract::NestedPath,
     Path((event_id, user_id)): extract::Path<(EventId, String)>,
@@ -47,7 +35,19 @@ pub(crate) async fn create_new_game(
 }
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn update_game(
+pub(crate) async fn get_list(
+    State(db): State<Pool<Postgres>>,
+    if_none_match: condreq::CondRetreiveHeader,
+    nested_at: extract::NestedPath,
+    Path((event_id, user_id)): extract::Path<(EventId, String)>,
+) -> Result<impl IntoResponse, Error> {
+    let games = Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
+    let resp = EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
+    if_none_match.respond(resp).map_err(Error::from)
+}
+
+#[debug_handler(state = AppState)]
+pub(crate) async fn update(
     State(db): State<Pool<Postgres>>,
     if_match: condreq::CondUpdateHeader,
     nested_at: extract::NestedPath,
@@ -55,7 +55,7 @@ pub(crate) async fn update_game(
     Json(body): extract::Json<GameUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
     let game_route = route_config(RouteMap::Game).prefixed(nested_at.as_str());
-    let game = retrieve_game(&db, &game_route, game_id, user_id.clone()).await?;
+    let game = retrieve(&db, &game_route, game_id, user_id.clone()).await?;
 
     if_match.guard_update(game)?;
 
@@ -75,7 +75,7 @@ pub(crate) async fn update_game(
     Ok(Json(GameResponse::from_query(&game_route, game)?))
 }
 
-async fn retrieve_game(
+async fn retrieve(
     db: &Pool<Postgres>,
     game_route: &routing::Entry,
     game_id: GameId,

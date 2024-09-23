@@ -13,7 +13,23 @@ use crate::{
 
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn get_event_list(
+pub(crate) async fn create_new(
+    State(db): State<Pool<Postgres>>,
+    nested_at: extract::NestedPath,
+    Json(body): extract::Json<EventUpdateRequest>
+) -> Result<impl IntoResponse, Error> {
+    let new_id = body.db_param()
+        .add_new(&db).await?;
+
+    let location_uri = route_config(RouteMap::Event)
+        .prefixed(nested_at.as_str())
+        .fill( EventLocate{ event_id: new_id })?;
+
+    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
+}
+
+#[debug_handler(state = AppState)]
+pub(crate) async fn get_list(
     State(db): State<Pool<Postgres>>,
     if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath
@@ -24,25 +40,25 @@ pub(crate) async fn get_event_list(
 }
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn get_event(
+pub(crate) async fn get(
     State(db): State<Pool<Postgres>>,
     if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath,
     Path(event_id): extract::Path<EventId>,
 ) -> Result<impl IntoResponse, Error> {
-    let event_response = retrieve_event(&db, nested_at, event_id).await?;
+    let event_response = retrieve(&db, nested_at, event_id).await?;
     if_none_match.respond(event_response).map_err(Error::from)
 }
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn update_event(
+pub(crate) async fn update(
     State(db): State<Pool<Postgres>>,
     if_match: condreq::CondUpdateHeader,
     nested_at: extract::NestedPath,
     Path(event_id): extract::Path<EventId>,
     Json(body): extract::Json<EventUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let event = retrieve_event(&db, nested_at.clone(), event_id).await?;
+    let event = retrieve(&db, nested_at.clone(), event_id).await?;
 
     if_match.guard_update(event)?;
 
@@ -54,7 +70,7 @@ pub(crate) async fn update_event(
     Ok(Json(EventResponse::from_query(&event_route, event)?))
 }
 
-async fn retrieve_event(
+async fn retrieve(
     db: &Pool<Postgres>,
     nested_at: extract::NestedPath,
     event_id: EventId
@@ -69,20 +85,4 @@ async fn retrieve_event(
         },
         None => Err((StatusCode::NOT_FOUND, "not found").into())
     }
-}
-
-#[debug_handler(state = AppState)]
-pub(crate) async fn create_new_event(
-    State(db): State<Pool<Postgres>>,
-    nested_at: extract::NestedPath,
-    Json(body): extract::Json<EventUpdateRequest>
-) -> Result<impl IntoResponse, Error> {
-    let new_id = body.db_param()
-        .add_new(&db).await?;
-
-    let location_uri = route_config(RouteMap::Event)
-        .prefixed(nested_at.as_str())
-        .fill( EventLocate{ event_id: new_id })?;
-
-    Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
 }

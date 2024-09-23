@@ -5,7 +5,7 @@ use sqlx::{Pool, Postgres};
 use crate::{db, httpapi, AppState, Error};
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn get_profile(
+pub(crate) async fn get(
     State(db): State<Pool<Postgres>>,
     if_none_match: condreq::CondRetreiveHeader,
     nested_at: extract::NestedPath,
