@@ -60,7 +60,10 @@ pub enum ActionType {
     Add,
     // this is not a schema.org Action type
     #[serde(rename = "LoginAction")]
-    Login
+    Login,
+    // this is not a schema.org Action type
+    #[serde(rename = "LogoutAction")]
+    Logout,
 }
 
 impl std::fmt::Display for ActionType {
@@ -72,6 +75,7 @@ impl std::fmt::Display for ActionType {
             ActionType::Find => write!(f, "FindAction"),
             ActionType::Add => write!(f, "AddAction"),
             ActionType::Login => write!(f, "LoginAction"),
+            ActionType::Logout => write!(f, "LogoutAction"),
         }
     }
 }
@@ -222,6 +226,10 @@ pub fn op(action: ActionType) -> Operation {
         },
         Login => Operation{
             method: Method::POST.into(),
+            r#type: action.to_string()
+        },
+        Logout => Operation{
+            method: Method::DELETE.into(),
             r#type: action.to_string()
         }
     }

@@ -10,6 +10,7 @@ use crate::db::{EventId, GameId, UserId};
 pub(crate) enum RouteMap {
     Root,
     Authenticate,
+    PasswordReset,
     Profile,
     User,
     Events,
@@ -23,15 +24,16 @@ impl RouteTemplate for RouteMap {
     fn route_template(&self) -> String {
         use RouteMap::*;
         match self {
-            Root => "/",
-            Authenticate => "/authenticate",
-            Profile => "/profile/{user_id}", // by login
-            User => "/profile/{user_id}", // by ID
-            Events => "/events",
-            Event => "/event/{event_id}",
-            EventGames => "/event_games/{event_id}/user/{user_id}",
-            Game => "/games/{game_id}/user/{user_id}",
-            Recommend => "/recommend/{event_id}/for/{user_id}"
+            Root          => "/",
+            Authenticate  => "/authenticate/{user_id}",                // by login
+            PasswordReset => "/reset_password/{user_id}",              // by login
+            Profile       => "/profile/{user_id}",                     // by login
+            User          => "/profile/{user_id}",                     // by ID
+            Events        => "/events",
+            Event         => "/event/{event_id}",
+            EventGames    => "/event_games/{event_id}/user/{user_id}",
+            Game          => "/games/{game_id}/user/{user_id}",
+            Recommend     => "/recommend/{event_id}/for/{user_id}"
         }.to_string()
     }
 }
@@ -44,6 +46,16 @@ impl RouteMap {
 
 #[derive(Default, Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct EmptyLocate {}
+
+#[derive(Default, Serialize, Clone, Listable, Context, Extract)]
+pub(crate) struct AuthenticateLocate {
+    pub user_id: String
+}
+
+#[derive(Default, Serialize, Clone, Listable, Context, Extract)]
+pub(crate) struct PasswordResetLocate {
+    pub user_id: String
+}
 
 #[derive(Default, Serialize, Clone, Listable, Context, Extract)]
 pub(crate) struct ProfileLocate {
@@ -97,8 +109,9 @@ pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
 
     Json(json!({
         "root": entry(Root, vec![ op(View) ]),
-        "authenticate": entry(Authenticate, vec![op(Login)]),
-        "profile": entry(Profile, vec![op(Find)]),
+        "resetPassword": entry(PasswordReset, vec![op(Create)]),
+        "authenticate": entry(Authenticate, vec![op(Login), op(Update), op(Logout)]),
+        "profile": entry(Profile, vec![op(Create), op(Find)]),
         "events": entry(Events, vec![ op(View), op(Add) ]),
         "event": entry(Event, vec![ op(Find), op(Update) ]),
     }))

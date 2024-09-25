@@ -3,6 +3,7 @@ use axum::{extract, RequestExt};
 use axum_extra::extract as extra_extract;
 use axum::response::IntoResponse;
 
+use base64ct::{Base64, Encoding as _};
 use biscuit_auth::{format::schema::AuthorizerSnapshot, macros::{authorizer, biscuit, fact}};
 use biscuit_auth::{error, Authorizer, AuthorizerLimits, Biscuit, KeyPair, PrivateKey};
 
@@ -28,23 +29,6 @@ use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 
 use crate::Error;
-
-/// A convenience method for building a authentication token
-/// The result is a biscuit_auth::Biscuit.to_base64()
-pub fn authority(auth: &Authentication, userid: String, ttl: u64, maybe_addr: Option<SocketAddr>) -> Result<String, Error> {
-    let now = SystemTime::now();
-    let expires = now + Duration::from_secs(ttl);
-    let mut builder = biscuit!(r#"
-        user({userid});
-        issued_at({now});
-        check if time($time), $time < {expires};
-        "#);
-    if let Some(addr) = maybe_addr {
-        let addr_str = addr.ip().to_string();
-        builder.add_fact(fact!("client_ip({addr_str})"))?;
-    }
-    Ok(builder.build(&auth.keypair())?.to_base64()?)
-}
 
 async fn find_facts(header: String, root: PrivateKey, mut request: Request) -> Result<Request, Error> {
     let token = request.headers().get(header.clone())
@@ -116,7 +100,7 @@ async fn find_facts(header: String, root: PrivateKey, mut request: Request) -> R
         auth.add_fact(fact!("query_param({key}, {value})"))?;
     }
 
-    let ctx = AuthContext{ authority: token, authorizer: auth };
+    let ctx = AuthContext{ authority: token, authorizer: auth, revoked_ids: vec![] };
     request.extensions_mut().insert(ctx);
     Ok(request)
 }
@@ -190,7 +174,41 @@ fn format_rejection(az: Authorizer, token: error::Token) -> Result<String, Error
 #[derive(Clone)]
 pub struct AuthContext {
     authority: Option<Biscuit>,
+    revoked_ids: Vec<String>,
     authorizer: Authorizer
+}
+
+impl AuthContext {
+    pub fn revocation_ids(&self) -> Option<Vec<String>> {
+        self.authority.as_ref().map(|token|
+            token.revocation_identifiers().into_iter().map(|rev|
+                Base64::encode_string(&rev)
+
+            ).collect()
+        )
+    }
+
+    pub fn with_revoked_ids(&self, newrids: Vec<String>) -> AuthContext {
+        let mut other = self.clone();
+        let mut newrids = newrids.clone();
+        other.revoked_ids.append(&mut newrids);
+        other
+    }
+}
+
+pub struct TokenBundle {
+    pub token: String,
+    pub revocation_ids: Vec<String>
+}
+
+impl TokenBundle {
+    fn build(biscuit: Biscuit) -> Result<Self, Error> {
+        let token = biscuit.to_base64()?;
+        let revocation_ids = biscuit.revocation_identifiers().into_iter().map(|rev|
+            Base64::encode_string(&rev)
+        ).collect();
+        Ok(Self{ token, revocation_ids })
+    }
 }
 
 #[derive(Clone, FromRef)]
@@ -220,6 +238,36 @@ impl Authentication {
 
     fn keypair(&self) -> KeyPair {
         KeyPair::from(&(self.private_key))
+    }
+
+    pub fn reset_password(&self, userid: &str, expires: SystemTime) -> Result<TokenBundle, Error> {
+        let now = SystemTime::now();
+        let builder = biscuit!(r#"
+        reset_password({userid});
+        issued_at({now});
+        check if issued_at($issued), time($time), $time > $issued;
+        check if time($time), $time < {expires};
+        "#);
+        TokenBundle::build(builder.build(&self.keypair())?)
+    }
+
+    /// A convenience method for building a authentication token
+    /// The result is (biscuit_auth::Biscuit.to_base64(), Biscuit.revocation_identifiers().to_base64())
+    /// The caller is responsible for storing the revocation ids!
+    /// Likewise, you are responsible for providing revoked IDs in the AuthContext
+    pub fn authority(&self, userid: &str, expires: SystemTime, maybe_addr: Option<SocketAddr>) -> Result<TokenBundle, Error> {
+        let now = SystemTime::now();
+        let mut builder = biscuit!(r#"
+        user({userid});
+        issued_at({now});
+        check if issued_at($issued), time($time), $time > $issued;
+        check if time($time), $time < {expires};
+        "#);
+        if let Some(addr) = maybe_addr {
+            let addr_str = addr.ip().to_string();
+            builder.add_fact(fact!("client_ip({addr_str})"))?;
+        }
+        TokenBundle::build(builder.build(&self.keypair())?)
     }
 }
 

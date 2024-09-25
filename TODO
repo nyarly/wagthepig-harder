@@ -1,23 +1,13 @@
-* Revocation of tokens e.g. on password reset
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * Add lightningcss for CSS bundling & compatibility
 * Or just Parcel?
-* Scoped tokens -> email for registration/reset
 * FE: pull auth from fragment (?)
   - pro: fragments not sent over the wire
   - con: not intended for secure data
 * Send email / dev mode for capture (c.f. mailpit)
-* Biscuits invalid _before_ now().
-* Maintain revocations
-* sqlx migrations
-* refactor to `resources` module + children
 
 WTP parity:
 B/E
-* Profile
-  * change password
-  * register
-  * reset password
 * List Users for Event
 
 * DB: update/created timestamps
@@ -58,8 +48,10 @@ F/E
 * For the URITemplate/matchit "bridge"
   - consider adding the ability to "trade" '//' for a limit of 1 pre-path expression
 * Derive macro for RouteTemplate enums - like:
+Continuing to consider while building out the `routing` module. Would that be clearer?
+Consideration also: would that be aligning Locator with RM variants.
 ```
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, RouteTemplate)]
 pub(crate) enum RouteMap {
     // adds arm to impl RouteTemplate
     // creates ProfileLocator struct with user_id: String field
@@ -77,6 +69,7 @@ pub(crate) enum RouteMap {
     // ...
 }
 ```
+
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
 * Middleware for conditional requests
@@ -87,6 +80,7 @@ pub(crate) enum RouteMap {
   * If-Match & If-None-Match - check response/generated and empty bodies
 * actually write a JSON-LD @context
 * add JSON-LD tooling - at least validate our API
+* multipart emails with HTML and images for password resets and whatnot
 
 == Design Decisions
 

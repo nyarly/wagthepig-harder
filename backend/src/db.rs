@@ -1,7 +1,7 @@
 use core::fmt;
-use std::{convert::Infallible, future::Future};
+use std::{convert::Infallible, future::Future, time::SystemTime};
 use axum::response::IntoResponse;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, TimeZone as _, Utc};
 use futures::TryFutureExt as _;
 use sqlx::{Executor, Postgres};
 use serde::{Serialize, Deserialize};
@@ -158,6 +158,82 @@ impl User<UserId> {
             email)
             .fetch_one(db)
             .map_err(Error::from)
+    }
+
+    pub fn update_password<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, hashed: String)
+    -> impl Future<Output = Result<(), Error>> + 'a {
+        sqlx::query!(
+        r#"update users set "encrypted_password" = $1 where email = $2"#,
+            hashed, self.email)
+            .execute(db)
+            .map_ok(|_| ())
+            .map_err(Error::from)
+    }
+}
+
+id_type!(RevocationId(i64));
+
+#[derive(sqlx::FromRow, Default, Debug)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct Revocation<T> {
+    pub id: T,
+    pub data: String,
+    pub expires: NaiveDateTime,
+    pub revoked: Option<NaiveDateTime>,
+    pub username: String,
+    pub clienthint: Option<String>
+}
+
+// XXX Can we just use chrono?
+fn system_to_naive(sys: SystemTime) -> NaiveDateTime {
+    let dur = sys.duration_since(std::time::UNIX_EPOCH).expect("1970 to be in the past");
+    let (sec, nsec) = (dur.as_secs() as i64, dur.subsec_nanos());
+    Utc.timestamp_opt(sec,nsec).unwrap().naive_utc()
+}
+
+impl Revocation<NoId> {
+    pub fn add_batch<'a>(db: impl Executor<'a, Database = Postgres> + 'a, rids: Vec<String>, username: String, expiry: SystemTime)
+    -> impl Future<Output = Result<Vec<RevocationId>, Error>> + 'a {
+        let expiry = system_to_naive(expiry);
+        sqlx::query!(
+            r#"insert into revocations
+                ("data", "expires", "username")
+            select 1 as data, $1 as expires, $2 as username from unnest($3::text[])
+            returning id
+            "#, expiry, username, &rids)
+            .fetch_all(db)
+            .map_ok(|maps| maps.into_iter().map(|rec| rec.id.into()).collect())
+            .map_err(Error::from)
+    }
+}
+
+impl Revocation<RevocationId> {
+    pub fn revoke<'a>(db: impl Executor<'a, Database = Postgres> + 'a, rids: Vec<String>, now: NaiveDateTime)
+    -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
+        sqlx::query_as!( Self,
+            r#"update revocations set "revoked" =  $2  where data = any($1) returning *"#,
+            &rids, now)
+            .fetch_all(db)
+            .map_err(Error::from)
+    }
+
+    pub fn revoke_for_username<'a>(db: impl Executor<'a, Database = Postgres> + 'a, username: String, now: NaiveDateTime)
+    -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
+        sqlx::query_as!( Self,
+            r#"update revocations set "revoked" = $2  where username = $1 returning *"#,
+            username, now)
+            .fetch_all(db)
+            .map_err(Error::from)
+    }
+
+    pub fn get_revoked<'a>(db: impl Executor<'a, Database = Postgres> + 'a, now: NaiveDateTime)
+    -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
+        sqlx::query_as!( Self,
+            r#" select * from revocations where revoked is not null and expires < $1 "#,
+            now)
+            .fetch_all(db)
+            .map_err(Error::from)
+
     }
 }
 
