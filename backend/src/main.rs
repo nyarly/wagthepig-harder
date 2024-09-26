@@ -163,6 +163,8 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
                 .put(event::update)
         )
 
+        .route(&path(EventUsers), get(profile::get_scoped_list))
+
         .route(&path(EventGames),
             get(game::get_scoped_list)
                 .post(game::create_new)

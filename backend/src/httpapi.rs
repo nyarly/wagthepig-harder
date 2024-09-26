@@ -5,13 +5,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     db::{self, EventId, GameId, NoId, Omit, UserId},
-    routing::{EmptyLocate, EventGamesLocate, EventLocate, EventUsersLocate, GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate}
+    routing::{
+        EmptyLocate, EventGamesLocate, EventLocate, EventUsersLocate,
+        GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate
+    }
 };
 
-use semweb_api::{
-    hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields},
-    routing
-};
+use semweb_api::hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields};
 
 pub(crate) use semweb_api::Error;
 
@@ -126,7 +126,7 @@ impl EventListResponse {
                 operation: vec![ op(ActionType::Find) ]
             },
             events: list.into_iter().map(|ev|
-                EventResponse::from_query(&event_route,ev))
+                EventResponse::from_query(&nested_at,ev))
                 .collect::<Result<_,_>>()?,
         })
     }
@@ -145,10 +145,10 @@ pub(crate) struct EventResponse {
 }
 
 impl EventResponse {
-    pub(crate) fn from_query(idtmpl: &routing::Entry, value: db::Event<EventId>) -> Result<Self, Error> {
+    pub(crate) fn from_query(nested_at: &str, value: db::Event<EventId>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
-                idtmpl,
+                &RouteMap::Event.prefixed(nested_at),
                 EventLocate{ event_id: value.id },
                 "api:eventByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
@@ -241,7 +241,6 @@ pub(crate) struct EventGameListResponse {
 
 impl EventGameListResponse {
     pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, Error> {
-        let game_tmpl = RouteMap::Game.prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::EventGames.prefixed(nested_at),
@@ -259,7 +258,7 @@ impl EventGameListResponse {
                 ]
             },
             games: list.into_iter().map(|game|
-                GameResponse::from_query(&game_tmpl,game)
+                GameResponse::from_query(nested_at, game)
             ).collect::<Result<_,_>>()?
         })
     }
@@ -284,10 +283,10 @@ pub(crate) struct GameResponse {
 }
 
 impl GameResponse {
-    pub fn from_query<E, U>(route: &routing::Entry, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, Error> {
+    pub fn from_query<E, U>(nested_at: &str, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
-                route,
+                &RouteMap::Game.prefixed(nested_at),
                 GameLocate{ game_id: value.id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
@@ -334,7 +333,6 @@ pub(crate) struct RecommendListResponse {
 
 impl RecommendListResponse {
     pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::Game<GameId, EventId, UserId, Omit>>) -> Result<Self, Error> {
-        let game_route = RouteMap::Game.prefixed(nested_at);
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Recommend.prefixed(nested_at),
@@ -344,7 +342,7 @@ impl RecommendListResponse {
             )?,
 
             games: list.into_iter().map(|game|
-              RecommendResponse::from_query(&game_route, game)
+              RecommendResponse::from_query(nested_at, game)
             ).collect::<Result<_,_>>()?
         })
     }
@@ -365,10 +363,10 @@ pub(crate) struct RecommendResponse {
 }
 
 impl RecommendResponse {
-    pub fn from_query<E, U>(route: &routing::Entry, value: db::Game<GameId, E, U, Omit>) -> Result<Self, Error> {
+    pub fn from_query<E, U>(nested_at: &str, value: db::Game<GameId, E, U, Omit>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
-                route,
+                &RouteMap::Game.prefixed(nested_at),
                 GameLocate{ game_id: value.id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]

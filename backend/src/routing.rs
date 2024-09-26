@@ -32,6 +32,7 @@ impl RouteTemplate for RouteMap {
             User          => "/profile/{user_id}",                     // by ID
             Events        => "/events",
             Event         => "/event/{event_id}",
+            EventUsers    => "/event_users/{event_id}",
             EventGames    => "/event_games/{event_id}/user/{user_id}",
             Game          => "/games/{game_id}/user/{user_id}",
             Recommend     => "/recommend/{event_id}/for/{user_id}"

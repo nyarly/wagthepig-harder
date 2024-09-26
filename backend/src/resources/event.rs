@@ -45,7 +45,7 @@ pub(crate) async fn get(
     nested_at: extract::NestedPath,
     Path(event_id): extract::Path<EventId>,
 ) -> Result<impl IntoResponse, Error> {
-    let event_response = retrieve(&db, nested_at, event_id).await?;
+    let event_response = retrieve(&db, &nested_at, event_id).await?;
     if_none_match.respond(event_response).map_err(Error::from)
 }
 
@@ -57,29 +57,27 @@ pub(crate) async fn update(
     Path(event_id): extract::Path<EventId>,
     Json(body): extract::Json<EventUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let event = retrieve(&db, nested_at.clone(), event_id).await?;
+    let event = retrieve(&db, &nested_at, event_id).await?;
 
     if_match.guard_update(event)?;
 
-    let event_route = RouteMap::Event.prefixed(nested_at.as_str());
     let event = body.db_param()
         .with_id(event_id)
         .update(&db).await?;
 
-    Ok(Json(EventResponse::from_query(&event_route, event)?))
+    Ok(Json(EventResponse::from_query(nested_at.as_str(), event)?))
 }
 
 async fn retrieve(
     db: &Pool<Postgres>,
-    nested_at: extract::NestedPath,
+    nested_at: &extract::NestedPath,
     event_id: EventId
 ) -> Result<EventResponse, Error> {
     let maybe_event = Event::get_by_id(db, event_id).await?;
 
     match maybe_event {
         Some(event) => {
-            let event_tmpl = RouteMap::Event.prefixed(nested_at.as_str());
-            EventResponse::from_query(&event_tmpl, event)
+            EventResponse::from_query(nested_at.as_str(), event)
                 .map_err(|e| e.into())
         },
         None => Err((StatusCode::NOT_FOUND, "not found").into())

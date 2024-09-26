@@ -127,3 +127,28 @@ remaining part of the similar-looking resources are a point of variability.
 Breaking down elements that should be made automatic
 from those that should allow human expression in their variation
 is a key part of the design here, and needs to be considered carefully.
+
+In general: the DB side of things
+can be templated/automated to the degree it makes sense.
+Overdoing it will be felt quickly, and the concern is completely about
+making ergonomic queries of the database.
+
+HTTP DTOs should err on the side of repetition.
+Duplicating code now leaves room for variation later.
+Interactions with the client are going to be the most painful to unpick.
+
+Routing remains an area of interest.
+
+
+HTTP DTOs: a delimma - do the DTOs get told `nested_at`, which feels a little out of scope,
+or do we hand them their routing::Entries to work with.
+Either could be made to work, but certainly lists would have to be given their item Entry as well....
+and then any other relationship would have to be provided by the consumer,
+ultimately coupling the evolution of a Resource to its consumers.
+`nested_at`, on the other hand, is the only piece of information
+that Resources (currently) require to determine routing for themselves,
+which is huge.
+It's possible, in future, that there would be more required,
+in which case a RouteContext might be needed instead. Still: a single Ctx instead
+of a bundle of `routing::Entry`s feels preferable - especially since
+there's no theoretical limit on that bundle, up to the whole route map.

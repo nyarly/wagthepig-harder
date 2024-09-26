@@ -1,6 +1,6 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, routing::{self}};
+use semweb_api::condreq;
 use sqlx::{Pool, Postgres};
 
 use crate::{routing::{GameLocate, RouteMap}, AppState, Error};
@@ -53,8 +53,7 @@ pub(crate) async fn update(
     Path((game_id, user_id)): extract::Path<(GameId, String)>,
     Json(body): extract::Json<GameUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let game_route = RouteMap::Game.prefixed(nested_at.as_str());
-    let game = retrieve(&db, &game_route, game_id, user_id.clone()).await?;
+    let game = retrieve(&db, &nested_at, game_id, user_id.clone()).await?;
 
     if_match.guard_update(game)?;
 
@@ -71,12 +70,12 @@ pub(crate) async fn update(
 
     tx.commit().await.map_err(db::Error::from)?;
 
-    Ok(Json(GameResponse::from_query(&game_route, game)?))
+    Ok(Json(GameResponse::from_query(nested_at.as_str(), game)?))
 }
 
 async fn retrieve(
     db: &Pool<Postgres>,
-    game_route: &routing::Entry,
+    nested_at: &extract::NestedPath,
     game_id: GameId,
     user_id: String,
 ) -> Result<GameResponse, Error> {
@@ -84,7 +83,7 @@ async fn retrieve(
 
     match maybe_game {
         Some(game) => {
-            GameResponse::from_query(game_route, game)
+            GameResponse::from_query(nested_at.as_str(), game)
                 .map_err(Error::from)
         },
         None => Err((StatusCode::NOT_FOUND, "not found").into())
