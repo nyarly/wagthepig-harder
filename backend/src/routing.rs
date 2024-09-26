@@ -15,6 +15,7 @@ pub(crate) enum RouteMap {
     User,
     Events,
     Event,
+    EventUsers,
     EventGames,
     Game,
     Recommend
@@ -70,6 +71,11 @@ pub(crate) struct UserLocate {
 #[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct EventLocate {
     pub event_id: EventId
+}
+
+#[derive(Serialize, Clone, Listable, Context, Extract)]
+pub(crate) struct EventUsersLocate {
+    pub event_id: EventId,
 }
 
 #[derive(Serialize, Clone, Listable, Context, Extract)]

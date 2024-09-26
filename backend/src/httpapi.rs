@@ -3,7 +3,10 @@ use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{db::{self, EventId, GameId, NoId, Omit, UserId}, routing::{EmptyLocate, EventGamesLocate, EventLocate, GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate}};
+use crate::{
+    db::{self, EventId, GameId, NoId, Omit, UserId},
+    routing::{EmptyLocate, EventGamesLocate, EventLocate, EventUsersLocate, GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate}
+};
 
 use semweb_api::{
     hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields},
@@ -18,8 +21,59 @@ pub(crate) struct AuthnRequest {
     pub password: String
 }
 
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventUserListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<EventUsersLocate>,
+
+    pub users: Vec<UserResponse>,
+}
+
+impl EventUserListResponse {
+    pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::User<UserId>>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::EventUsers.prefixed(nested_at),
+                EventUsersLocate{event_id},
+                "api:eventUsersList",
+                vec![ op(ActionType::Find) ]
+            )?,
+            users: list.into_iter().map(|user|
+                UserResponse::from_query(nested_at, user))
+                .collect::<Result<_,_>>()?,
+        })
+    }
+}
+
 #[derive(Serialize, Clone)]
 pub(crate) struct UserResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<UserLocate>,
+
+    pub name: Option<String>,
+    pub bgg_username: Option<String>,
+    pub email: String,
+}
+
+impl UserResponse {
+    pub(crate) fn from_query(nested_at: &str, value: db::User<UserId>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::User.prefixed(nested_at),
+                UserLocate{ user_id: value.id },
+                "api:userById",
+                vec![]
+            )?,
+            name: value.name,
+            bgg_username: value.bgg_username,
+            email: value.email
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub(crate) struct ProfileResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<ProfileLocate>,
 
@@ -28,7 +82,7 @@ pub(crate) struct UserResponse {
     pub email: String,
 }
 
-impl UserResponse {
+impl ProfileResponse {
     pub(crate) fn from_query(nested_at: &str, value: db::User<UserId>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(

@@ -15,7 +15,7 @@ use hyper::StatusCode;
 use semweb_api::biscuits::{AuthContext, Authentication};
 use sqlx::{Pool, Postgres};
 
-use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, UserResponse}, mailing, AppState, Error};
+use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, ProfileResponse}, mailing, AppState, Error};
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
 const PASSWORD_COST: u32 = bcrypt::DEFAULT_COST;
@@ -83,7 +83,7 @@ pub(crate) async fn authenticate(
         let bundle = auth.authority(&user.email, expires, Some(addr))?;
 
         let _ = Revocation::add_batch(&db, bundle.revocation_ids, authreq.email.clone(), expires).await?;
-        Ok(([("set-authorization", bundle.token)], Json(UserResponse::from_query(nested_at.as_str(), user)?)))
+        Ok(([("set-authorization", bundle.token)], Json(ProfileResponse::from_query(nested_at.as_str(), user)?)))
     } else {
         Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
     }

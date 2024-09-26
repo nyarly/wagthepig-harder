@@ -4,6 +4,7 @@
 * FE: pull auth from fragment (?)
   - pro: fragments not sent over the wire
   - con: not intended for secure data
+* FE condreq support
 
 WTP parity:
 B/E
@@ -108,3 +109,21 @@ notation: {
 and have "event" and "user" be @contexted as datatype IRIs, JSON-LD doesn't expand that way.
 *For the time being* we'll do that _anyway_ and if at some point we come in the validated fold,
 we can adjust how we process SKOS notations as more verbose structures.
+
+It's tempting, always to set up macros or something for what feel like
+repetitive fields in the DB/HTTP DTOs. Some real wins with flattened sub-structs
+in the DB, since the underlying tables are going imply some repetition,
+making DB DTOs generic over Id types is a big win.
+But! especially on the HTTP side,
+generics and macros limit the flexibility of the API
+by making seemingly related resources advance in lock-step.
+In WTP we are seeing now a relationship between User and Profile
+(that is: other folks at this event, and your own data.)
+There's also relationships between every list/item pair.
+These make it tempting to build general List/Item responses,
+or #[derive(ListResponse)] or whatever.
+However, every time I've considered that, it seems to me that every
+remaining part of the similar-looking resources are a point of variability.
+Breaking down elements that should be made automatic
+from those that should allow human expression in their variation
+is a key part of the design here, and needs to be considered carefully.
