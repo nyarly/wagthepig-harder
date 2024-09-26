@@ -43,8 +43,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smtp_port = std::env::var("SMTP_PORT").expect("SMTP_PORT must be provided");
     let smtp_user_name = std::env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be provided");
     let smtp_password = std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be provided");
+    let smtp_cert = std::env::var("SMTP_CERT").ok();
 
-    let transport = mailing::build_transport(&smtp_address, &smtp_port, &smtp_user_name, &smtp_password)?;
+    let transport = mailing::build_transport(&smtp_address, &smtp_port, &smtp_user_name, &smtp_password, smtp_cert)?;
     match transport.test_connection().await {
         Ok(connected) => info!("SMTP transport to {smtp_address} connected? {connected}"),
         Err(e) => warn!("Error attempting connection on SMTP transport {smtp_address}: {e:?}"),

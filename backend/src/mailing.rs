@@ -1,9 +1,16 @@
 use std::time::{Duration, SystemTime};
 
-use lettre::{message::header::ContentType, transport::smtp::authentication::{Credentials, Mechanism}, AsyncSmtpTransport, AsyncTransport as _, Message, Tokio1Executor};
+use lettre::{
+    message::header::ContentType,
+    transport::smtp::{authentication::{Credentials, Mechanism}, client::{Certificate, Tls, TlsParameters}},
+    AsyncSmtpTransport,
+    AsyncTransport as _, Message,
+    Tokio1Executor
+};
 use semweb_api::biscuits;
 use serde::{Deserialize, Serialize};
 use sqlxmq::{job, CurrentJob};
+use tracing::debug;
 
 use crate::db::Revocation;
 
@@ -40,7 +47,7 @@ pub(crate) async fn request_reset(
         .to(details.email.parse()?)
         .subject("Password Reset Request")
         .header(ContentType::TEXT_PLAIN)
-        .body(String::from(format!(
+        .body(format!(
             r#"
                 Hey!
 
@@ -54,7 +61,7 @@ pub(crate) async fn request_reset(
                 "#,
             domain = details.domain,
             token = bundle.token
-        )))?;
+        ))?;
 
     transport.send(msg).await?;
 
@@ -88,7 +95,7 @@ pub(crate) async fn request_registration(
         .to(details.email.parse()?)
         .subject("Password Reset Request")
         .header(ContentType::TEXT_PLAIN)
-        .body(String::from(format!(
+        .body(format!(
             r#"
                 Hey!
 
@@ -103,7 +110,7 @@ pub(crate) async fn request_registration(
                 "#,
             token = bundle.token,
             domain = details.domain
-        )))?;
+        ))?;
 
     transport.send(msg).await?;
 
@@ -111,19 +118,32 @@ pub(crate) async fn request_registration(
     Ok(())
 }
 
-pub(crate) fn build_transport(address: &str, port: &str, user: &str, pass: &str) -> Result<Transport, Error> {
-    Ok(Transport::starttls_relay(address)?
+pub(crate) fn build_transport(address: &str, port: &str, user: &str, pass: &str, cert: Option<String>) -> Result<Transport, Error> {
+    debug!("Configuring SMTP transport: {address:?}:{port:?} user:{user:?} cert: {cert:?}");
+    let xport_builder =Transport::starttls_relay(address)?
         .port(port.parse()?)
         .credentials(Credentials::new(user.to_string(), pass.to_string()))
-        .authentication(vec![Mechanism::Plain])
-        .build())
+        .authentication(vec![Mechanism::Plain]);
+    let xport_builder = if let Some(path) = cert {
+        let data = std::fs::read(path)?;
+        let pem = Certificate::from_pem(&data)?;
+        let tlsparams = TlsParameters::builder(address.to_string())
+            .add_root_certificate(pem)
+            .build()?;
+        xport_builder.tls(Tls::Required(tlsparams))
+    } else {
+        xport_builder
+    };
+    Ok(xport_builder.build())
 }
 
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("lettre error: ${0:?}")]
-    SMTP(#[from] lettre::transport::smtp::Error),
+    Smtp(#[from] lettre::transport::smtp::Error),
     #[error("configuration error: non-numeric port: ${0:?}")]
-    Config(#[from] std::num::ParseIntError)
+    Config(#[from] std::num::ParseIntError),
+    #[error("io error loading file: ${0:?}")]
+    IO(#[from] std::io::Error),
 }

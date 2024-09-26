@@ -2,23 +2,27 @@ vars:
   projectname: wagthepig
   smtp_host: 127.0.0.1
   smtp_port: 1025
+  smtp_cert: devsupport/tls/smtp/cert.crt
+  smtp_key: devsupport/tls/smtp/cert.key
 environment:
   - PGDATA=devsupport/db
-  - SMTP_HOST=${smtp_host}
-  - SMTP_PORT=$(smtp_port}
+  - SMTP_HOST=127.0.0.1
+  - SMTP_PORT=1025
   # not to secure STMP,
   # just to ensure smtp auth tested during dev
-  - SMTP_USER=smtp_user
-  - SMTP_PASS=smtp_password
+  - SMTP_USERNAME=smtp_user
+  - SMTP_PASSWORD=smtp_password
   - "MP_UI_BIND_ADDR=127.0.0.1:8025"
   - "MP_SMTP_BIND_ADDR=127.0.0.1:1025"
+  - ADMIN_EMAIL=nobody@nowhere.org
+  - SMTP_CERT=../devsupport/tls/smtp/cert.crt
 
 unifiendbackend: &unifiedbackend
   live-make:
     working_dir: frontend/
     command: watchexec -w src/ elm make src/Main.elm --output=dist/js/main.js --debug
   mailpit:
-    command: mailpit --smtp-auth-file=devsupport/mailpit_passwords --smtp-auth-allow-insecure
+    command: mailpit --smtp-auth-file=devsupport/mailpit_passwords --smtp-tls-cert {{.smtp_cert}} --smtp-tls-key {{.smtp_key}}
     ready_log_line: "accessible via http"
   database:
     command: devsupport/run_postgres.sh
