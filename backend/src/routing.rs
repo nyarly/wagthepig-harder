@@ -18,6 +18,7 @@ pub(crate) enum RouteMap {
     EventUsers,
     EventGames,
     Game,
+    GameUsers,
     Recommend
 }
 
@@ -35,6 +36,7 @@ impl RouteTemplate for RouteMap {
             EventUsers    => "/event_users/{event_id}",
             EventGames    => "/event_games/{event_id}/user/{user_id}",
             Game          => "/games/{game_id}/user/{user_id}",
+            GameUsers     => "/game_users/{game_id}",
             Recommend     => "/recommend/{event_id}/for/{user_id}"
         }.to_string()
     }
@@ -87,6 +89,11 @@ pub(crate) struct EventGamesLocate {
 
 #[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
 pub(crate) struct GameLocate {
+    pub game_id: GameId
+}
+
+#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
+pub(crate) struct GameUsersLocate {
     pub game_id: GameId
 }
 

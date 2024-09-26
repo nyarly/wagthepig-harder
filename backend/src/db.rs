@@ -174,6 +174,20 @@ impl User<UserId> {
             .map_err(Error::from)
     }
 
+    pub fn get_all_by_game_id<'a>(db: impl Executor<'a, Database = Postgres> + 'a, game_id: GameId)
+    -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
+        sqlx::query_as!(
+            Self,
+            r#"select users.*
+            from users
+            join interests on interests.user_id = users.id
+            join games on interests.game_id = games.id
+            where interests.game_id = $1"#,
+            game_id.id())
+            .fetch_all(db)
+            .map_err(Error::from)
+    }
+
     pub fn update_password<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, hashed: String)
     -> impl Future<Output = Result<(), Error>> + 'a {
         sqlx::query!(

@@ -6,8 +6,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::{
     db::{self, EventId, GameId, NoId, Omit, UserId},
     routing::{
-        EmptyLocate, EventGamesLocate, EventLocate, EventUsersLocate,
-        GameLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate
+        EmptyLocate, EventGamesLocate, EventLocate, EventUsersLocate, GameLocate, GameUsersLocate, ProfileLocate, RecommendLocate, RouteMap, UserLocate
     }
 };
 
@@ -45,6 +44,32 @@ impl EventUserListResponse {
         })
     }
 }
+
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct GameUserListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<GameUsersLocate>,
+
+    pub users: Vec<UserResponse>,
+}
+
+impl GameUserListResponse {
+    pub fn from_query(nested_at: &str, game_id: GameId, list: Vec<db::User<UserId>>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::GameUsers.prefixed(nested_at),
+                GameUsersLocate{game_id},
+                "api:gameUsersList",
+                vec![ op(ActionType::Find) ]
+            )?,
+            users: list.into_iter().map(|user|
+                UserResponse::from_query(nested_at, user))
+                .collect::<Result<_,_>>()?,
+        })
+    }
+}
+
 
 #[derive(Serialize, Clone)]
 pub(crate) struct UserResponse {
@@ -126,7 +151,7 @@ impl EventListResponse {
                 operation: vec![ op(ActionType::Find) ]
             },
             events: list.into_iter().map(|ev|
-                EventResponse::from_query(&nested_at,ev))
+                EventResponse::from_query(nested_at,ev))
                 .collect::<Result<_,_>>()?,
         })
     }
@@ -236,6 +261,7 @@ pub(crate) struct EventGameListResponse {
     pub resource_fields: ResourceFields<EventGamesLocate>,
 
     pub make_recommendation: Link,
+    pub users: Link,
     pub games: Vec<GameResponse>
 }
 
@@ -257,6 +283,10 @@ impl EventGameListResponse {
                     }
                 ]
             },
+            users: Link {
+                id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id })?.into(),
+                operation: vec![ op(ActionType::View) ]
+            },
             games: list.into_iter().map(|game|
                 GameResponse::from_query(nested_at, game)
             ).collect::<Result<_,_>>()?
@@ -269,6 +299,7 @@ impl EventGameListResponse {
 pub(crate) struct GameResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<GameLocate>,
+    pub users: Link,
 
     pub name: Option<String>,
     pub min_players: Option<i32>,
@@ -291,6 +322,10 @@ impl GameResponse {
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
+            users: Link {
+                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?.into(),
+                operation: vec![ op(ActionType::View) ]
+            },
 
             name: value.data.name,
             min_players: value.data.min_players,

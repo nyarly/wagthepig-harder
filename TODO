@@ -7,10 +7,6 @@
 * FE condreq support
 
 WTP parity:
-B/E
-* Who else? data - users interested in each game
-
-* DB: update/created timestamps
 
 F/E
 * Get creds from fragment
@@ -28,6 +24,7 @@ F/E
   * Want to play
   * Know rules
   * Personal notes
+  * Who else? (is interested in this game)
 * What should we play?
   * Other players
   * extra players
@@ -40,9 +37,9 @@ F/E
 * Client-side JSON-LD
   - flatten/expand responses
   - validate `expect`
-  - in general decouple from B/E
+  - in general decouple from exact B/E format
 * Biscuit WASM port for Elm e.g.
-  - check if my ip = requesting id
+  - check if my ip = requesting ip
   - check if time is in the next 60 seconds
 * Sophisticated 409 handling in F/E for conditional updates (automatic 3-way merge)
 * For the URITemplate/matchit "bridge"

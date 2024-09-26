@@ -79,10 +79,13 @@ impl<S: Send + Sync> FromRequestParts<S> for CondRetreiveHeader {
 impl CondRetreiveHeader {
     pub fn respond(&self, body: impl Serialize + Clone) -> Result<impl IntoResponse, Error> {
         match self {
-            CondRetreiveHeader::IfNoneMatch(none_match) => if none_match.precondition_passes(&etag_for(body.clone())?) {
-                Ok(EtaggedJson(body).into_response())
-            } else {
-                Ok(StatusCode::NOT_MODIFIED.into_response())
+            CondRetreiveHeader::IfNoneMatch(none_match) => {
+                let etag = etag_for(body.clone())?;
+                if none_match.precondition_passes(&etag) {
+                    Ok(EtaggedJson(body).into_response())
+                } else {
+                    Ok((StatusCode::NOT_MODIFIED, TypedHeader(etag)).into_response())
+                }
             }
             CondRetreiveHeader::None => Ok(EtaggedJson(body).into_response())
         }
