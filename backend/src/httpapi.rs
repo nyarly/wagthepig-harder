@@ -16,8 +16,16 @@ pub(crate) use semweb_api::Error;
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AuthnRequest {
-    pub email: String,
     pub password: String
+}
+
+impl AuthnRequest {
+    pub(crate) fn valid(&self) -> Result<(), Error> {
+        if self.password.len() < 12 {
+            return Err(Error::InvalidInput("password less than 12 characters".to_string()))
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize,Clone)]
@@ -185,6 +193,13 @@ impl EventResponse {
             description: value.description.clone()
         })
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct RegisterRequest {
+    pub name: String,
+    pub bgg_username: String,
 }
 
 #[derive(Deserialize)]

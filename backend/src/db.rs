@@ -144,12 +144,26 @@ pub(crate) struct User<T> {
     pub encrypted_password: Password,
     pub updated_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
+
+    // XXX these fields are slated for removal
     pub remember_created_at: Option<NaiveDateTime>,
     pub reset_password_sent_at: Option<NaiveDateTime>,
     pub reset_password_token: Option<String>
 }
 
 impl User<UserId> {
+    pub fn create<'a>(db: impl Executor<'a, Database = Postgres> + 'a, email: &str, name: &str, bgg: &str)
+    -> impl Future<Output = Result<Self, Error>> + 'a {
+        sqlx::query_as!(
+            Self,
+            r#"insert into users
+            ("email", "name", "bgg_username", "encrypted_password")
+            values ($1, $2, $3, 'empty password cannot log in') returning *"#,
+            email, name, bgg)
+            .fetch_one(db)
+            .map_err(Error::from)
+    }
+
     pub fn by_email<'a>(db: impl Executor<'a, Database = Postgres> + 'a, email: String)
     -> impl Future<Output = Result<Self, Error>> + 'a {
         sqlx::query_as!(

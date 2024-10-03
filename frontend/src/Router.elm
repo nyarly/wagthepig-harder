@@ -1,8 +1,9 @@
-module Router exposing (Target(..), routeToTarget, buildFromTarget, pageName)
+module Router exposing  (Target(..), routeToTarget, buildFromTarget, pageName)
 
 import Url exposing (Url)
 import Url.Parser exposing (Parser, map, parse, s, top, oneOf, (</>), string)
 import Url.Builder exposing (absolute)
+import Auth exposing (Cred)
 
 type Target
   = Login
@@ -11,6 +12,8 @@ type Target
   | Events
   | CreateEvent
   | EventEdit String
+  | CredentialedArrival Target Cred
+  | CompleteRegistration String
 
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
@@ -25,7 +28,10 @@ buildFromTarget target =
     Events -> absolute ["events"] []
     CreateEvent -> absolute ["new_event"] []
     EventEdit name -> absolute ["event", name] []
+    CredentialedArrival _ _ -> absolute ["handle_registration"] []
+    CompleteRegistration email -> absolute [ "complete_registration", email ] []
 
+{- used to mark a CSS class for the page -}
 pageName : Target -> String
 pageName target =
   case target of
@@ -35,6 +41,8 @@ pageName target =
     Events -> "events"
     CreateEvent -> "event"
     EventEdit _ -> "event"
+    CredentialedArrival _ _ -> "mail-handling"
+    CompleteRegistration _ -> "registration"
 
 router : Parser (Target -> c) c
 router =
@@ -45,4 +53,10 @@ router =
     , map Events ( s "events" )
     , map CreateEvent ( s "new_event" )
     , map EventEdit ( s "event" </> string )
+    , map registrationArrival ( s "handle_registration" </> string </> Auth.fragmentParser )
+    , map CompleteRegistration ( s "complete_registration" </> string )
     ]
+
+registrationArrival : String -> Cred -> Target
+registrationArrival email cred =
+  CredentialedArrival (CompleteRegistration email) cred

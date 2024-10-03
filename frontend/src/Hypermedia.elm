@@ -74,6 +74,10 @@ type alias ResToMsg x a msg = (Result x a -> msg)
 
 {-
 Pass a list of linkExtractors to nose, along with the handling for the final link
+  HM.chain creds [
+    HM.browse ["events"] (HM.ByType "ViewAction")
+  ] Http.emptyBody modelRes handleGetResult
+
 -}
 chain : Auth.Cred -> List(AffordanceExtractor) -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
 chain cred =
@@ -109,9 +113,9 @@ follow maybeCred body makeRes aff =
   in essence to be able to put links and forms and buttons in the respresentation of
   a resources that let the user know what kinds of things they can do with it.
   In JSON-LD with Hydra (and Schema.org Actions), affordances are attached to
-  Resources via an operation(s) property. The document resturned represents a resource itself,
+  Resources via an operation(s) property. The document returned represents a resource itself,
   and might have fields whose values are Resources as well,
-  so you can indicate
+  so you can indicate a path in the JSON-LD response
   where the resource in question is "at" (with an empty list ([]) being the thing itself)
   then with operation you want to invoke, either by index (ick), "first by method" (okay)
   or by kind (in JSON-LD this will be its @type, generally a specialization of Action)
@@ -136,6 +140,9 @@ fillIn vars affex =
     affex r
     |> Result.map (\aff -> {aff | uri = Url.Interpolate.interpolate aff.uri vars}))
 
+{-
+  fill is appropriate for using at the head of a `chainFrom`, where the first request has to be constructed.
+-}
 fill : TemplateVars -> Affordance -> Affordance
 fill vars aff =
   {aff | uri = Url.Interpolate.interpolate aff.uri vars}
@@ -250,6 +257,9 @@ baseRzToRes extractValue =
           Http.NetworkError_ ->
             Err Http.NetworkError
 
+        -- Http.BadStatus means that we cannot extract knowledge from non-2xx responses
+        -- Or we could build a Response and pass it to extractValue in both cases;
+        -- would need to review existing uses
           Http.BadStatus_ metadata _->
             Err (Http.BadStatus metadata.statusCode)
           Http.GoodStatus_ metadata body ->

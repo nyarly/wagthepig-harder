@@ -15,10 +15,32 @@ use hyper::StatusCode;
 use semweb_api::biscuits::{AuthContext, Authentication};
 use sqlx::{Pool, Postgres};
 
-use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, ProfileResponse}, mailing, AppState, Error};
+use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, ProfileResponse, RegisterRequest}, mailing, AppState, Error};
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
 const PASSWORD_COST: u32 = bcrypt::DEFAULT_COST;
+
+#[debug_handler(state = AppState)]
+pub(crate) async fn authenticate(
+    State(db): State<Pool<Postgres>>,
+    State(auth): State<Authentication>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    nested_at: extract::NestedPath,
+    extract::Path(email): extract::Path<String>,
+    Json(authreq): Json<AuthnRequest>
+) -> Result<impl IntoResponse, Error> {
+    let user = User::by_email(&db, email.clone()).await?;
+
+    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
+        let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);
+        let bundle = auth.authority(&user.email, expires, Some(addr))?;
+
+        let _ = Revocation::add_batch(&db, bundle.revocation_ids, email.clone(), expires).await?;
+        Ok(([("set-authorization", bundle.token)], Json(ProfileResponse::from_query(nested_at.as_str(), user)?)))
+    } else {
+        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
+    }
+}
 
 // #[debug_middleware(state = AppState)]
 pub(crate) async fn add_rejections(
@@ -38,12 +60,12 @@ pub(crate) async fn add_rejections(
 pub(crate) async fn reset_password(
     State(db): State<Pool<Postgres>>,
     extract::Host(host): extract::Host,
-    Json(authreq): Json<AuthnRequest>
+    extract::Path(email): extract::Path<String>,
 ) -> Result<impl IntoResponse, Error> {
     mailing::request_reset.builder()
       .set_json(&mailing::ResetDetails{
             domain: host,
-            email: authreq.email.clone(),
+            email: email.clone(),
         })?
         .spawn(&db).await
         .map_err(crate::db::Error::from)?;
@@ -55,12 +77,14 @@ pub(crate) async fn reset_password(
 pub(crate) async fn register(
     State(db): State<Pool<Postgres>>,
     extract::Host(host): extract::Host,
-    Json(authreq): Json<AuthnRequest>
+    extract::Path(email): extract::Path<String>,
+    Json(regreq): Json<RegisterRequest>
 ) -> Result<impl IntoResponse, Error> {
+    User::create(&db, &email, &regreq.name, &regreq.bgg_username).await?;
     mailing::request_registration.builder()
       .set_json(&mailing::RegistrationDetails{
             domain: host,
-            email: authreq.email.clone(),
+            email: email.clone(),
         })?
         .spawn(&db).await
         .map_err(crate::db::Error::from)?;
@@ -69,34 +93,15 @@ pub(crate) async fn register(
 }
 
 #[debug_handler(state = AppState)]
-pub(crate) async fn authenticate(
-    State(db): State<Pool<Postgres>>,
-    State(auth): State<Authentication>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    nested_at: extract::NestedPath,
-    Json(authreq): Json<AuthnRequest>
-) -> Result<impl IntoResponse, Error> {
-    let user = User::by_email(&db, authreq.email.clone()).await?;
-
-    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
-        let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);
-        let bundle = auth.authority(&user.email, expires, Some(addr))?;
-
-        let _ = Revocation::add_batch(&db, bundle.revocation_ids, authreq.email.clone(), expires).await?;
-        Ok(([("set-authorization", bundle.token)], Json(ProfileResponse::from_query(nested_at.as_str(), user)?)))
-    } else {
-        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
-    }
-}
-
-#[debug_handler(state = AppState)]
 pub(crate) async fn update_credentials(
     State(db): State<Pool<Postgres>>,
+    extract::Path(email): extract::Path<String>,
     Json(authreq): Json<AuthnRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let user = User::by_email(&db, authreq.email.clone()).await?;
+    authreq.valid()?;
+    let user = User::by_email(&db, email.clone()).await?;
     let hashed = bcrypt::hash(authreq.password.clone(), PASSWORD_COST)?;
-    Revocation::revoke_for_username(&db, authreq.email.clone(), Utc::now().naive_utc()).await?;
+    Revocation::revoke_for_username(&db, email.clone(), Utc::now().naive_utc()).await?;
     user.update_password(&db, hashed).await?;
     Ok(StatusCode::NO_CONTENT)
 }

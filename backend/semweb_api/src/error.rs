@@ -58,6 +58,8 @@ pub enum Error {
     PreconditionFailed(String),
     #[error("malformed header: {0}")]
     Header(#[from] axum_extra::typed_header::TypedHeaderRejection),
+    #[error("input invalid: {0}")]
+    InvalidInput(String),
 }
 
 impl IntoResponse for Error {
@@ -86,6 +88,7 @@ impl IntoResponse for Error {
             Error::Query(e) => e.into_response(),
 
             // presumed client errors
+            Error::InvalidInput(_) |
             Error::BadETagFormat(_) |
             Error::InvalidHeaderValue(_) |
             Error::Header(_) => (StatusCode::BAD_REQUEST, self.to_string()).into_response(),

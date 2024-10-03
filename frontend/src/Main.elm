@@ -94,10 +94,10 @@ consumeOutmsg (model, msg, out) =
           msg
           , Nav.pushUrl model.key (Router.buildFromTarget target)
           ])
-        OutMsg.NewCred newcred -> ({model | creds = newcred}, Cmd.batch [
+        OutMsg.NewCred newcred target -> ({model | creds = newcred}, Cmd.batch [
           msg
           , Auth.storeCred newcred
-          , Nav.pushUrl model.key "/"
+          , Nav.pushUrl model.key (Router.buildFromTarget target)
           ])
     _ -> (model, msg)
 

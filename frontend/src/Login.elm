@@ -11,6 +11,7 @@ import Auth
 import Hypermedia as HM
 import Hypermedia exposing (OperationSelector(..))
 import Router exposing (Target(..))
+import Dict
 
 type alias Model =
   { email: String
@@ -66,7 +67,7 @@ bidiupdate msg model =
     AuthResponse res ->
       case res of
         Ok user ->
-          ({ model | fromServer = Success user }, Cmd.none, OutMsg.Main << OutMsg.NewCred <| user)
+          ({ model | fromServer = Success user }, Cmd.none, OutMsg.Main (OutMsg.NewCred user Router.Landing))
         Err err ->
           ({ model | fromServer = Failed err }, Cmd.none, OutMsg.None)
 
@@ -81,5 +82,5 @@ login email password =
         ]))
   in
     HM.chain Auth.unauthenticated [
-        HM.browse ["authenticate"] (ByType "LoginAction")
+        HM.browse ["authenticate"] (ByType "LoginAction") |> HM.fillIn (Dict.fromList [("user_id", email)])
       ] reqBody (Auth.credExtractor email) AuthResponse

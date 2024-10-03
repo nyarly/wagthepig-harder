@@ -1,4 +1,4 @@
-module Auth exposing (Cred, unauthenticated, loggedIn, storageField, loadCred, storeCred, credExtractor, credHeader, accountID, logout, testSuite)
+module Auth exposing (Cred, unauthenticated, loggedIn, storageField, loadCred, storeCred, fragmentParser, credExtractor, credHeader, accountID, logout, testSuite)
 
 import Http
 import Dict exposing (Dict)
@@ -10,6 +10,7 @@ import State
 -- testing
 import Test as T
 import Expect exposing (equal)
+import Url.Parser as P exposing (Parser)
 
 {-
 -- CRED
@@ -68,6 +69,17 @@ credDecoder =
     (D.field "accountID" D.string)
     (D.field "token" D.string)
 
+fragmentParser : Parser (Cred -> a) a
+fragmentParser =
+  P.map anonymousToken (P.fragment identity)
+
+anonymousToken :  Maybe String -> Cred
+anonymousToken maybeToken = -- XXX should use the body to get accountID
+  case maybeToken of
+    Just token -> Cred( Just( Credentials "" token ))
+    Nothing -> Cred( Nothing )
+
+
 encodeCred : Credentials -> Value
 encodeCred cred =
   E.object
@@ -93,9 +105,8 @@ accountID (Cred cred) =
     Just c -> c.accountID
     Nothing -> ""
 
--- line of truth - can we cut here into a different module?
-
 -- XXX
+-- Need to DELETE the authentication
 logout : Cmd msg
 logout =
   State.clear storageField

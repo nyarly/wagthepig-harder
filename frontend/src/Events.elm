@@ -120,8 +120,7 @@ handleGetResult res =
     Ok model -> GotEvents model
     Err err -> ErrGetEvents err
 
--- type alias HeadersAndBodyToRes a = (Headers -> Body -> Result String a)
-
+-- type alias ResponseToResult a = (Response -> Result String a)
 modelRes : {a|body:String} -> Result String Resource
 modelRes res =
   res.body
