@@ -138,7 +138,9 @@ view model =
   , body = [
       div [ class "page", class (Router.pageName model.page) ] (
         nav [] [
-          img [ src "/assets/wagthepig-med.png" ] []
+          a [ onClick (PathRequested (Router.buildFromTarget Router.Register)) ] [
+            img [ src "/assets/wagthepig-med.png" ] []
+          ]
           , ul [ class "menu" ] [
               headerButton "Profile" "/profile"
             , headerButton "Events" "/events"

@@ -133,6 +133,8 @@ browse at sel response =
   Finally, some operations use a URI template as their @id, e.g. a search operation might have
   a query parameter. Provide the variables for that template via the "vars"
   You can use fillIn to provide those where needed; the signature is appropriate for `|>`
+  e.g.
+     HM.browse [] (ByType "FindAction") |> HM.fillIn (Dict.fromList [("event_id", id)])
 -}
 fillIn : TemplateVars -> AffordanceExtractor -> AffordanceExtractor
 fillIn vars affex =

@@ -20,7 +20,7 @@ type alias Model =
   , email: String
   , password: String
   , passwordAgain: String
-  , fromServer: AuthResponse
+  , fromServer: FromServer
   }
 
 init : Model
@@ -34,7 +34,7 @@ type Msg
   | UpdateAttempted
   | AuthResponse (Result Http.Error ())
 
-type AuthResponse
+type FromServer
   = None
   | Success
   | Failed Http.Error -- XXX a 4xx response is only captured like that

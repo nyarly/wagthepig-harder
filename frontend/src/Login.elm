@@ -12,6 +12,7 @@ import Hypermedia as HM
 import Hypermedia exposing (OperationSelector(..))
 import Router exposing (Target(..))
 import Dict
+import Html.Events exposing (onClick)
 
 type alias Model =
   { email: String
@@ -28,6 +29,7 @@ type Msg
   | ChangePassword String
   | AuthenticationAttempted
   | AuthResponse (Result Http.Error Auth.Cred)
+  | WantsReg
 
 type AuthResponse
   = None
@@ -41,6 +43,10 @@ view _ =
     [ (inputPair "Email" [] ChangeEmail)
     , (inputPair "Password" [ type_ "password" ] ChangePassword)
     , button [ type_ "submit" ] [ text "Log in" ]
+    ]
+  , p []
+    [ text "Don't have an account? No problem!"
+    , a [ onClick WantsReg ] [ text "Sign up here" ]
     ]
   ]
 
@@ -70,6 +76,7 @@ bidiupdate msg model =
           ({ model | fromServer = Success user }, Cmd.none, OutMsg.Main (OutMsg.NewCred user Router.Landing))
         Err err ->
           ({ model | fromServer = Failed err }, Cmd.none, OutMsg.None)
+    WantsReg -> ( model, Cmd.none, OutMsg.Main ( OutMsg.Nav Router.Register ) )
 
 -- type alias ResToMsg x a msg = (Result x a -> msg)
 login : String -> String -> Cmd Msg

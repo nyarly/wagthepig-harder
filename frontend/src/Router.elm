@@ -13,6 +13,7 @@ type Target
   | CreateEvent
   | EventEdit String
   | CredentialedArrival Target Cred
+  | Register
   | CompleteRegistration String
 
 routeToTarget : Url -> Maybe Target
@@ -28,6 +29,7 @@ buildFromTarget target =
     Events -> absolute ["events"] []
     CreateEvent -> absolute ["new_event"] []
     EventEdit name -> absolute ["event", name] []
+    Register -> absolute ["register"] []
     CredentialedArrival _ _ -> absolute ["handle_registration"] []
     CompleteRegistration email -> absolute [ "complete_registration", email ] []
 
@@ -41,6 +43,7 @@ pageName target =
     Events -> "events"
     CreateEvent -> "event"
     EventEdit _ -> "event"
+    Register -> "register"
     CredentialedArrival _ _ -> "mail-handling"
     CompleteRegistration _ -> "registration"
 
@@ -52,6 +55,7 @@ router =
     , map Profile ( s "profile" )
     , map Events ( s "events" )
     , map CreateEvent ( s "new_event" )
+    , map Register ( s "register" )
     , map EventEdit ( s "event" </> string )
     , map registrationArrival ( s "handle_registration" </> string </> Auth.fragmentParser )
     , map CompleteRegistration ( s "complete_registration" </> string )

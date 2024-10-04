@@ -1,18 +1,18 @@
 * Modern CSS (c.f. "6 patterns of CSS variables")
-* Add lightningcss for CSS bundling & compatibility
-* Or just Parcel?
+* Attempt to put Parcel into FE
+* Fall back to lightningcss for CSS bundling & compatibility
 * FE: pull auth from fragment (?)
   - pro: fragments not sent over the wire
   - con: not intended for secure data
 * FE condreq support
+* Attempt to move httpapi structs to their resources
+  - consider cohension around which endpoints are in which reource module
 
 WTP parity:
 
 F/E
-* Get creds from fragment
 * Profile
   * register
-  * change password
   * reset password
 * Events list view
   * Sorted table
@@ -70,9 +70,6 @@ pub(crate) enum RouteMap {
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
 * Middleware for conditional requests
-  * c.f. `tower_etag_cache`
-  * On GET, calculate and insert ETag and Last-Modified(?)
-  * Cache generated/included ETags
   * If-Match & If-None-Match - check cache, and short circuit
   * If-Match & If-None-Match - check response/generated and empty bodies
 * actually write a JSON-LD @context

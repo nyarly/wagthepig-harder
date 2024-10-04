@@ -13,7 +13,7 @@ import Events
 import EventEdit
 import CompleteRegistration
 import Router exposing (Target(..))
--- import Platform exposing (Router)
+import Register
 
 type Msg
   = LandingMsg Landing.Msg
@@ -21,6 +21,7 @@ type Msg
   | ProfileMsg Profile.Msg
   | EventsMsg Events.Msg
   | EventEditMsg EventEdit.Msg
+  | RegisterMsg Register.Msg
   | CompleteRegistrationMsg CompleteRegistration.Msg
 
 type alias Models =
@@ -29,6 +30,7 @@ type alias Models =
   , profile: Profile.Model
   , events: Events.Model
   , event: EventEdit.Model
+  , register: Register.Model
   , complete_registration: CompleteRegistration.Model
   }
 
@@ -40,6 +42,7 @@ init =
     Profile.init
     Events.init
     EventEdit.init
+    Register.init
     CompleteRegistration.init
 
 view : Router.Target -> Models -> (Msg -> msg) -> List (Html msg)
@@ -62,6 +65,8 @@ view target models toMsg =
       |> wrapMsg EventEditMsg
     Router.CreateEvent -> EventEdit.view models.event
       |> wrapMsg EventEditMsg
+    Router.Register -> Register.view models.register
+      |> wrapMsg RegisterMsg
     Router.CompleteRegistration _ -> CompleteRegistration.view models.complete_registration
       |> wrapMsg CompleteRegistrationMsg
 
@@ -75,6 +80,8 @@ pageNav target creds models =
       bidiupdate (ProfileMsg (Profile.Entered creds)) models
     Router.Events ->
       bidiupdate (EventsMsg (Events.Entered creds)) models
+    Router.Register ->
+      bidiupdate (RegisterMsg (Register.Entered)) models
     Router.EventEdit name ->
       bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname name))) models
     _ -> ( models, Cmd.none, OutMsg.None )
@@ -98,6 +105,10 @@ bidiupdate msg models =
     EventEditMsg submsg ->
       EventEdit.bidiupdate submsg models.event
         |> OutMsg.mapBoth (\pm -> {models | event = pm}) (Cmd.map EventEditMsg)
+        |> consumeOutmsg
+    RegisterMsg submsg ->
+      Register.bidiupdate submsg models.register
+        |> OutMsg.mapBoth (\pm -> {models | register = pm}) (Cmd.map RegisterMsg)
         |> consumeOutmsg
     CompleteRegistrationMsg submsg ->
       CompleteRegistration.bidiupdate submsg models.complete_registration
