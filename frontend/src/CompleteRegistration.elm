@@ -11,6 +11,7 @@ import Json.Encode as E
 import OutMsg
 import Auth
 import Hypermedia as HM
+import ViewUtil as Eww
 import Hypermedia exposing (OperationSelector(..))
 import Router exposing (Target(..))
 import Dict
@@ -28,7 +29,7 @@ init =
   Model Auth.unauthenticated "" "" "" None
 
 type Msg
-  = Entered String
+  = Entered Auth.Cred String
   | ChangePassword String
   | ChangePasswordAgain String
   | UpdateAttempted
@@ -50,29 +51,16 @@ view model =
   [ h1 [] [ text "Please enter your new password. It must be at least 12 characters long." ]
   , viewIf passwordsMismatch (span [ class "warning" ] [ text "Passwords have to match" ])
   , form [ onSubmit UpdateAttempted ]
-    [ (inputPair "Password" passwordInputAttrs ChangePassword)
-    , (inputPair "Password Again" passwordInputAttrs ChangePasswordAgain)
-    , button [type_ "submit", attributeIf passwordsMismatch (disabled True) ] [ text "Log in" ]
+    [ (Eww.inputPair passwordInputAttrs "Password" model.password ChangePassword)
+    , (Eww.inputPair passwordInputAttrs "Password Again" model.passwordAgain ChangePasswordAgain)
+    , button [type_ "submit", attributeIf passwordsMismatch (disabled True) ] [ text "Update Password" ]
     ]
   ]
-
-inputPair : String -> List (Attribute msg) -> (String -> msg) -> Html msg
-inputPair name attrs event =
-  let
-      pid = String.toLower name
-  in
-    div []
-    [ label [ for pid ] [ text name ]
-    , input ([ id pid, onInput event ] ++ attrs) []
-    ]
-
--- XXX Need to validate matching password inputs before submitting
--- XXX Need to indicate when passwords don't match
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =
   case msg of
-    Entered email -> ( {model | email = email }, Cmd.none, OutMsg.None )
+    Entered cred email -> ( {model | creds = cred, email = email }, Cmd.none, OutMsg.None )
     ChangePassword newpassword -> ( {model | password = newpassword }, Cmd.none, OutMsg.None )
     ChangePasswordAgain newpassword -> ( {model | passwordAgain = newpassword }, Cmd.none, OutMsg.None )
     UpdateAttempted ->

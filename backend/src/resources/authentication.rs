@@ -14,6 +14,7 @@ use chrono::Utc;
 use hyper::StatusCode;
 use semweb_api::biscuits::{AuthContext, Authentication};
 use sqlx::{Pool, Postgres};
+use tracing::debug;
 
 use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, ProfileResponse, RegisterRequest}, mailing, AppState, Error};
 
@@ -31,7 +32,9 @@ pub(crate) async fn authenticate(
 ) -> Result<impl IntoResponse, Error> {
     let user = User::by_email(&db, email.clone()).await?;
 
+    debug!("Attempting to verify user password");
     if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
+        debug!("Successfully verified password");
         let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);
         let bundle = auth.authority(&user.email, expires, Some(addr))?;
 
@@ -59,12 +62,10 @@ pub(crate) async fn add_rejections(
 #[debug_handler(state = AppState)]
 pub(crate) async fn reset_password(
     State(db): State<Pool<Postgres>>,
-    extract::Host(host): extract::Host,
     extract::Path(email): extract::Path<String>,
 ) -> Result<impl IntoResponse, Error> {
     mailing::request_reset.builder()
       .set_json(&mailing::ResetDetails{
-            domain: host,
             email: email.clone(),
         })?
         .spawn(&db).await
@@ -73,17 +74,16 @@ pub(crate) async fn reset_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// XXX Need to limit regs/IP
 #[debug_handler(state = AppState)]
 pub(crate) async fn register(
     State(db): State<Pool<Postgres>>,
-    extract::Host(host): extract::Host,
     extract::Path(email): extract::Path<String>,
     Json(regreq): Json<RegisterRequest>
 ) -> Result<impl IntoResponse, Error> {
     User::create(&db, &email, &regreq.name, &regreq.bgg_username).await?;
     mailing::request_registration.builder()
       .set_json(&mailing::RegistrationDetails{
-            domain: host,
             email: email.clone(),
         })?
         .spawn(&db).await

@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
@@ -21,6 +22,7 @@ pub(crate) struct AuthnRequest {
 
 impl AuthnRequest {
     pub(crate) fn valid(&self) -> Result<(), Error> {
+        debug!("Checking length of password");
         if self.password.len() < 12 {
             return Err(Error::InvalidInput("password less than 12 characters".to_string()))
         }

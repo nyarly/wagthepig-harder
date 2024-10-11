@@ -7,6 +7,8 @@
 * FE condreq support
 * Attempt to move httpapi structs to their resources
   - consider cohension around which endpoints are in which reource module
+* Limit registrations per IP to forestall abuse
+* Review token revocation - compares look weird
 
 WTP parity:
 

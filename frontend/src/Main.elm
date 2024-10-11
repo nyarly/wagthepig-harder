@@ -14,6 +14,7 @@ import Router
 import Pages
 import State
 import OutMsg
+import Platform.Cmd as Cmd
 
 type alias Model =
   { key : Nav.Key
@@ -66,7 +67,12 @@ update msg model =
           ( model, Nav.pushUrl model.key (Url.toString url) )
 
         Browser.External href ->
-          ( model, Nav.load href )
+          let
+              parse = Url.fromString href
+          in
+          case parse of
+            Nothing -> Debug.log "elm passed empty href, wtf?" (model, Cmd.none)
+            Just _ -> ( model, Nav.load href )
 
     PathRequested path ->
       ( model, Nav.pushUrl model.key path )
@@ -138,7 +144,7 @@ view model =
   , body = [
       div [ class "page", class (Router.pageName model.page) ] (
         nav [] [
-          a [ onClick (PathRequested (Router.buildFromTarget Router.Register)) ] [
+          a [ href (Router.buildFromTarget Router.Landing) ] [
             img [ src "/assets/wagthepig-med.png" ] []
           ]
           , ul [ class "menu" ] [

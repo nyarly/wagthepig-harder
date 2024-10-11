@@ -11,6 +11,19 @@ use axum::{
 
 use tracing::debug;
 
+/// provides a simple file server, both for the BE and for static files in the filesystem
+#[allow(clippy::type_complexity)]
+pub fn fileserver<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<Router<S>,Box<dyn StdError>> {
+
+    let app = router
+        .nest_service("/",
+            ServeDir::new(path::Path::new(&frontend_path))
+                .fallback(ServeFile::new(format!("{}/html/index.html", frontend_path)))
+        );
+
+    Ok(app)
+}
+
 /// provides a simple livereload server, both for the BE and for static files in the filesystem
 #[allow(clippy::type_complexity)]
 pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<(Router<S>, Box<dyn Watcher>),Box<dyn StdError>> {

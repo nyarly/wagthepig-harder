@@ -6,6 +6,7 @@ vars:
   smtp_key: devsupport/tls/smtp/cert.key
 environment:
   - PGDATA=devsupport/db
+  - CANON_DOMAIN=localhost:3000
   - SMTP_HOST=127.0.0.1
   - SMTP_PORT=1025
   # not to secure STMP,

@@ -10,6 +10,7 @@ use iri_string::{
 };
 use regex::Regex;
 use serde::de::DeserializeOwned;
+use tracing::trace;
 
 use crate::error::Error;
 
@@ -138,6 +139,7 @@ impl<C: Context + Listable> PolicyContext<C> {
 
 impl<C: Context + Listable> DynamicContext for PolicyContext<C> {
     fn on_expansion_start(&mut self) {
+        trace!("on_expansion_start");
         self.provided.clear();
         self.extra.clear();
         self.missing.clear();
@@ -145,14 +147,17 @@ impl<C: Context + Listable> DynamicContext for PolicyContext<C> {
             self.provided.insert(v.clone());
             self.extra.insert(v);
         }
+        trace!("on_expansion_start: provided: {:?} extra: {:?} missing {:?}", self.provided, self.extra, self.missing);
     }
 
     fn visit_dynamic<V: Visitor>(&mut self, visitor: V) -> V::Result {
         let k = visitor.var_name().as_str();
+        trace!("URI template fill: {:?}", k);
         self.extra.remove(k);
         if !self.provided.contains(k) {
             self.missing.insert(k.to_string());
         }
+        trace!("URI template fill: provided: {:?} extra: {:?} missing {:?}", self.provided, self.extra, self.missing);
         self.inner.visit(visitor)
     }
 }

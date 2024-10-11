@@ -18,7 +18,7 @@ type Target
 
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
-  parse router url
+  Debug.log "route-to" (parse router (Debug.log "log-from" url))
 
 buildFromTarget : Target -> String
 buildFromTarget target =

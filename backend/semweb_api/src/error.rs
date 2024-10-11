@@ -1,6 +1,7 @@
 use axum::{http, response::IntoResponse};
 use axum_extra::extract as extra_extract;
 use axum::extract;
+use tracing::debug;
 
 use crate::routing;
 
@@ -52,6 +53,8 @@ pub enum Error {
     MissingContext,
     #[error("no authentication credential token found")]
     NoToken,
+    #[error("provided token has been revoked")]
+    RevokedToken,
     #[error("authorization failed")]
     AuthorizationFailed,
     #[error("precondition failed: {0}")]
@@ -65,9 +68,11 @@ pub enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         use http::status::StatusCode;
+        debug!("Returning error: {:?}", &self);
         match self {
             // best errors: we know how they match up to status codes
             Error::NoToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
+            Error::RevokedToken => (StatusCode::UNAUTHORIZED, "/api/authentication").into_response(),
             Error::AuthorizationFailed => (StatusCode::FORBIDDEN, "insufficient access").into_response(),
             Error::PreconditionFailed(s) => (StatusCode::PRECONDITION_FAILED, s).into_response(),
 

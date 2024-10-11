@@ -13,6 +13,7 @@ import ViewUtil as Eww
 import Hypermedia as HM exposing (OperationSelector(..), Method(..))
 
 import OutMsg
+import Html.Events exposing (onSubmit)
 
 type alias Model =
   { email: String
@@ -37,11 +38,11 @@ view : Model -> List (Html Msg)
 view model =
   case model.fromServer of
     Nothing -> [
-      form []
+      form [ onSubmit Submit ]
         [ (Eww.inputPair [] "Email" model.email ChangeEmail)
         , (Eww.inputPair [] "Name" model.name ChangeName)
         , (Eww.inputPair [] "BGG Username" model.bgg_username ChangeBGG)
-        , button [ onClick Submit, attributeMaybe (\_ -> disabled True) model.fromServer  ] [ text "Submit" ]
+        , button [ attributeMaybe (\_ -> disabled True) model.fromServer  ] [ text "Submit" ]
         ]
       ]
     Just _ -> [
@@ -52,7 +53,7 @@ encodeModel : Model -> E.Value
 encodeModel model =
   E.object
     [ ("name", E.string model.name)
-    , ("bgg_username", E.string model.bgg_username)
+    , ("bggUsername", E.string model.bgg_username)
     ]
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -67,8 +68,11 @@ bidiupdate msg model =
 
 put : Model -> Cmd Msg
 put model =
+  let
+      _ = Debug.log "reg model" model
+  in
   HM.chain Auth.unauthenticated [
-    HM.browse ["profile"] (HM.ByType "Create") |> HM.fillIn (Dict.fromList [("email", model.email)])
+    HM.browse ["profile"] (HM.ByType "CreateAction") |> HM.fillIn (Dict.fromList [("user_id", model.email)])
   ] (model |> encodeModel >> Http.jsonBody) emptyResponse ServerResponse
 
 emptyResponse : HM.Response -> Result String ()

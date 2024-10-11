@@ -1,13 +1,14 @@
 module Login exposing (view, Msg(..), Model, init, bidiupdate)
 
 import Html exposing (..)
-import Html.Attributes exposing (id, for, type_)
-import Html.Events exposing (onInput, onSubmit)
+import Html.Attributes exposing (type_)
+import Html.Events exposing (onSubmit)
 import Http
 import Json.Encode as E
 
 import OutMsg
 import Auth
+import ViewUtil as Eww
 import Hypermedia as HM
 import Hypermedia exposing (OperationSelector(..))
 import Router exposing (Target(..))
@@ -37,11 +38,11 @@ type AuthResponse
   | Failed Http.Error
 
 view : Model -> List (Html Msg)
-view _ =
+view model =
   [ h1 [] [ text "Log in" ]
   , form [ onSubmit AuthenticationAttempted ]
-    [ (inputPair "Email" [] ChangeEmail)
-    , (inputPair "Password" [ type_ "password" ] ChangePassword)
+    [ (Eww.inputPair [] "Email" model.email ChangeEmail)
+    , (Eww.inputPair [ type_ "password" ] "Password" model.password ChangePassword)
     , button [ type_ "submit" ] [ text "Log in" ]
     ]
   , p []
@@ -49,16 +50,6 @@ view _ =
     , a [ onClick WantsReg ] [ text "Sign up here" ]
     ]
   ]
-
-inputPair : String -> List (Attribute msg) -> (String -> msg) -> Html msg
-inputPair name attrs event =
-  let
-      pid = String.toLower name
-  in
-    div []
-    [ label [ for pid ] [ text name ]
-    , input ([ id pid, onInput event ] ++ attrs) []
-    ]
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =

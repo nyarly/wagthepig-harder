@@ -99,14 +99,14 @@ request maybeCred method url body makeRes toMsg =
 
 follow :  Auth.Cred -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
 follow maybeCred body makeRes aff =
-    Http.task
+    Http.task (Debug.log "hop"
     { method = methodName aff.method
     , url = aff.uri
     , body = body
     , timeout = Nothing
     , resolver = baseResolver makeRes
-    , headers = Auth.credHeader maybeCred
-    }
+    , headers = Debug.log "cred-header" (Auth.credHeader (Debug.log "cred" maybeCred))
+    })
 
 {-
   Key to the Hypermedia style is the ability to attach "affordances" to a resource -
@@ -140,7 +140,7 @@ fillIn : TemplateVars -> AffordanceExtractor -> AffordanceExtractor
 fillIn vars affex =
   (\r ->
     affex r
-    |> Result.map (\aff -> {aff | uri = Url.Interpolate.interpolate aff.uri vars}))
+    |> Result.map (\aff -> {aff | uri = (Debug.log "fillIn" (Url.Interpolate.interpolate (Debug.log "aff.uri" aff.uri) (Debug.log "fill vars" vars)))}))
 
 {-
   fill is appropriate for using at the head of a `chainFrom`, where the first request has to be constructed.
@@ -249,7 +249,7 @@ delete maybeCred url  decoder toMsg =
 baseRzToRes : ResponseToResult a -> RzToRes Http.Error a
 baseRzToRes extractValue =
     \response ->
-        case response of
+        case (Debug.log "response" response) of
           Http.BadUrl_ url ->
             Err (Http.BadUrl url)
 
@@ -265,7 +265,7 @@ baseRzToRes extractValue =
           Http.BadStatus_ metadata _->
             Err (Http.BadStatus metadata.statusCode)
           Http.GoodStatus_ metadata body ->
-            Result.mapError Http.BadBody (extractValue (Response metadata.statusCode metadata.headers body))
+            Result.mapError Http.BadBody (Debug.log "extractValue" (extractValue (Response metadata.statusCode metadata.headers body)))
 
 baseResolver : ResponseToResult value -> Resolver Http.Error value
 baseResolver extractValue =

@@ -16,7 +16,7 @@ use futures::{ready, Future, FutureExt};
 use futures_util::future::BoxFuture;
 use pin_project_lite::pin_project;
 use tower::{Service, Layer};
-use tracing::debug;
+use tracing::{debug, trace};
 use std::collections::HashMap;
 
 use std::fs::File;
@@ -109,8 +109,21 @@ fn check_authentication(policy_snapshot: AuthorizerSnapshot, request: Request) -
     let ctx = request.extensions().get::<AuthContext>().ok_or(Error::MissingContext)?.clone();
     let token = match ctx.authority {
         Some(token) => token,
-        None => return Err(Error::NoToken),
+        None => {
+            debug!("No token included in request for controlled resource");
+            return Err(Error::NoToken)
+        }
     };
+    for token_rvk in token.revocation_identifiers() {
+        for ctx_revoke in &ctx.revoked_ids {
+            let ctx_rvk = ctx_revoke.as_bytes();
+            trace!("compare: {:?} / {:?}", token_rvk, ctx_rvk);
+            if token_rvk == ctx_rvk {
+                debug!("token revoked: {:?}", token_rvk);
+                return Err(Error::RevokedToken)
+            }
+        }
+    }
     let mut az = ctx.authorizer;
     let policy = Authorizer::from_snapshot(policy_snapshot)?;
     az.merge(policy);

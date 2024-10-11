@@ -84,6 +84,8 @@ pageNav target creds models =
       bidiupdate (RegisterMsg (Register.Entered)) models
     Router.EventEdit name ->
       bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname name))) models
+    Router.CompleteRegistration email ->
+      bidiupdate (CompleteRegistrationMsg (CompleteRegistration.Entered creds email)) models
     _ -> ( models, Cmd.none, OutMsg.None )
 
 bidiupdate : Msg -> Models -> ( Models, Cmd Msg, OutMsg.Msg )

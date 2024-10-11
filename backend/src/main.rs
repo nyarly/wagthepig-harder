@@ -6,6 +6,8 @@ use axum::{
 
 use bcrypt::BcryptError;
 use biscuit_auth::macros::authorizer;
+use clap::Parser;
+use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use sqlxmq::{JobRegistry, JobRunnerHandle};
@@ -32,31 +34,73 @@ struct AppState {
 }
 
 
+#[derive(Parser)]
+struct Config {
+    /// Canonical domain the site is served from. Will be used in messages sent via email
+    #[arg(long, env = "CANON_DOMAIN")]
+    canon_domain: String,
+
+    /// Site administrator's email address - used when sending e.g. password reset messages
+    #[arg(long, env = "ADMIN_EMAIL")]
+    admin_address: String,
+
+    /// The SMTP MTA address
+    #[arg(long, env = "SMTP_HOST")]
+    smtp_address: String,
+
+    /// The SMTP MTA port
+    #[arg(long, env = "SMTP_PORT")]
+    smtp_port: String,
+
+    /// The SMTP MTA username for authenticated mailing
+    #[arg(long, env = "SMTP_USERNAME")]
+    smtp_user_name: String,
+
+    /// The SMTP MTA password
+    #[arg(long, env = "SMTP_PASSWORD")]
+    smtp_password: String,
+
+    /// TLS cert for communicating with the SMTP MTA
+    #[arg(long, env = "SMTP_CERT")]
+    smtp_cert: Option<String>,
+
+    /// A DB connection URL c.f. https://www.postgresql.org/docs/16/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+    #[arg(long, env = "DATABASE_URL")]
+    db_connection_str: String,
+
+    // XXX this doesn't make sense in Prod...
+    // unless it would override compiled in files
+    /// The path to serve front-end files from
+    #[arg(long, env = "FRONTEND_PATH")]
+    frontend_path: String,
+
+    /// Path to store token authenication secrets
+    #[arg(long, env = "AUTH_KEYPAIR")]
+    authentication_path: String,
+}
+
+impl Config {
+    fn build_mailing_transport(&self) -> Result<AsyncSmtpTransport<Tokio1Executor>, mailing::Error> {
+        mailing::build_transport(&self.smtp_address, &self.smtp_port, &self.smtp_user_name, &self.smtp_password, self.smtp_cert.clone())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_max_level(Level::TRACE)
         .init();
 
-    let admin_address = std::env::var("ADMIN_EMAIL").expect("ADMIN_EMAIL must be provided");
-    let smtp_address = std::env::var("SMTP_HOST").expect("SMTP_HOST must be provided");
-    let smtp_port = std::env::var("SMTP_PORT").expect("SMTP_PORT must be provided");
-    let smtp_user_name = std::env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be provided");
-    let smtp_password = std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be provided");
-    let smtp_cert = std::env::var("SMTP_CERT").ok();
+    let config = Config::parse();
 
-    let transport = mailing::build_transport(&smtp_address, &smtp_port, &smtp_user_name, &smtp_password, smtp_cert)?;
+    let transport = config.build_mailing_transport()?;
     match transport.test_connection().await {
-        Ok(connected) => info!("SMTP transport to {smtp_address} connected? {connected}"),
-        Err(e) => warn!("Error attempting connection on SMTP transport {smtp_address}: {e:?}"),
+        Ok(connected) => info!("SMTP transport to {smtp_address} connected? {connected}", smtp_address = config.smtp_address),
+        Err(e) => warn!("Error attempting connection on SMTP transport {smtp_address}: {e:?}", smtp_address = config.smtp_address),
     }
 
-    let db_connection_str = std::env::var("DATABASE_URL").expect("DATABASE_URL must be provided");
-    let frontend_path = std::env::var("FRONTEND_PATH").expect("FRONTEND_PATH must be provided");
-    let authentication_path = std::env::var("AUTH_KEYPAIR").expect("AUTH_KEYPAIR must be provided");
-
-    debug!("{:?}", db_connection_str);
-    let dbopts: PgConnectOptions = db_connection_str.parse().expect("couldn't parse DATABASE_URL");
+    debug!("{:?}", config.db_connection_str);
+    let dbopts: PgConnectOptions = config.db_connection_str.parse().expect("couldn't parse DATABASE_URL");
 
     debug!("{:?}", dbopts);
     let pool = PgPoolOptions::new()
@@ -66,8 +110,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("can't connect to database");
 
-    let auth = biscuits::Authentication::new(authentication_path)?;
-    let _runner = queue_listener(pool.clone(), mailing::AdminEmail(admin_address.to_string()), transport, auth.clone()).await?;
+    let auth = biscuits::Authentication::new(config.authentication_path)?;
+    let _runner = queue_listener(
+        pool.clone(),
+        mailing::AdminEmail(config.admin_address.to_string()),
+        mailing::CanonDomain(config.canon_domain.to_string()),
+        transport,
+        auth.clone(),
+    ).await?;
     let state = AppState{pool, auth: auth.clone()};
 
     let app = Router::new()
@@ -77,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     // XXX conditionally, include assets directly
-    let (app, _watcher) = spa::livereload(app, frontend_path)?;
+    let (app, _watcher) = spa::livereload(app, config.frontend_path)?;
 
     let app = app
         .layer(TraceLayer::new_for_http())
@@ -92,6 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn queue_listener(
     pool: Pool<Postgres>,
     admin: mailing::AdminEmail,
+    canon_domain: mailing::CanonDomain,
     transport: mailing::Transport,
     auth: biscuits::Authentication
 ) -> Result<JobRunnerHandle, sqlx::Error> {
@@ -101,6 +152,7 @@ async fn queue_listener(
     // registry.set_error_handler(...)
 
     registry.set_context(admin);
+    registry.set_context(canon_domain);
     registry.set_context(transport);
     registry.set_context(auth);
 
@@ -131,7 +183,7 @@ fn open_api_router() -> Router<AppState> {
 
         .route(&path(Authenticate), post(authentication::authenticate))
 
-        .route(&path(Profile), post(authentication::register))
+        .route(&path(Profile), put(authentication::register))
 
         .route(&path(PasswordReset), post(authentication::reset_password))
 }
