@@ -1,4 +1,4 @@
-module Login exposing (view, Msg(..), Model, init, bidiupdate)
+module Login exposing (view, Msg(..), Model, init, bidiupdate, logout)
 
 import Html exposing (..)
 import Html.Attributes exposing (type_)
@@ -14,6 +14,8 @@ import Hypermedia exposing (OperationSelector(..))
 import Router exposing (Target(..))
 import Dict
 import Html.Events exposing (onClick)
+import Hypermedia exposing (emptyBody)
+import Hypermedia exposing (emptyResponse)
 
 type alias Model =
   { email: String
@@ -31,6 +33,7 @@ type Msg
   | AuthenticationAttempted
   | AuthResponse (Result Http.Error Auth.Cred)
   | WantsReg
+  | LoggedOut (Result Http.Error ())
 
 type AuthResponse
   = None
@@ -64,10 +67,11 @@ bidiupdate msg model =
     AuthResponse res ->
       case res of
         Ok user ->
-          ({ model | fromServer = Success user }, Cmd.none, OutMsg.Main (OutMsg.NewCred user Router.Landing))
+          ({ model | fromServer = Success user, password = "" }, Cmd.none, OutMsg.Main (OutMsg.NewCred user Router.Landing))
         Err err ->
-          ({ model | fromServer = Failed err }, Cmd.none, OutMsg.None)
+          ({ model | fromServer = Failed err, password = "" }, Cmd.none, OutMsg.None)
     WantsReg -> ( model, Cmd.none, OutMsg.Main ( OutMsg.Nav Router.Register ) )
+    LoggedOut _ -> ( model, Auth.logout, OutMsg.None )
 
 -- type alias ResToMsg x a msg = (Result x a -> msg)
 login : String -> String -> Cmd Msg
@@ -82,3 +86,9 @@ login email password =
     HM.chain Auth.unauthenticated [
         HM.browse ["authenticate"] (ByType "LoginAction") |> HM.fillIn (Dict.fromList [("user_id", email)])
       ] reqBody (Auth.credExtractor email) AuthResponse
+
+logout : Auth.Cred -> Cmd Msg
+logout cred =
+  HM.chain cred [
+    HM.browse ["authenticate"] (ByType "LogoutAction") |> HM.fillIn (Dict.fromList [("user_id", (Auth.accountID cred))])
+    ] emptyBody emptyResponse LoggedOut

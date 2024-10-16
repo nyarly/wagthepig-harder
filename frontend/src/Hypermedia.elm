@@ -1,7 +1,8 @@
 module Hypermedia exposing (Status, Headers, Body, Response, Method(..), Uri, Affordance, Kind,
   link, fill,
   chain, chainFrom, browse, fillIn,
-  emptyBody, Error, -- re-exports so that consumers don't always have to bring in Http
+  emptyBody, emptyResponse,
+  Error, -- re-exports so that consumers don't always have to bring in Http
   linkByName, doByName,
   affordanceListDecoder,
   OperationSelector(..), selectAffordance,
@@ -18,6 +19,12 @@ import Url.Interpolate
 emptyBody : Http.Body
 emptyBody = Http.emptyBody
 
+emptyResponse : Response -> Result String ()
+emptyResponse rx =
+  if rx.status >= 200 && rx.status < 300 then
+    Ok(())
+  else
+    Err(rx.body)
 
 type alias Error = Http.Error
 

@@ -15,6 +15,7 @@ import Pages
 import State
 import OutMsg
 import Platform.Cmd as Cmd
+import Login
 
 type alias Model =
   { key : Nav.Key
@@ -84,7 +85,7 @@ update msg model =
     StoreChange (key, value) ->
       ( loadIntoModel key value model, Cmd.none )
 
-    SignOut -> ({model | creds = Auth.unauthenticated}, Auth.logout )
+    SignOut -> ({model | creds = Auth.unauthenticated}, (Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds))) )
 
     PageMsg submsg ->
       Pages.bidiupdate submsg model.pages

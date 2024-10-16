@@ -239,8 +239,8 @@ impl Revocation<NoId> {
         let expiry = system_to_naive(expiry);
         sqlx::query!(
             r#"insert into revocations
-                ("data", "expires", "username")
-            select 1 as data, $1 as expires, $2 as username from unnest($3::text[])
+                ("expires", "username", "data")
+            select $1 as expires, $2 as username, unnest($3::text[])
             returning id
             "#, expiry, username, &rids)
             .fetch_all(db)
@@ -271,7 +271,7 @@ impl Revocation<RevocationId> {
     pub fn get_revoked<'a>(db: impl Executor<'a, Database = Postgres> + 'a, now: NaiveDateTime)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         sqlx::query_as!( Self,
-            r#" select * from revocations where revoked is not null and expires < $1 "#,
+            r#" select * from revocations where revoked is not null and $1 < expires"#,
             now)
             .fetch_all(db)
             .map_err(Error::from)

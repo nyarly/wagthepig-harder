@@ -14,6 +14,7 @@ import Hypermedia as HM exposing (OperationSelector(..), Method(..))
 
 import OutMsg
 import Html.Events exposing (onSubmit)
+import Hypermedia exposing (emptyResponse)
 
 type alias Model =
   { email: String
@@ -74,10 +75,3 @@ put model =
   HM.chain Auth.unauthenticated [
     HM.browse ["profile"] (HM.ByType "CreateAction") |> HM.fillIn (Dict.fromList [("user_id", model.email)])
   ] (model |> encodeModel >> Http.jsonBody) emptyResponse ServerResponse
-
-emptyResponse : HM.Response -> Result String ()
-emptyResponse rx =
-  if rx.status >= 200 && rx.status < 300 then
-    Ok(())
-  else
-    Err(rx.body)

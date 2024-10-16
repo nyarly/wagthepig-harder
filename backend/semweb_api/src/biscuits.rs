@@ -114,11 +114,11 @@ fn check_authentication(policy_snapshot: AuthorizerSnapshot, request: Request) -
             return Err(Error::NoToken)
         }
     };
-    for token_rvk in token.revocation_identifiers() {
-        for ctx_revoke in &ctx.revoked_ids {
-            let ctx_rvk = ctx_revoke.as_bytes();
+    for raw_token_rvk in token.revocation_identifiers() {
+        let token_rvk = Base64::encode_string(&raw_token_rvk);
+        for ctx_rvk in &ctx.revoked_ids {
             trace!("compare: {:?} / {:?}", token_rvk, ctx_rvk);
-            if token_rvk == ctx_rvk {
+            if token_rvk == *ctx_rvk {
                 debug!("token revoked: {:?}", token_rvk);
                 return Err(Error::RevokedToken)
             }
@@ -217,9 +217,10 @@ pub struct TokenBundle {
 impl TokenBundle {
     fn build(biscuit: Biscuit) -> Result<Self, Error> {
         let token = biscuit.to_base64()?;
-        let revocation_ids = biscuit.revocation_identifiers().into_iter().map(|rev|
+        let revocation_ids = biscuit.revocation_identifiers().into_iter().map(|rev| {
+            trace!("biscuit revocation ID b64: {:?}", Base64::encode_string(&rev));
             Base64::encode_string(&rev)
-        ).collect();
+        }).collect();
         Ok(Self{ token, revocation_ids })
     }
 }

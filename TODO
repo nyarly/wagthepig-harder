@@ -1,20 +1,16 @@
-* Modern CSS (c.f. "6 patterns of CSS variables")
 * Attempt to put Parcel into FE
 * Fall back to lightningcss for CSS bundling & compatibility
-* FE: pull auth from fragment (?)
-  - pro: fragments not sent over the wire
-  - con: not intended for secure data
+* Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Attempt to move httpapi structs to their resources
   - consider cohension around which endpoints are in which reource module
 * Limit registrations per IP to forestall abuse
-* Review token revocation - compares look weird
+* Subcommand for cron to trigger DB cleanups (expired revokes)
 
 WTP parity:
 
 F/E
 * Profile
-  * register
   * reset password
 * Events list view
   * Sorted table
@@ -32,6 +28,7 @@ F/E
   * extra players
 
 * Fork and strip for future projects
+  * Rename semweb_api - "mattak" (b/c axum-mattak)
 
 == Future work
 
@@ -62,12 +59,12 @@ pub(crate) enum RouteMap {
     Root,
     #[endpoint("/event_games/{event_id}/user/{user_id}")]
     #[locator(EventGamesLocator{u16, String})]
-    // or? #[fields(u16, String)] might assume EventGamesLocator
-    // - a little too magic maybe
     EventGames
     // ...
 }
 ```
+  - datapoint: have seen errors that were confusing when URITemplate and Locator struct didn't align
+    it would be great if that were impossible
 
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
