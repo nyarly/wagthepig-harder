@@ -77,11 +77,13 @@ pageNav target creds models =
     Router.CredentialedArrival next cred ->
       (models, Cmd.none, (OutMsg.Main (OutMsg.NewCred cred next)))
     Router.Profile ->
-      bidiupdate (ProfileMsg (Profile.Entered creds)) models
+      bidiupdate (ProfileMsg (Profile.Entered creds (Profile.Nickname))) models
     Router.Events ->
       bidiupdate (EventsMsg (Events.Entered creds)) models
     Router.Register ->
       bidiupdate (RegisterMsg (Register.Entered)) models
+    Router.CreateEvent ->
+      bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.None))) models
     Router.EventEdit name ->
       bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname name))) models
     Router.CompleteRegistration email ->
@@ -93,7 +95,7 @@ bidiupdate msg models =
   case msg of
     LandingMsg _ -> ( models, Cmd.none, OutMsg.None )
     ProfileMsg submsg ->
-      Profile.update submsg models.profile |> OutMsg.addNone
+      Profile.bidiupdate submsg models.profile
         |> OutMsg.mapBoth (\pm -> {models | profile = pm}) (Cmd.map ProfileMsg)
         |> consumeOutmsg
     LoginMsg submsg ->

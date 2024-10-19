@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -208,16 +208,21 @@ pub(crate) struct RegisterRequest {
 #[serde(rename_all="camelCase")]
 pub(crate) struct EventUpdateRequest {
     pub name: Option<String>,
-    pub time: Option<NaiveDateTime>,
+    pub time: Option<DateTime<Utc>>,
     pub location: Option<String>,
     pub description: Option<String>
+}
+
+#[test]
+fn deserialize_event_update_request() {
+    let _eur: EventUpdateRequest = serde_json::from_str(r#"{"name": "Testy", "time": "1970-01-01T00:00:00.000Z", "location": "Somewhere"}"#).expect("to deserialize");
 }
 
 impl EventUpdateRequest {
     pub(crate) fn db_param(&self) -> db::Event<NoId> {
         db::Event {
             name: self.name.clone(),
-            date: self.time,
+            date: self.time.map(|t| t.naive_utc()),
             r#where: self.location.clone(),
             description: self.description.clone(),
             ..db::Event::default()

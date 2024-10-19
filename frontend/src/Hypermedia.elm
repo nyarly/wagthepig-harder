@@ -1,4 +1,4 @@
-module Hypermedia exposing (Status, Headers, Body, Response, Method(..), Uri, Affordance, Kind,
+module Hypermedia exposing (Status, Headers, Body, Response, Method(..), Uri, Affordance, Kind, TemplateVars,
   link, fill,
   chain, chainFrom, browse, fillIn,
   emptyBody, emptyResponse,
@@ -77,7 +77,6 @@ type alias ResponseToResult a = (Response -> Result String a)
 type alias BodyToRes x a = (String -> (Result x a))
 type alias RzToRes x a = (Http.Response String -> Result x a)
 type alias ResToMsg x a msg = (Result x a -> msg)
--- type alias AffordanceExtractor = ResponseToResult Affordance
 
 {-
 Pass a list of linkExtractors to nose, along with the handling for the final link
