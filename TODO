@@ -6,12 +6,11 @@
   - consider cohension around which endpoints are in which reource module
 * Limit registrations per IP to forestall abuse
 * Subcommand for cron to trigger DB cleanups (expired revokes)
+* Disguise auth timing when no email
 
 WTP parity:
 
 F/E
-* Profile
-  * reset password
 * Events list view
   * Sorted table
   * Add

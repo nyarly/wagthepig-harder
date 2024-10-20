@@ -1,8 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use iri_string::types::IriReferenceString;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     db::{self, EventId, GameId, NoId, Omit, UserId},
@@ -14,21 +12,6 @@ use crate::{
 use semweb_api::hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields};
 
 pub(crate) use semweb_api::Error;
-
-#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
-pub(crate) struct AuthnRequest {
-    pub password: String
-}
-
-impl AuthnRequest {
-    pub(crate) fn valid(&self) -> Result<(), Error> {
-        debug!("Checking length of password");
-        if self.password.len() < 12 {
-            return Err(Error::InvalidInput("password less than 12 characters".to_string()))
-        }
-        Ok(())
-    }
-}
 
 #[derive(Serialize,Clone)]
 #[serde(rename_all="camelCase")]
@@ -195,13 +178,6 @@ impl EventResponse {
             description: value.description.clone()
         })
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all="camelCase")]
-pub(crate) struct RegisterRequest {
-    pub name: String,
-    pub bgg_username: String,
 }
 
 #[derive(Deserialize)]

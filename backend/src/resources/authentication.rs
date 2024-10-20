@@ -10,40 +10,19 @@ use axum::{
     middleware::Next,
     response::IntoResponse,
 };
+use biscuit_auth::macros::authorizer;
 use chrono::Utc;
 use hyper::StatusCode;
 use semweb_api::biscuits::{AuthContext, Authentication};
+use serde::Deserialize;
 use sqlx::{Pool, Postgres};
 use tracing::debug;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{db::{Revocation, User}, httpapi::{AuthnRequest, ProfileResponse, RegisterRequest}, mailing, AppState, Error};
+use crate::{db::{Revocation, User}, mailing, AppState, Error};
 
 const ONE_WEEK: u64 = 60 * 60 * 24 * 7; // A week
 const PASSWORD_COST: u32 = bcrypt::DEFAULT_COST;
-
-#[debug_handler(state = AppState)]
-pub(crate) async fn authenticate(
-    State(db): State<Pool<Postgres>>,
-    State(auth): State<Authentication>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    nested_at: extract::NestedPath,
-    extract::Path(email): extract::Path<String>,
-    Json(authreq): Json<AuthnRequest>
-) -> Result<impl IntoResponse, Error> {
-    let user = User::by_email(&db, email.clone()).await?;
-
-    debug!("Attempting to verify user password");
-    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
-        debug!("Successfully verified password");
-        let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);
-        let bundle = auth.authority(&user.email, expires, Some(addr))?;
-
-        let _ = Revocation::add_batch(&db, bundle.revocation_ids, email.clone(), expires).await?;
-        Ok(([("set-authorization", bundle.token)], Json(ProfileResponse::from_query(nested_at.as_str(), user)?)))
-    } else {
-        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
-    }
-}
 
 // #[debug_middleware(state = AppState)]
 pub(crate) async fn add_rejections(
@@ -57,6 +36,57 @@ pub(crate) async fn add_rejections(
     let authctx = authctx.with_revoked_ids(rids);
     request.extensions_mut().insert(authctx);
     Ok(next.run(request).await)
+}
+
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
+pub(crate) struct AuthnRequest {
+    pub password: String
+}
+
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
+pub(crate) struct AuthnUpdateRequest {
+    pub old_password: Option<String>,
+    pub new_password: String
+}
+impl AuthnUpdateRequest {
+    pub(crate) fn valid(&self) -> Result<(), semweb_api::Error> {
+        debug!("Checking length of password");
+        if self.new_password.len() < 12 {
+            return Err(semweb_api::Error::InvalidInput("password less than 12 characters".to_string()))
+        }
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct RegisterRequest {
+    pub name: String,
+    pub bgg_username: String,
+}
+
+
+#[debug_handler(state = AppState)]
+pub(crate) async fn authenticate(
+    State(db): State<Pool<Postgres>>,
+    State(auth): State<Authentication>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    extract::Path(email): extract::Path<String>,
+    Json(authreq): Json<AuthnRequest>
+) -> Result<impl IntoResponse, Error> {
+    let user = User::by_email(&db, email.clone()).await?;
+
+    debug!("Attempting to verify user password");
+    if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
+        debug!("Successfully verified password");
+        let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);
+        let bundle = auth.authority(&user.email, expires, Some(addr))?;
+
+        let _ = Revocation::add_batch(&db, bundle.revocation_ids, email.clone(), expires).await?;
+        Ok(([("set-authorization", bundle.token)], StatusCode::NO_CONTENT))
+    } else {
+        Err((StatusCode::FORBIDDEN, "Authorization rejected").into())
+    }
 }
 
 #[debug_handler(state = AppState)]
@@ -96,11 +126,19 @@ pub(crate) async fn register(
 pub(crate) async fn update_credentials(
     State(db): State<Pool<Postgres>>,
     extract::Path(email): extract::Path<String>,
-    Json(authreq): Json<AuthnRequest>
+    Extension(auth): Extension<AuthContext>,
+    Json(authreq): Json<AuthnUpdateRequest>
 ) -> Result<impl IntoResponse, Error> {
     authreq.valid()?;
     let user = User::by_email(&db, email.clone()).await?;
-    let hashed = bcrypt::hash(authreq.password.clone(), PASSWORD_COST)?;
+
+    let rejected = || -> Error {(StatusCode::FORBIDDEN, "Authorization rejected").into()};
+    if !(auth.check(authorizer!(r#"allow if reset_password({user_id});"#, user_id = email.clone())).is_ok() ||
+        bcrypt::verify(authreq.old_password.clone().ok_or_else(rejected)?, user.encrypted_password.as_ref())?) {
+        return Err(rejected())
+    }
+
+    let hashed = bcrypt::hash(authreq.new_password.clone(), PASSWORD_COST)?;
     Revocation::revoke_for_username(&db, email.clone(), Utc::now().naive_utc()).await?;
     user.update_password(&db, hashed).await?;
     Ok(StatusCode::NO_CONTENT)

@@ -77,7 +77,7 @@ pageNav target creds models =
     Router.CredentialedArrival next cred ->
       (models, Cmd.none, (OutMsg.Main (OutMsg.NewCred cred next)))
     Router.Profile ->
-      bidiupdate (ProfileMsg (Profile.Entered creds (Profile.Nickname))) models
+      bidiupdate (ProfileMsg (Profile.Entered creds (Profile.Creds))) models
     Router.Events ->
       bidiupdate (EventsMsg (Events.Entered creds)) models
     Router.Register ->

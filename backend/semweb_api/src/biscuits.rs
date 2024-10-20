@@ -107,47 +107,9 @@ async fn find_facts(header: String, root: PrivateKey, mut request: Request) -> R
 
 fn check_authentication(policy_snapshot: AuthorizerSnapshot, request: Request) -> Result<Request, Error> {
     let ctx = request.extensions().get::<AuthContext>().ok_or(Error::MissingContext)?.clone();
-    let token = match ctx.authority {
-        Some(token) => token,
-        None => {
-            debug!("No token included in request for controlled resource");
-            return Err(Error::NoToken)
-        }
-    };
-    for raw_token_rvk in token.revocation_identifiers() {
-        let token_rvk = Base64::encode_string(&raw_token_rvk);
-        for ctx_rvk in &ctx.revoked_ids {
-            trace!("compare: {:?} / {:?}", token_rvk, ctx_rvk);
-            if token_rvk == *ctx_rvk {
-                debug!("token revoked: {:?}", token_rvk);
-                return Err(Error::RevokedToken)
-            }
-        }
-    }
-    let mut az = ctx.authorizer;
     let policy = Authorizer::from_snapshot(policy_snapshot)?;
-    az.merge(policy);
-    az.set_time();
-    az.add_token(&token)?;
-    az.set_limits(AuthorizerLimits{
-        max_time: Duration::from_millis(20),
-        ..Default::default()
-    });
-    debug!("Authorizing against: \n{}", az.dump_code());
-    match az.authorize() {
-        Ok(idx) => {
-            // XXX conditional compile?
-            debug!("Authorized by: \n{}", match az.save()?.policies.get(idx){
-                Some(pol) => format!("{}", pol),
-                None => "<cannot find authorizing policy!>".to_string()
-            });
-            Ok(request)
-        },
-        Err(err) => {
-            debug!("Authorization rejected: {}", format_rejection(az, err)?);
-            Err(Error::AuthorizationFailed)
-        }
-    }
+
+    ctx.check(policy).map(|_| request)
 }
 
 fn show_matching_policy(idx: usize, az: Authorizer) -> Result<String, Error> {
@@ -207,6 +169,50 @@ impl AuthContext {
         other.revoked_ids.append(&mut newrids);
         other
     }
+
+    pub fn check(&self, policy: Authorizer) -> Result<(), Error> {
+        let token = match &self.authority {
+            Some(token) => token,
+            None => {
+                debug!("No token included in request for controlled resource");
+                return Err(Error::NoToken)
+            }
+        };
+        for raw_token_rvk in token.revocation_identifiers() {
+            let token_rvk = Base64::encode_string(&raw_token_rvk);
+            for ctx_rvk in &self.revoked_ids {
+                trace!("compare: {:?} / {:?}", token_rvk, ctx_rvk);
+                if token_rvk == *ctx_rvk {
+                    debug!("token revoked: {:?}", token_rvk);
+                    return Err(Error::RevokedToken)
+                }
+            }
+        }
+        let mut az = self.authorizer.clone();
+        az.merge(policy);
+        az.set_time();
+        az.add_token(token)?;
+        az.set_limits(AuthorizerLimits{
+            max_time: Duration::from_millis(20),
+            ..Default::default()
+        });
+        debug!("Authorizing against: \n{}", az.dump_code());
+        match az.authorize() {
+            Ok(idx) => {
+                // XXX conditional compile?
+                debug!("Authorized by: \n{}", match az.save()?.policies.get(idx){
+                    Some(pol) => format!("{}", pol),
+                    None => "<cannot find authorizing policy!>".to_string()
+                });
+                Ok(())
+            },
+            Err(err) => {
+                debug!("Authorization rejected: {}", format_rejection(az, err)?);
+                Err(Error::AuthorizationFailed)
+            }
+        }
+    }
+
 }
 
 pub struct TokenBundle {
