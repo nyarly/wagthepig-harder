@@ -32,6 +32,7 @@
         elmPackages.elm
         elmPackages.elm-test-rs
         elmPackages.elm-live
+        lightningcss
 
         process-compose
         watchexec

@@ -19,9 +19,9 @@ environment:
   - SMTP_CERT=../devsupport/tls/smtp/cert.crt
 
 unifiendbackend: &unifiedbackend
-  live-make:
+  live-elm-make:
     working_dir: frontend/
-    command: watchexec -w src/ elm make src/Main.elm --output=dist/js/main.js --debug
+    command: watchexec -w src/elm/ elm make src/elm/Main.elm --output=dist/js/main.js --debug
   mailpit:
     command: mailpit --smtp-auth-file=devsupport/mailpit_passwords --smtp-tls-cert {{.smtp_cert}} --smtp-tls-key {{.smtp_key}}
     ready_log_line: "accessible via http"
@@ -47,10 +47,7 @@ unifiendbackend: &unifiedbackend
 barefrontend: &barefrontend
   elm-live:
     working_dir: frontend/
-    command: "elm-live src/Main.elm --verbose --pushstate --dir dist/ --start-page html/index.html -- --output=dist/js/main.js"
-  ccs-watch:
-    working_dir: frontend/
-    command: watchexec -w dist/css touch src/Main.elm
+    command: "elm-live src/elm/Main.elm --verbose --pushstate --dir dist/ --start-page html/index.html -- --output=dist/js/main.js"
 
 processes:
   # <<: *barefrontend # use this to start on just frontend
@@ -58,5 +55,8 @@ processes:
   env-check:
     command: env | sort
   elm-tests:
-    working_dir: frontend/
+    working_dir: frontend/src/elm/
     command: elm-test-rs --watch
+  css-bundle:
+    working_dir: frontend/
+    command: "watchexec -w src/css/ lightningcss --bundle --sourcemap --output-file dist/css/index.css src/css/main.css"
