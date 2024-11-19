@@ -1,5 +1,3 @@
-* Attempt to put Parcel into FE
-* Fall back to lightningcss for CSS bundling & compatibility
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Attempt to move httpapi structs to their resources

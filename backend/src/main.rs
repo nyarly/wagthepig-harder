@@ -24,7 +24,6 @@ use semweb_api::{biscuits::{self, Authentication}, routing::route_config, spa};
 mod routing;
 mod resources;
 mod db;
-mod httpapi;
 mod mailing;
 
 #[derive(FromRef, Clone)]

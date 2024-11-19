@@ -1,16 +1,106 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use hyper::{header, StatusCode};
-use semweb_api::condreq;
+use semweb_api::{condreq, hypermedia::{op, ActionType, IriTemplate, ResourceFields}};
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 
-use crate::{routing::EventLocate, AppState, Error};
-use crate::RouteMap;
-
 use crate::{
-    db::{Event, EventId},
-    httpapi::{EventListResponse, EventResponse, EventUpdateRequest}
+    db::{Event, EventId, NoId},
+    routing::{EmptyLocate, EventLocate},
+    AppState, Error, RouteMap
 };
 
+
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<EmptyLocate>,
+
+    pub event_by_id: IriTemplate,
+    pub events: Vec<EventResponse>,
+}
+
+impl EventListResponse {
+    pub fn from_query(nested_at: &str, list: Vec<Event<EventId>>) -> Result<Self, semweb_api::Error> {
+        let event_route = RouteMap::Event.prefixed(nested_at);
+        let event_tmpl = event_route.template()?;
+
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::Events.prefixed(nested_at),
+                EmptyLocate{},
+                "api:eventsList",
+                vec![ op(ActionType::View), op(ActionType::Add) ]
+            )?,
+            event_by_id: IriTemplate {
+                id: "api:eventByIdTemplate".try_into()?,
+                template: event_tmpl,
+                operation: vec![ op(ActionType::Find) ]
+            },
+            events: list.into_iter().map(|ev|
+                EventResponse::from_query(nested_at,ev))
+                .collect::<Result<_,_>>()?,
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<EventLocate>,
+
+    pub name: Option<String>,
+    pub time: Option<NaiveDateTime>,
+    pub location: Option<String>,
+    pub description: Option<String>
+}
+
+impl EventResponse {
+    pub(crate) fn from_query(nested_at: &str, value: Event<EventId>) -> Result<Self, semweb_api::Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::Event.prefixed(nested_at),
+                EventLocate{ event_id: value.id },
+                "api:eventByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+
+            name: value.name,
+            location: value.r#where,
+            time: value.date,
+            description: value.description.clone()
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventUpdateRequest {
+    pub name: Option<String>,
+    pub time: Option<DateTime<Utc>>,
+    pub location: Option<String>,
+    pub description: Option<String>
+}
+
+#[test]
+fn deserialize_event_update_request() {
+    let _eur: EventUpdateRequest = serde_json::from_str(r#"{"name": "Testy", "time": "1970-01-01T00:00:00.000Z", "location": "Somewhere"}"#).expect("to deserialize");
+}
+
+impl EventUpdateRequest {
+    pub(crate) fn db_param(&self) -> Event<NoId> {
+        Event {
+            name: self.name.clone(),
+            date: self.time.map(|t| t.naive_utc()),
+            r#where: self.location.clone(),
+            description: self.description.clone(),
+            ..Event::default()
+        }
+    }
+}
 
 #[debug_handler(state = AppState)]
 pub(crate) async fn create_new(

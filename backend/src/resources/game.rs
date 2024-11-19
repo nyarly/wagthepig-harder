@@ -1,14 +1,148 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
+use chrono::NaiveDateTime;
 use hyper::{header, StatusCode};
-use semweb_api::condreq;
+use semweb_api::{condreq, hypermedia::{self, op, ActionType, Link, ResourceFields}};
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 
-use crate::{routing::{GameLocate, RouteMap}, AppState, Error};
-
 use crate::{
-    db::{self, EventId, Game, GameId},
-    httpapi::{EventGameListResponse, GameResponse, GameUpdateRequest}
+    db::{self, EventId, Game, GameId, NoId, Omit, UserId},
+    routing::{EventGamesLocate, EventUsersLocate, GameLocate, GameUsersLocate, RecommendLocate, RouteMap},
+    AppState, Error
 };
+
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct GameUpdateRequest {
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub bgg_link: Option<String>,
+    pub duration_secs: Option<i32>,
+    pub bgg_id: Option<String>,
+    pub pitch: Option<String>,
+    pub interested: Option<bool>,
+    pub can_teach: Option<bool>,
+    pub notes: Option<String>,
+}
+
+impl GameUpdateRequest {
+    pub(crate) fn db_param(&self) -> Game<NoId, NoId, NoId, Omit> {
+        db::Game {
+            id: NoId,
+            event_id: NoId,
+            suggestor_id: NoId,
+            data: db::GameData{
+                name: self.name.clone(),
+                min_players: self.min_players,
+                max_players: self.max_players,
+                bgg_link: self.bgg_link.clone(),
+                duration_secs: self.duration_secs,
+                bgg_id: self.bgg_id.clone(),
+                pitch: self.pitch.clone(),
+                created_at: NaiveDateTime::default(),
+                updated_at: NaiveDateTime::default(),
+            },
+            interest: Omit{}
+        }
+    }
+
+    pub(crate) fn interest_part(&self) -> db::InterestData {
+        db::InterestData {
+            interested: self.interested,
+            can_teach: self.can_teach,
+            notes: self.notes.clone()
+        }
+    }
+}
+
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventGameListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<EventGamesLocate>,
+
+    pub make_recommendation: Link,
+    pub users: Link,
+    pub games: Vec<GameResponse>
+}
+
+impl EventGameListResponse {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::EventGames.prefixed(nested_at),
+                EventGamesLocate{ event_id, user_id },
+                "api:gamesListByEventIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Add) ]
+            )?,
+            make_recommendation: Link {
+                id: RouteMap::Recommend.prefixed(nested_at).fill(RecommendLocate{ event_id })?.into(),
+                operation: vec![
+                    hypermedia::Operation{
+                        r#type: "PlayAction".to_string(),
+                        method: axum::http::Method::POST.into()
+                    }
+                ]
+            },
+            users: Link {
+                id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id })?.into(),
+                operation: vec![ op(ActionType::View) ]
+            },
+            games: list.into_iter().map(|game|
+                GameResponse::from_query(nested_at, game)
+            ).collect::<Result<_,_>>()?
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct GameResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<GameLocate>,
+    pub users: Link,
+
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub bgg_link: Option<String>,
+    pub duration_secs: Option<i32>,
+    pub bgg_id: Option<String>,
+    pub pitch: Option<String>,
+    pub interested: Option<bool>,
+    pub can_teach: Option<bool>,
+    pub notes: Option<String>,
+}
+
+impl GameResponse {
+    pub fn from_query<E, U>(nested_at: &str, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::Game.prefixed(nested_at),
+                GameLocate{ game_id: value.id },
+                "api:gameByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+            users: Link {
+                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?.into(),
+                operation: vec![ op(ActionType::View) ]
+            },
+
+            name: value.data.name,
+            min_players: value.data.min_players,
+            max_players: value.data.max_players,
+            bgg_link: value.data.bgg_link,
+            duration_secs: value.data.duration_secs,
+            bgg_id: value.data.bgg_id,
+            pitch: value.data.pitch,
+            interested: value.interest.interested,
+            can_teach: value.interest.can_teach,
+            notes: value.interest.notes,
+        })
+    }
+}
 
 #[debug_handler(state = AppState)]
 pub(crate) async fn create_new(

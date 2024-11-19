@@ -1,8 +1,116 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse};
-use semweb_api::condreq;
+use semweb_api::{condreq, hypermedia::{op, ActionType, ResourceFields}};
+use serde::Serialize;
 use sqlx::{Pool, Postgres};
 
-use crate::{db::{EventId, GameId, User}, httpapi::{EventUserListResponse, GameUserListResponse, ProfileResponse}, AppState, Error};
+use crate::{
+    db::{EventId, GameId, User, UserId},
+    routing::{EventUsersLocate, GameUsersLocate, ProfileLocate, RouteMap, UserLocate},
+    AppState, Error
+};
+
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct EventUserListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<EventUsersLocate>,
+
+    pub users: Vec<UserResponse>,
+}
+
+impl EventUserListResponse {
+    pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<User<UserId>>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::EventUsers.prefixed(nested_at),
+                EventUsersLocate{event_id},
+                "api:eventUsersList",
+                vec![ op(ActionType::Find) ]
+            )?,
+            users: list.into_iter().map(|user|
+                UserResponse::from_query(nested_at, user))
+                .collect::<Result<_,_>>()?,
+        })
+    }
+}
+
+#[derive(Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct GameUserListResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<GameUsersLocate>,
+
+    pub users: Vec<UserResponse>,
+}
+
+impl GameUserListResponse {
+    pub fn from_query(nested_at: &str, game_id: GameId, list: Vec<User<UserId>>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::GameUsers.prefixed(nested_at),
+                GameUsersLocate{game_id},
+                "api:gameUsersList",
+                vec![ op(ActionType::Find) ]
+            )?,
+            users: list.into_iter().map(|user|
+                UserResponse::from_query(nested_at, user))
+                .collect::<Result<_,_>>()?,
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub(crate) struct ProfileResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<ProfileLocate>,
+
+    pub name: Option<String>,
+    pub bgg_username: Option<String>,
+    pub email: String,
+}
+
+impl ProfileResponse {
+    pub(crate) fn from_query(nested_at: &str, value: User<UserId>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::Profile.prefixed(nested_at),
+                ProfileLocate{ user_id: value.email.clone() },
+                "api:profileByEmailTemplate",
+                vec![ op(ActionType::View) ]
+            )?,
+            name: value.name,
+            bgg_username: value.bgg_username,
+            email: value.email
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub(crate) struct UserResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<UserLocate>,
+
+    pub name: Option<String>,
+    pub bgg_username: Option<String>,
+    pub email: String,
+}
+
+impl UserResponse {
+    pub(crate) fn from_query(nested_at: &str, value: User<UserId>) -> Result<Self, Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::User.prefixed(nested_at),
+                UserLocate{ user_id: value.id },
+                "api:userById",
+                vec![]
+            )?,
+            name: value.name,
+            bgg_username: value.bgg_username,
+            email: value.email
+        })
+    }
+}
+
 
 #[debug_handler(state = AppState)]
 pub(crate) async fn get(
