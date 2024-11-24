@@ -1,0 +1,9 @@
+# use lorri
+eval "$(lorri direnv)"
+
+export db_socket_path=$(echo $(pwd)/devsupport/db_sockets)
+
+export AUTH_KEYPAIR="$(pwd)/devsupport/backend.keypair"
+export DATABASE_URL="postgres:///wagthepig?host=$db_socket_path&sslmode=disable"
+export SQLX_OFFLINE=yes
+export FRONTEND_PATH="$(pwd)/frontend/dist"

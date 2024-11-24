@@ -1,4 +1,5 @@
 @import url("forms.css");
+@import url("table.css");
 
 
 :root {
@@ -7,6 +8,7 @@
   --main-text-color: #333;
   --button-text-color: white;
   --button-background-color: #009fc7;
+  --table-even-row-color: #e7e7e7;
 }
 
 * {

@@ -1,7 +1,5 @@
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
-* Attempt to move httpapi structs to their resources
-  - consider cohension around which endpoints are in which reource module
 * Limit registrations per IP to forestall abuse
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
@@ -9,9 +7,6 @@
 WTP parity:
 
 F/E
-* Events list view
-  * Sorted table
-  * Add
 * Event edit
 * Event view (game list)
   * Sorted table

@@ -1,6 +1,6 @@
 export function allState() {
   let obj = {};
-  for (n=0; n <localStorage.length; n++) {
+  for (var n=0; n <localStorage.length; n++) {
     let key = localStorage.key(n);
     let val = localStorage.getItem(key);
     obj[key] = val;

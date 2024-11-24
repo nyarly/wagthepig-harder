@@ -10,11 +10,13 @@ import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
 import OutMsg
+import TableSort
 import Time
 
 
 type alias Model =
     { creds : Auth.Cred
+    , sorting : TableSort.Sorting SortBy
     , resource : Resource
     }
 
@@ -33,6 +35,12 @@ type alias Event =
     , location : String
     , affordances : List Affordance
     }
+
+
+type SortBy
+    = Name
+    | Date
+    | Location
 
 
 decoder : D.Decoder Resource
@@ -59,12 +67,14 @@ type Msg
     | ErrGetEvents Http.Error
     | CreateNewEvent Affordance
     | EditEvent Affordance
+    | ChangeSort SortBy
 
 
 init : Model
 init =
     Model
         Auth.unauthenticated
+        ( Date, TableSort.Descending )
         (Resource Nothing [] [])
 
 
@@ -87,21 +97,77 @@ bidiupdate msg model =
         EditEvent aff ->
             ( model, Cmd.none, OutMsg.Page (OutMsg.EditEvent model.creds aff) )
 
+        ChangeSort by ->
+            ( { model | sorting = TableSort.changeSort by model.sorting }, Cmd.none, OutMsg.None )
+
+
+sortWith : SortBy -> Event -> Event -> Order
+sortWith by l r =
+    case by of
+        Name ->
+            compare l.name r.name
+
+        Location ->
+            compare l.location r.location
+
+        Date ->
+            let
+                millis =
+                    \e -> e.time |> Time.posixToMillis
+            in
+            compare (millis l) (millis r)
+
+
+sortEvents : TableSort.Sorting SortBy -> List Event -> List Event
+sortEvents sorting events =
+    TableSort.sort sortWith sorting events
+
 
 view : Model -> List (Html Msg)
 view model =
+    let
+        sortingHeader =
+            TableSort.sortingHeader ChangeSort model
+    in
     [ h1 [] [ text "Events" ]
     , createEventButton model.resource
     , table []
         [ thead []
-            [ th [] [ text "Name" ]
-            , th [] [ text "Date" ]
-            , th [] [ text "Where" ]
+            [ sortingHeader "Name" Name
+            , sortingHeader "Date" Date
+            , sortingHeader "Where" Location
             , th [ colspan 3 ] []
             ]
-        , Keyed.node "tbody" [] (List.foldr addRow [] model.resource.events)
+        , Keyed.node "tbody" [] (List.foldr addRow [] (sortEvents model.sorting model.resource.events))
         ]
     ]
+
+
+addRow : Event -> List ( String, Html Msg ) -> List ( String, Html Msg )
+addRow event list =
+    ( event.id
+    , tr []
+        [ td [] [ text event.name ]
+        , td [] [ text (formatEventTime event) ]
+        , td [] [ text event.location ]
+        , td [] [ text "Show" ]
+        , td [] [ eventEditButton event ]
+        ]
+    )
+        :: list
+
+
+formatEventTime : { a | time : Time.Posix } -> String
+formatEventTime event =
+    -- Thu Mar 31, 2024
+    formatWeekday event.time
+        ++ " "
+        ++ formatMonth event.time
+        ++ " "
+        ++ String.fromInt
+            (Time.toDay Time.utc event.time)
+        ++ ", "
+        ++ String.fromInt (Time.toYear Time.utc event.time)
 
 
 createEventButton : Resource -> Html Msg
@@ -112,20 +178,6 @@ createEventButton eventlist =
 
         Nothing ->
             button [] [ text "event creation not available" ]
-
-
-addRow : Event -> List ( String, Html Msg ) -> List ( String, Html Msg )
-addRow event list =
-    ( event.id
-    , tr []
-        [ td [] [ text event.name ]
-        , td [] [ text (String.fromInt (Time.posixToMillis event.time)) ]
-        , td [] [ text event.location ]
-        , td [] [ text "Show" ]
-        , td [] [ eventEditButton event ]
-        ]
-    )
-        :: list
 
 
 eventEditButton : Event -> Html Msg
@@ -167,3 +219,68 @@ modelRes res =
     res.body
         |> D.decodeString decoder
         |> Result.mapError D.errorToString
+
+
+formatWeekday : Time.Posix -> String
+formatWeekday posix =
+    case Time.toWeekday Time.utc posix of
+        Time.Mon ->
+            "Mon"
+
+        Time.Tue ->
+            "Tue"
+
+        Time.Wed ->
+            "Wed"
+
+        Time.Thu ->
+            "Thu"
+
+        Time.Fri ->
+            "Fri"
+
+        Time.Sat ->
+            "Sat"
+
+        Time.Sun ->
+            "Sun"
+
+
+formatMonth : Time.Posix -> String
+formatMonth posix =
+    case Time.toMonth Time.utc posix of
+        Time.Jan ->
+            "Jan"
+
+        Time.Feb ->
+            "Feb"
+
+        Time.Mar ->
+            "Mar"
+
+        Time.Apr ->
+            "Apr"
+
+        Time.May ->
+            "May"
+
+        Time.Jun ->
+            "Jun"
+
+        Time.Jul ->
+            "Jul"
+
+        Time.Aug ->
+            "Aug"
+
+        Time.Sep ->
+            "Sep"
+
+        Time.Oct ->
+            "Oct"
+
+        Time.Nov ->
+            "Nov"
+
+        Time.Dec ->
+            "Dec"

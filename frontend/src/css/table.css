@@ -1,0 +1,9 @@
+th .icon {
+  height: 0.6em;
+  width: 1.2em;
+  margin: 0 0.5em;
+}
+
+tr:nth-child(even) {
+  background-color: var(--table-even-row-color);
+}
