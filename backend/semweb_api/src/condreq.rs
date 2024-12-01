@@ -1,9 +1,10 @@
-use axum::{async_trait, extract::FromRequestParts, http::request, response::IntoResponse, Json};
-use axum_extra::{headers::{self, ETag, IfMatch}, typed_header::TypedHeaderRejection, TypedHeader};
+use axum::{async_trait, extract::FromRequestParts, http::request, response::{IntoResponse, Response}, Json};
+use axum_extra::{headers::{self, ETag, Header as _, IfMatch, IfNoneMatch}, typed_header::TypedHeaderRejection, TypedHeader};
 use hyper::StatusCode;
 use serde::Serialize;
 use base64ct::{Base64, Encoding};
 use sha2::{Digest, Sha256};
+use tracing::debug;
 
 use crate::error::Error;
 
@@ -11,32 +12,45 @@ fn etag_for<T: Serialize>(v: T) -> Result<ETag, Error> {
     let mut hasher = Sha256::new();
     serde_json::to_writer(&mut hasher, &v)?;
     let bytes = hasher.finalize();
-    format!("\"{}\"", Base64::encode_string(&bytes[..])).parse()
-        .map_err(|e| Error::BadETagFormat(format!("{:?}", e)))
+    let res = format!("\"{}\"", Base64::encode_string(&bytes[..])).parse()
+        .map_err(|e| Error::BadETagFormat(format!("{:?}", e)));
+    debug!("result: {:?}", res);
+    res
 
 }
 
-
-pub type IfMatchResult = Result<TypedHeader<IfMatch>, TypedHeaderRejection>;
-
+#[derive(Debug)]
 pub enum CondUpdateHeader {
     IfMatch(headers::IfMatch),
     None
 }
 
+#[derive(Debug)]
+pub struct CondHeaderRejection(headers::Error);
+
+impl IntoResponse for CondHeaderRejection {
+    fn into_response(self) -> Response {
+        let status = StatusCode::BAD_REQUEST;
+        let body = "conditional header improperly formatted";
+        (status, body).into_response()
+    }
+}
+
 #[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for CondUpdateHeader {
-    type Rejection = TypedHeaderRejection;
+    type Rejection = CondHeaderRejection;
 
     #[doc = "Extract CondUpdateHeader from Request"]
     #[must_use]
-    // #[allow(elided_named_lifetimes,clippy::type_complexity,clippy::type_repetition_in_bounds)]
     #[allow(clippy::type_complexity,clippy::type_repetition_in_bounds)]
-    async fn from_request_parts(parts: & mut request::Parts, state: & S) ->  Result<Self,Self::Rejection> {
-        match TypedHeader::from_request_parts(parts, state).await {
-            Ok(TypedHeader(h)) => Ok(CondUpdateHeader::IfMatch(h)),
-            Err(err) if err.is_missing() => Ok(CondUpdateHeader::None),
-            Err(err) => Err(err)
+    async fn from_request_parts(parts: &mut request::Parts, _state: &S) ->  Result<Self,Self::Rejection> {
+        let mut values = parts.headers.get_all(IfMatch::name()).iter();
+        if values.size_hint() == (0, Some(0)) {
+            Ok(Self::None)
+        } else {
+            IfMatch::decode(&mut values)
+                .map(Self::IfMatch)
+                .map_err(CondHeaderRejection)
         }
     }
 }
@@ -45,10 +59,10 @@ impl CondUpdateHeader {
     pub fn guard_update(&self, body: impl Serialize) -> Result<(), Error> {
         match self {
             CondUpdateHeader::IfMatch(if_match) => if if_match.precondition_passes( &etag_for(body)?) {
-                    Ok(())
-                } else {
-                    Err(Error::PreconditionFailed("etag didn't match for update".to_string()))
-                },
+                Ok(())
+            } else {
+                Err(Error::PreconditionFailed("etag didn't match for update".to_string()))
+            },
             CondUpdateHeader::None =>  Ok(())
         }
     }
@@ -61,17 +75,20 @@ pub enum CondRetreiveHeader {
 
 #[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for CondRetreiveHeader {
-    type Rejection = TypedHeaderRejection;
+    type Rejection = CondHeaderRejection;
 
     #[doc = "Extract CondRetreiveHeader from Request"]
     #[must_use]
     // #[allow(elided_named_lifetimes,clippy::type_complexity,clippy::type_repetition_in_bounds)]
     #[allow(clippy::type_complexity,clippy::type_repetition_in_bounds)]
-    async fn from_request_parts(parts: & mut request::Parts, state: & S) ->  Result<Self,Self::Rejection> {
-        match TypedHeader::from_request_parts(parts, state).await {
-            Ok(TypedHeader(h)) => Ok(CondRetreiveHeader::IfNoneMatch(h)),
-            Err(err) if err.is_missing() => Ok(CondRetreiveHeader::None),
-            Err(err) => Err(err)
+    async fn from_request_parts(parts: &mut request::Parts, _state: &S) ->  Result<Self,Self::Rejection> {
+        let mut values = parts.headers.get_all(IfNoneMatch::name()).iter();
+        if values.size_hint() == (0, Some(0)) {
+            Ok(Self::None)
+        } else {
+            IfNoneMatch::decode(&mut values)
+                .map(Self::IfNoneMatch)
+                .map_err(CondHeaderRejection)
         }
     }
 }

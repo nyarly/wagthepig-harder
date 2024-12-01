@@ -4,6 +4,7 @@ use hyper::{header, StatusCode};
 use semweb_api::{condreq, hypermedia::{op, ActionType, IriTemplate, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
+use tracing::debug;
 
 use crate::{
     db::{Event, EventId, NoId},
@@ -149,6 +150,7 @@ pub(crate) async fn update(
 ) -> Result<impl IntoResponse, Error> {
     let event = retrieve(&db, &nested_at, event_id).await?;
 
+    debug!("if_match: {:?}", if_match);
     if_match.guard_update(event)?;
 
     let event = body.db_param()

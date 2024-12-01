@@ -163,20 +163,20 @@ type alias ResToMsg x a msg =
 -}
 
 
-chain : Auth.Cred -> List AffordanceExtractor -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
+chain : Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
 chain cred =
     chainFrom cred (link GET "/api")
 
 
-chainFrom : Auth.Cred -> Affordance -> List AffordanceExtractor -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chainFrom cred start extractors body makeRes toMsg =
+chainFrom : Auth.Cred -> Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
+chainFrom cred start extractors headers body makeRes toMsg =
     let
         nextHop ex task =
-            task |> andThen (follow cred Http.emptyBody ex)
+            task |> andThen (follow cred [] Http.emptyBody ex)
 
         plan =
             List.foldl nextHop (Task.succeed start) extractors
-                |> andThen (follow cred body makeRes)
+                |> andThen (follow cred headers body makeRes)
     in
     Task.attempt toMsg plan
 
@@ -184,11 +184,11 @@ chainFrom cred start extractors body makeRes toMsg =
 request : Auth.Cred -> Method -> String -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
 request maybeCred method url body makeRes toMsg =
     Task.attempt toMsg
-        (follow maybeCred body (\r -> makeRes r.body) (link method url))
+        (follow maybeCred [] body (\r -> makeRes r.body) (link method url))
 
 
-follow : Auth.Cred -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
-follow maybeCred body makeRes aff =
+follow : Auth.Cred -> List Http.Header -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
+follow maybeCred headers body makeRes aff =
     Http.task
         (Debug.log "hop"
             { method = methodName aff.method
@@ -196,7 +196,7 @@ follow maybeCred body makeRes aff =
             , body = body
             , timeout = Nothing
             , resolver = baseResolver makeRes
-            , headers = Debug.log "cred-header" (Auth.credHeader (Debug.log "cred" maybeCred))
+            , headers = Debug.log "cred-header" (Auth.credHeader maybeCred) ++ headers
             }
         )
 

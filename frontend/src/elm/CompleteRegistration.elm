@@ -3,7 +3,7 @@ module CompleteRegistration exposing (Model, Msg(..), bidiupdate, init, view)
 import Auth
 import Dict
 import Html exposing (..)
-import Html.Attributes exposing (class, disabled, type_)
+import Html.Attributes exposing (class, type_)
 import Html.Attributes.Extra exposing (attributeIf)
 import Html.Events exposing (onSubmit)
 import Html.Extra as Html exposing (viewIf)
@@ -105,6 +105,7 @@ updatePassword creds email password =
     HM.chain creds
         [ HM.browse [ "authenticate" ] (ByType "UpdateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", email ) ])
         ]
+        []
         reqBody
         emptyResponse
         AuthResponse

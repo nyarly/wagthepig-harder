@@ -25,13 +25,14 @@ import ViewUtil as Eww
 
 type alias Model =
     { creds : Auth.Cred
+    , etag : Up.Etag
     , resource : Resource -- XXX Maybe?
     }
 
 
 type alias Resource =
     { id : Maybe Affordance
-    , nick : String
+    , nick : Int
     , template : Maybe Affordance
     , update : Maybe Affordance
     , name : String
@@ -42,17 +43,18 @@ type alias Resource =
 
 type Bookmark
     = None
-    | Nickname String
-    | Url Affordance
+    | Nickname Int
+    | Url HM.Uri
 
 
 init : Model
 init =
     Model
         Auth.unauthenticated
+        Nothing
         (Resource
             Nothing
-            ""
+            0
             Nothing
             Nothing
             ""
@@ -65,9 +67,10 @@ forCreate : Affordance -> Model
 forCreate aff =
     Model
         Auth.unauthenticated
+        Nothing
         (Resource
             Nothing
-            ""
+            0
             Nothing
             (Just aff)
             ""
@@ -89,7 +92,7 @@ decoder : D.Decoder Resource
 decoder =
     D.map7 Resource
         (D.map (\u -> Just (HM.link GET u)) (D.field "id" D.string))
-        (D.field "nick" D.string)
+        (D.at [ "nick", "event_id" ] D.int)
         (D.map (\laff -> HM.selectAffordance (ByType "FindAction") laff) HM.affordanceListDecoder)
         (D.map (\laff -> HM.selectAffordance (ByType "UpdateAction") laff) HM.affordanceListDecoder)
         (D.field "name" D.string)
@@ -104,7 +107,7 @@ type Msg
     | ChangeTime String
     | ChangeLocation String
     | Submit
-    | GotEvent Resource OutMsg.Msg
+    | GotEvent Up.Etag Resource OutMsg.Msg
     | ErrGetEvent HM.Error
 
 
@@ -170,8 +173,8 @@ bidiupdate msg model =
         ChangeLocation l ->
             ( updateRes (\r -> { r | location = l }) model, Cmd.none, OutMsg.None )
 
-        GotEvent ev outmsg ->
-            ( { model | resource = ev }, Cmd.none, outmsg )
+        GotEvent etag ev outmsg ->
+            ( { model | etag = etag, resource = ev }, Cmd.none, outmsg )
 
         ErrGetEvent _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -193,18 +196,18 @@ makeMsg cred ex =
             Entered cred None
 
         Up.Loc aff ->
-            Entered cred (Url aff)
+            Entered cred (Url aff.uri)
 
-        Up.Res res out ->
-            GotEvent res out
+        Up.Res etag res out ->
+            GotEvent etag res out
 
         Up.Error err ->
             ErrGetEvent err
 
 
-nickToVars : String -> Dict.Dict String String
+nickToVars : Int -> Dict.Dict String String
 nickToVars id =
-    Dict.fromList [ ( "event_id", id ) ]
+    Dict.fromList [ ( "event_id", String.fromInt id ) ]
 
 
 browseToEvent : HM.TemplateVars -> List (Response -> Result String Affordance)
@@ -216,15 +219,15 @@ browseToEvent vars =
 
 putEvent : Auth.Cred -> Model -> Cmd Msg
 putEvent creds model =
-    Up.put encodeEvent decoder (makeMsg creds) (Debug.log "creds" creds) model.resource
+    Up.put encodeEvent decoder (makeMsg creds) (Debug.log "creds" creds) model.etag model.resource
 
 
-fetchByNick : Auth.Cred -> Model -> String -> Cmd Msg
+fetchByNick : Auth.Cred -> Model -> Int -> Cmd Msg
 fetchByNick creds model id =
     Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent model.resource.template creds id
 
 
-fetchFromUrl : Auth.Cred -> Affordance -> Cmd Msg
+fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
     let
         routeByHasNick =

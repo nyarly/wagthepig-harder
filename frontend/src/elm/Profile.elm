@@ -25,6 +25,7 @@ type Bookmark
 
 type alias Model =
     { creds : Auth.Cred
+    , etag : Up.Etag
     , profile : Profile
     , password : Password
     }
@@ -50,6 +51,7 @@ init : Model
 init =
     Model
         Auth.unauthenticated
+        Nothing
         (Profile "" "" "" Nothing Nothing)
         (Password "" "" "")
 
@@ -79,7 +81,7 @@ type Msg
     | ChangeName String
     | ChangeBGG String
     | SubmitProfile
-    | GotProfile Profile OutMsg.Msg
+    | GotProfile Up.Etag Profile OutMsg.Msg
     | ErrProfileGet Http.Error
     | ChangeOldPassword String
     | ChangeNewPassword String
@@ -136,7 +138,7 @@ bidiupdate msg model =
                     ( { model | creds = creds }, fetchByCreds creds model, OutMsg.None )
 
                 Url url ->
-                    ( { model | creds = creds }, fetchFromUrl creds url, OutMsg.None )
+                    ( { model | creds = creds }, fetchFromUrl creds url.uri, OutMsg.None )
 
         ChangeName n ->
             ( updateProfile (\pf -> { pf | name = n }), Cmd.none, OutMsg.None )
@@ -150,8 +152,8 @@ bidiupdate msg model =
         SubmitProfile ->
             ( model, putProfile model.creds model, OutMsg.None )
 
-        GotProfile m out ->
-            ( { model | profile = m }, Cmd.none, out )
+        GotProfile etag m out ->
+            ( { model | etag = etag, profile = m }, Cmd.none, out )
 
         ErrProfileGet _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -198,6 +200,7 @@ submitPasswordUpdate model =
     HM.chain model.creds
         [ HM.browse [ "authenticate" ] (ByType "UpdateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", email ) ])
         ]
+        []
         reqBody
         emptyResponse
         AuthResponse
@@ -212,8 +215,8 @@ makeMsg cred rep =
         Up.Loc aff ->
             Entered cred (Url aff)
 
-        Up.Res res out ->
-            GotProfile res out
+        Up.Res etag res out ->
+            GotProfile etag res out
 
         Up.Error err ->
             ErrProfileGet err
@@ -231,7 +234,7 @@ browseToProfile vars =
 
 putProfile : Auth.Cred -> Model -> Cmd Msg
 putProfile creds model =
-    Up.put encode decoder (makeMsg creds) creds model.profile
+    Up.put encode decoder (makeMsg creds) creds model.etag model.profile
 
 
 fetchByCreds : Auth.Cred -> Model -> Cmd Msg
@@ -239,6 +242,6 @@ fetchByCreds creds model =
     Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile model.profile.template creds (Auth.accountID creds)
 
 
-fetchFromUrl : Auth.Cred -> Affordance -> Cmd Msg
+fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
     Up.fetchFromUrl decoder (makeMsg creds) (\_ -> Router.Profile) creds url

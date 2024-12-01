@@ -17,6 +17,7 @@
 
 a {
   color: var(--main-link-color);
+  text-decoration: underline;
 }
 
 a:visited {

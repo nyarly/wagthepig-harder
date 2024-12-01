@@ -82,7 +82,7 @@ bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =
     case msg of
         Entered creds ->
-            ( model, fetch creds, OutMsg.None )
+            ( { model | creds = creds }, fetch creds, OutMsg.None )
 
         GotEvents new ->
             ( { model | resource = new }, Cmd.none, OutMsg.None )
@@ -184,7 +184,7 @@ eventEditButton : Event -> Html Msg
 eventEditButton event =
     case HM.selectAffordance (HM.ByType "UpdateAction") event.affordances of
         Just aff ->
-            a [ onClick (EditEvent aff) ] [ text "Edit" ]
+            button [ onClick (EditEvent aff) ] [ text "Edit" ]
 
         Nothing ->
             text "Edit"
@@ -195,6 +195,7 @@ fetch creds =
     HM.chain creds
         [ HM.browse [ "events" ] (HM.ByType "ViewAction")
         ]
+        []
         Http.emptyBody
         modelRes
         handleGetResult
