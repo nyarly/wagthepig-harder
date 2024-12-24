@@ -37,7 +37,7 @@ impl RouteTemplate for RouteMap {
             EventGames    => "/event_games/{event_id}/user/{user_id}",
             Game          => "/games/{game_id}/user/{user_id}",
             GameUsers     => "/game_users/{game_id}",
-            Recommend     => "/recommend/{event_id}/for/{user_id}"
+            Recommend     => "/recommend/{event_id}"
         }.to_string()
     }
 }

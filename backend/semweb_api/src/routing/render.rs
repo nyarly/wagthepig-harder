@@ -1,4 +1,10 @@
-use super::parser::{Expression, Op, Part, VarMod, VarSpec};
+use std::collections::HashSet;
+
+use iri_string::{spec::UriSpec, template::{Context, UriTemplateStr}};
+
+use crate::Error;
+
+use super::{parser::{Expression, Op, Part, VarMod, VarSpec}, Listable};
 
 const EMPTY: &str      = "";
 const PLUS: &str       = "+";
@@ -14,7 +20,7 @@ const OCTOTHORPE: &str = "#";
 static QUERYTERM: &str = "?#";
 
 impl Op {
-    fn to_string(&self) -> &'static str {
+    fn to_string(self) -> &'static str {
         use Op::*;
         match self {
             Simple => EMPTY,
@@ -118,7 +124,7 @@ fn exp_re(exp: &Expression, here: &'static str, nxt: &'static str) -> String {
         &exp.varspecs.iter()
             .map(var_re(exp.operator, here, nxt))
             .collect::<Vec<_>>()
-            .join(&exp.operator.separator()));
+            .join(exp.operator.separator()));
     re
 }
 
@@ -167,6 +173,68 @@ pub(super) fn original_string(part: &Part) -> String {
         Part::SegVar(exp) |
         Part::SegRest(exp) => format!("/{}", exp_string(exp))
     }
+}
+
+pub(super) fn fill_parts(parts: &Vec<Part>, vars: &(impl Context + Listable + Clone)) -> Result<Vec<Part>, Error> {
+    let mut new_partlist = vec![];
+    for part in parts {
+        match part {
+            Part::Lit(_) => new_partlist.push(part.clone()),
+            Part::Expression(exp) => new_partlist.extend(fill_part(exp, vars, Part::Expression)?),
+            Part::SegVar(exp) => new_partlist.extend(fill_part(exp, vars, Part::SegVar)?),
+            Part::SegPathVar(exp) => new_partlist.extend(fill_part(exp, vars, Part::SegPathVar)?),
+            Part::SegRest(exp) => new_partlist.extend(fill_part(exp, vars, Part::SegRest)?),
+            Part::SegPathRest(exp) => new_partlist.extend(fill_part(exp, vars, Part::SegPathRest)?),
+        }
+    }
+    Ok(new_partlist)
+}
+
+fn fill_part(exp: &Expression, vars: &(impl Context + Listable + Clone), make_part: impl Fn(Expression) -> Part) -> Result<Vec<Part>, Error> {
+    let mut new_partlist = vec![];
+    let mut specs = exp.varspecs.iter().peekable();
+    let mut given = HashSet::new();
+    for var in vars.list_vars() {
+        given.insert(var);
+    }
+
+    while specs.peek().is_some() {
+        let mut litspecs = vec![];
+        while let Some(spec) = specs.peek() {
+            if given.contains(&spec.varname) {
+                litspecs.push(specs.next().expect("next to be Some if peek was Some").clone())
+            } else {
+                break
+            }
+        }
+        if !litspecs.is_empty() {
+            let newexp = Expression{
+                operator: exp.operator,
+                varspecs: litspecs
+            };
+            let tstr = original_string(&make_part(newexp));
+            let t = UriTemplateStr::new(&tstr)?;
+            let new_part = Part::Lit(t.expand::<UriSpec, _>(vars)?.to_string().clone());
+            new_partlist.push(new_part)
+        }
+        let mut openspecs = vec![];
+        while let Some(spec) = specs.peek() {
+            if !given.contains(&spec.varname) {
+                openspecs.push(specs.next().expect("next to be Some if peek was Some").clone())
+            } else {
+                break
+            }
+        }
+        if !openspecs.is_empty() {
+            let newexp = Expression {
+                operator: exp.operator,
+                varspecs: openspecs
+            };
+            let new_part = make_part(newexp);
+            new_partlist.push(new_part);
+        }
+    }
+    Ok(new_partlist)
 }
 
 fn exp_string(exp: &Expression) -> String {

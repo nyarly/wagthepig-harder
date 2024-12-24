@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use hyper::{header, StatusCode};
@@ -20,6 +22,7 @@ pub(crate) struct EventListResponse {
     pub resource_fields: ResourceFields<EmptyLocate>,
 
     pub event_by_id: IriTemplate,
+    pub event_games_by_id: IriTemplate,
     pub events: Vec<EventResponse>,
 }
 
@@ -27,6 +30,8 @@ impl EventListResponse {
     pub fn from_query(nested_at: &str, list: Vec<Event<EventId>>) -> Result<Self, semweb_api::Error> {
         let event_route = RouteMap::Event.prefixed(nested_at);
         let event_tmpl = event_route.template()?;
+
+        let event_games_tmpl = RouteMap::EventGames.prefixed(nested_at).template()?;
 
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -38,6 +43,11 @@ impl EventListResponse {
             event_by_id: IriTemplate {
                 id: "api:eventByIdTemplate".try_into()?,
                 template: event_tmpl,
+                operation: vec![ op(ActionType::Find) ]
+            },
+            event_games_by_id: IriTemplate {
+                id: "api:eventGamesById".try_into()?,
+                template: event_games_tmpl,
                 operation: vec![ op(ActionType::Find) ]
             },
             events: list.into_iter().map(|ev|
@@ -52,6 +62,7 @@ impl EventListResponse {
 pub(crate) struct EventResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<EventLocate>,
+    pub games: IriTemplate,
 
     pub name: Option<String>,
     pub time: Option<NaiveDateTime>,
@@ -61,6 +72,9 @@ pub(crate) struct EventResponse {
 
 impl EventResponse {
     pub(crate) fn from_query(nested_at: &str, value: Event<EventId>) -> Result<Self, semweb_api::Error> {
+        let mut event_var = HashMap::new();
+        event_var.insert("event_id".to_string(), value.id.to_string());
+        let usergames_tmpl = RouteMap::EventGames.prefixed(nested_at).partial_fill(event_var)?;
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Event.prefixed(nested_at),
@@ -68,6 +82,12 @@ impl EventResponse {
                 "api:eventByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
+
+            games: IriTemplate {
+                id: "api:userEventGames".try_into()?,
+                template: usergames_tmpl,
+                operation: vec![ op(ActionType::Find)]
+            },
 
             name: value.name,
             location: value.r#where,

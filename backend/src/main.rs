@@ -13,7 +13,8 @@ use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use sqlxmq::{JobRegistry, JobRunnerHandle};
 use tower_http::trace::TraceLayer;
 
-use tracing::{debug, info, warn, Level};
+use tracing::{debug, info, warn};
+use tracing_subscriber::{EnvFilter, prelude::*};
 
 use crate::routing::RouteMap;
 
@@ -86,8 +87,9 @@ impl Config {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(Level::TRACE)
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::from_default_env())
         .init();
 
     let config = Config::parse();

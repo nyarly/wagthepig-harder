@@ -6,11 +6,12 @@ use iri_string::{
     spec::IriSpec,
     template::{
         DynamicContext, UriTemplateStr, UriTemplateString
-    }, types::IriRelativeString
+    }, types::IriReferenceString
 };
 use regex::Regex;
+use render::fill_parts;
 use serde::de::DeserializeOwned;
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::error::Error;
 
@@ -88,6 +89,7 @@ pub trait Listable {
     fn list_vars(&self) -> Vec<String>;
 }
 
+#[derive(Clone)]
 pub struct VarsList<L: IntoIterator<Item = (String, String)>>( pub L );
 
 impl<L: Clone + IntoIterator<Item = (String, String)>> Listable for VarsList<L> {
@@ -130,7 +132,7 @@ impl<C: Context + Listable> PolicyContext<C> {
             (FillPolicy::NoMissing, false, _) =>
                 Err(Error::MissingCaptures(self.missing.iter().cloned().collect())),
             (FillPolicy::Strict, _, false) |
-            (FillPolicy::NoMissing, _, false) =>
+            (FillPolicy::NoExtra, _, false) =>
                 Err(Error::ExtraCaptures(self.extra.iter().cloned().collect())),
             _ => Ok(())
         }
@@ -181,9 +183,14 @@ impl Entry {
         inner.axum_route()
     }
 
-    pub fn fill(&self, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
+    pub fn fill(&self, vars: impl Context + Listable) -> Result<IriReferenceString, Error> {
         let inner = self.inner.read().expect("not poisoned");
         inner.fill_uritemplate(FillPolicy::NoMissing, vars)
+    }
+
+    pub fn partial_fill(&self, vars: impl IntoIterator<Item = (String, String)> + Clone) -> Result<UriTemplateString, Error> {
+        let inner = self.inner.read().expect("not poisoned");
+        inner.partial_fill(VarsList(vars))
     }
 
     pub fn template(&self) -> Result<UriTemplateString, Error> {
@@ -321,13 +328,26 @@ impl InnerSingle {
         Ok(t.into())
     }
 
-    fn fill_uritemplate(&self, policy: FillPolicy, vars: impl Context + Listable) -> Result<IriRelativeString, Error> {
+    fn fill_uritemplate(&self, policy: FillPolicy, vars: impl Context + Listable) -> Result<IriReferenceString, Error> {
         let mut pol = PolicyContext::new(vars);
 
         let templ = &self.template()?;
         let expanded = templ.expand_dynamic_to_string::<IriSpec,_>(&mut pol)?;
+        debug!("expanded {}", expanded);
         pol.check(policy)?;
-        Ok(expanded.try_into()?)
+        debug!("checked {:?}", expanded);
+        Ok(expanded.try_into().inspect_err(|e| debug!("try_into: {e:?}"))?)
+    }
+
+    // XXX stub impl
+    fn partial_fill(&self, vars: impl Context + Listable + Clone) -> Result<UriTemplateString, Error> {
+        let filled_string = self.parsed.auth.clone().map_or(Ok(vec![]), |a| fill_parts(&a, &vars))?.iter().map(original_string)
+            .chain(fill_parts(&self.parsed.path, &vars)?.iter().map(original_string))
+            .chain(self.parsed.query.clone().map_or(Ok(vec![]), |q| fill_parts(&q, &vars))?.iter().map(original_string))
+            .collect::<Vec<_>>().join("");
+
+        let t = UriTemplateStr::new(&filled_string)?;
+        Ok(t.into())
     }
 
     fn axum_route(&self) -> String {
@@ -346,6 +366,7 @@ impl InnerSingle {
     }
 }
 
+
 fn percent_decode<S: AsRef<str>>(s: S) -> Option<Arc<str>> {
     percent_encoding::percent_decode(s.as_ref().as_bytes())
         .decode_utf8()
@@ -355,6 +376,8 @@ fn percent_decode<S: AsRef<str>>(s: S) -> Option<Arc<str>> {
 
 #[cfg(test)]
 mod test {
+    use tracing_test::traced_test;
+
     use super::*;
 
     fn quick_route(input: &str) -> InnerSingle {
@@ -385,6 +408,22 @@ mod test {
              "http://example.com/api/user/{user_id}{?something,mysterious}".to_string()
             //                  ^^^^
         )
+    }
+
+    #[test]
+    #[traced_test]
+    fn partial_fill() {
+        let route = quick_route("http://example.com{/something,mysterious}/user{/user_id}");
+        let mut vars = HashMap::new();
+        vars.insert("something".to_string(), "S".to_string());
+        vars.insert("mysterious".to_string(), "M".to_string());
+        let tmpl_r = route.partial_fill(VarsList(vars));
+        debug!("{:?}", tmpl_r);
+        let tmpl = tmpl_r.unwrap();
+        assert_eq!(
+            tmpl.to_string(),
+            "http://example.com/S/M/user{/user_id}".to_string()
+    )
     }
 
     #[test]

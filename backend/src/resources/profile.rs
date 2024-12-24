@@ -2,6 +2,7 @@ use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse};
 use semweb_api::{condreq, hypermedia::{op, ActionType, ResourceFields}};
 use serde::Serialize;
 use sqlx::{Pool, Postgres};
+use tracing::debug;
 
 use crate::{
     db::{EventId, GameId, User, UserId},
@@ -71,6 +72,7 @@ pub(crate) struct ProfileResponse {
 
 impl ProfileResponse {
     pub(crate) fn from_query(nested_at: &str, value: User<UserId>) -> Result<Self, Error> {
+        debug!("{:?}", value);
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Profile.prefixed(nested_at),

@@ -1,12 +1,12 @@
 module EventEdit exposing (Bookmark(..), Model, Msg(..), bidiupdate, forCreate, init, view)
 
 import Auth
-import Dict
+import Event exposing (browseToEvent, nickToVars)
 import Html exposing (Html, button, div, form, text)
 import Html.Attributes exposing (class, disabled, id, type_)
 import Html.Attributes.Extra as Attr
 import Html.Events exposing (onSubmit)
-import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
+import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
 import Json.Encode as E
@@ -16,11 +16,6 @@ import Router
 import Task
 import Time
 import ViewUtil as Eww
-
-
-
--- I would like this to be create-or-edit
--- update Affordance controls where and how to send the data
 
 
 type alias Model =
@@ -203,18 +198,6 @@ makeMsg cred ex =
 
         Up.Error err ->
             ErrGetEvent err
-
-
-nickToVars : Int -> Dict.Dict String String
-nickToVars id =
-    Dict.fromList [ ( "event_id", String.fromInt id ) ]
-
-
-browseToEvent : HM.TemplateVars -> List (Response -> Result String Affordance)
-browseToEvent vars =
-    [ HM.browse [ "events" ] (ByType "ViewAction")
-    , HM.browse [] (ByType "FindAction") |> HM.fillIn vars
-    ]
 
 
 putEvent : Auth.Cred -> Model -> Cmd Msg

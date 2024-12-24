@@ -14,6 +14,7 @@ module Hypermedia exposing
     , browse
     , chain
     , chainFrom
+    , decodeBody
     , delete
     , doByName
     , emptyBody
@@ -253,6 +254,13 @@ fillIn vars affex =
 fill : TemplateVars -> Affordance -> Affordance
 fill vars aff =
     { aff | uri = Url.Interpolate.interpolate aff.uri vars }
+
+
+decodeBody : D.Decoder resource -> { a | body : String } -> Result String resource
+decodeBody decoder res =
+    res.body
+        |> D.decodeString decoder
+        |> Result.mapError D.errorToString
 
 
 linkByName : String -> AffordanceExtractor

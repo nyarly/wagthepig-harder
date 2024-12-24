@@ -1,15 +1,16 @@
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Limit registrations per IP to forestall abuse
+  * General rate limits on endpoints,
+  * lower limits on infrequent auth endpoints
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
 
 WTP parity:
 
 F/E
-* Event edit
 * Event view (game list)
-  * Sorted table
+  * Table is sorted
   * Add game (BGG JS interface)
   * Want to play
   * Know rules

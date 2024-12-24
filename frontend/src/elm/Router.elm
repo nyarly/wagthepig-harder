@@ -13,6 +13,7 @@ type Target
     | Events
     | CreateEvent
     | EventEdit Int
+    | EventShow Int
     | CredentialedArrival Target Cred
     | Register
     | CompleteRegistration String
@@ -43,6 +44,9 @@ buildFromTarget target =
 
         EventEdit name ->
             absolute [ "event", String.fromInt name ] []
+
+        EventShow id ->
+            absolute [ "games", String.fromInt id ] []
 
         Register ->
             absolute [ "register" ] []
@@ -79,6 +83,9 @@ pageName target =
         EventEdit _ ->
             "event"
 
+        EventShow _ ->
+            "games"
+
         Register ->
             "register"
 
@@ -99,6 +106,7 @@ router =
         , map CreateEvent (s "new_event")
         , map Register (s "register")
         , map EventEdit (s "event" </> int)
+        , map EventShow (s "games" </> int)
         , map registrationArrival (s "handle_registration" </> string </> Auth.fragmentParser)
         , map CompleteRegistration (s "complete_registration" </> string)
         ]

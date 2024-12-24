@@ -3,6 +3,7 @@ module Pages exposing (Models, Msg(..), bidiupdate, init, pageNav, view)
 import Auth
 import CompleteRegistration
 import EventEdit
+import EventShow
 import Events
 import Html exposing (Html)
 import Landing
@@ -19,6 +20,7 @@ type Msg
     | ProfileMsg Profile.Msg
     | EventsMsg Events.Msg
     | EventEditMsg EventEdit.Msg
+    | EventShowMsg EventShow.Msg
     | RegisterMsg Register.Msg
     | CompleteRegistrationMsg CompleteRegistration.Msg
 
@@ -29,6 +31,7 @@ type alias Models =
     , profile : Profile.Model
     , events : Events.Model
     , event : EventEdit.Model
+    , games : EventShow.Model
     , register : Register.Model
     , complete_registration : CompleteRegistration.Model
     }
@@ -42,6 +45,7 @@ init =
         Profile.init
         Events.init
         EventEdit.init
+        EventShow.init
         Register.init
         CompleteRegistration.init
 
@@ -76,6 +80,10 @@ view target models toMsg =
         Router.EventEdit _ ->
             EventEdit.view models.event
                 |> wrapMsg EventEditMsg
+
+        Router.EventShow _ ->
+            EventShow.view models.games
+                |> wrapMsg EventShowMsg
 
         Router.CreateEvent ->
             EventEdit.view models.event
@@ -144,6 +152,11 @@ bidiupdate msg models =
                 |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
                 |> consumeOutmsg
 
+        EventShowMsg submsg ->
+            EventShow.bidiupdate submsg models.games
+                |> OutMsg.mapBoth (\pm -> { models | games = pm }) (Cmd.map EventShowMsg)
+                |> consumeOutmsg
+
         RegisterMsg submsg ->
             Register.bidiupdate submsg models.register
                 |> OutMsg.mapBoth (\pm -> { models | register = pm }) (Cmd.map RegisterMsg)
@@ -163,9 +176,14 @@ consumeOutmsg ( models, cmd, out ) =
                 OutMsg.CreateEvent aff ->
                     ( { models | event = EventEdit.forCreate aff }, cmd, OutMsg.Main << OutMsg.Nav <| Router.CreateEvent )
 
+                -- XXX Hrrm. This creates a whole regime where I have to add outmsgs
                 OutMsg.EditEvent creds aff ->
                     EventEdit.bidiupdate (EventEdit.Entered creds (EventEdit.Url aff.uri)) EventEdit.init
                         |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
+
+                OutMsg.ShowEvent creds aff ->
+                    EventShow.bidiupdate (EventShow.Entered creds (EventShow.Url aff.uri)) EventShow.init
+                        |> OutMsg.mapBoth (\pm -> { models | games = pm }) (Cmd.map EventShowMsg)
 
         _ ->
             ( models, cmd, out )

@@ -1,8 +1,9 @@
 module Events exposing (Model, Msg(..), bidiupdate, init, view)
 
 import Auth
+import Event
 import Html exposing (Html, a, button, h1, table, td, text, th, thead, tr)
-import Html.Attributes exposing (colspan)
+import Html.Attributes exposing (class, colspan)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
@@ -67,6 +68,7 @@ type Msg
     | ErrGetEvents Http.Error
     | CreateNewEvent Affordance
     | EditEvent Affordance
+    | ShowEvent Affordance
     | ChangeSort SortBy
 
 
@@ -96,6 +98,9 @@ bidiupdate msg model =
 
         EditEvent aff ->
             ( model, Cmd.none, OutMsg.Page (OutMsg.EditEvent model.creds aff) )
+
+        ShowEvent aff ->
+            ( model, Cmd.none, OutMsg.Page (OutMsg.ShowEvent model.creds aff) )
 
         ChangeSort by ->
             ( { model | sorting = TableSort.changeSort by model.sorting }, Cmd.none, OutMsg.None )
@@ -148,26 +153,13 @@ addRow event list =
     ( event.id
     , tr []
         [ td [] [ text event.name ]
-        , td [] [ text (formatEventTime event) ]
+        , td [] [ text (Event.formatTime event) ]
         , td [] [ text event.location ]
-        , td [] [ text "Show" ]
+        , td [] [ eventShowButton event ]
         , td [] [ eventEditButton event ]
         ]
     )
         :: list
-
-
-formatEventTime : { a | time : Time.Posix } -> String
-formatEventTime event =
-    -- Thu Mar 31, 2024
-    formatWeekday event.time
-        ++ " "
-        ++ formatMonth event.time
-        ++ " "
-        ++ String.fromInt
-            (Time.toDay Time.utc event.time)
-        ++ ", "
-        ++ String.fromInt (Time.toYear Time.utc event.time)
 
 
 createEventButton : Resource -> Html Msg
@@ -184,7 +176,17 @@ eventEditButton : Event -> Html Msg
 eventEditButton event =
     case HM.selectAffordance (HM.ByType "UpdateAction") event.affordances of
         Just aff ->
-            button [ onClick (EditEvent aff) ] [ text "Edit" ]
+            button [ class "edit", onClick (EditEvent aff) ] [ text "Edit" ]
+
+        Nothing ->
+            text "Edit"
+
+
+eventShowButton : Event -> Html Msg
+eventShowButton event =
+    case HM.selectAffordance (HM.ByType "ViewAction") event.affordances of
+        Just aff ->
+            button [ class "show", onClick (ShowEvent aff) ] [ text "Show" ]
 
         Nothing ->
             text "Edit"
@@ -197,7 +199,7 @@ fetch creds =
         ]
         []
         Http.emptyBody
-        modelRes
+        (HM.decodeBody decoder)
         handleGetResult
 
 
@@ -209,79 +211,3 @@ handleGetResult res =
 
         Err err ->
             ErrGetEvents err
-
-
-
--- type alias ResponseToResult a = (Response -> Result String a)
-
-
-modelRes : { a | body : String } -> Result String Resource
-modelRes res =
-    res.body
-        |> D.decodeString decoder
-        |> Result.mapError D.errorToString
-
-
-formatWeekday : Time.Posix -> String
-formatWeekday posix =
-    case Time.toWeekday Time.utc posix of
-        Time.Mon ->
-            "Mon"
-
-        Time.Tue ->
-            "Tue"
-
-        Time.Wed ->
-            "Wed"
-
-        Time.Thu ->
-            "Thu"
-
-        Time.Fri ->
-            "Fri"
-
-        Time.Sat ->
-            "Sat"
-
-        Time.Sun ->
-            "Sun"
-
-
-formatMonth : Time.Posix -> String
-formatMonth posix =
-    case Time.toMonth Time.utc posix of
-        Time.Jan ->
-            "Jan"
-
-        Time.Feb ->
-            "Feb"
-
-        Time.Mar ->
-            "Mar"
-
-        Time.Apr ->
-            "Apr"
-
-        Time.May ->
-            "May"
-
-        Time.Jun ->
-            "Jun"
-
-        Time.Jul ->
-            "Jul"
-
-        Time.Aug ->
-            "Aug"
-
-        Time.Sep ->
-            "Sep"
-
-        Time.Oct ->
-            "Oct"
-
-        Time.Nov ->
-            "Nov"
-
-        Time.Dec ->
-            "Dec"

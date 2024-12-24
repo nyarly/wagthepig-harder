@@ -1,5 +1,5 @@
 use axum::{async_trait, extract::FromRequestParts, http::request, response::{IntoResponse, Response}, Json};
-use axum_extra::{headers::{self, ETag, Header as _, IfMatch, IfNoneMatch}, typed_header::TypedHeaderRejection, TypedHeader};
+use axum_extra::{headers::{self, ETag, Header as _, IfMatch, IfNoneMatch}, TypedHeader};
 use hyper::StatusCode;
 use serde::Serialize;
 use base64ct::{Base64, Encoding};

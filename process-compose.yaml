@@ -17,6 +17,7 @@ environment:
   - "MP_SMTP_BIND_ADDR=127.0.0.1:1025"
   - ADMIN_EMAIL=nobody@nowhere.org
   - SMTP_CERT=../devsupport/tls/smtp/cert.crt
+  - RUST_LOG=trace,lettre=error,sqlxmq=error,mio=error
 
 unifiendbackend: &unifiedbackend
   live-elm-make:

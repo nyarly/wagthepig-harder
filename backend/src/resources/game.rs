@@ -78,7 +78,7 @@ impl EventGameListResponse {
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
             make_recommendation: Link {
-                id: RouteMap::Recommend.prefixed(nested_at).fill(RecommendLocate{ event_id })?.into(),
+                id: RouteMap::Recommend.prefixed(nested_at).fill(RecommendLocate{ event_id })?,
                 operation: vec![
                     hypermedia::Operation{
                         r#type: "PlayAction".to_string(),
@@ -87,7 +87,7 @@ impl EventGameListResponse {
                 ]
             },
             users: Link {
-                id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id })?.into(),
+                id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id })?,
                 operation: vec![ op(ActionType::View) ]
             },
             games: list.into_iter().map(|game|
@@ -126,7 +126,7 @@ impl GameResponse {
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
             users: Link {
-                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?.into(),
+                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?,
                 operation: vec![ op(ActionType::View) ]
             },
 
