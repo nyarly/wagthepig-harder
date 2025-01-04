@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::{self, FromRef}, http::StatusCode, middleware, response::{IntoResponse, Result}, routing::{get, post, put}, Router
@@ -7,10 +7,12 @@ use axum::{
 use bcrypt::BcryptError;
 use biscuit_auth::macros::authorizer;
 use clap::Parser;
+use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
 use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use sqlxmq::{JobRegistry, JobRunnerHandle};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorLayer};
 use tower_http::trace::TraceLayer;
 
 use tracing::{debug, info, warn};
@@ -112,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("can't connect to database");
 
     let auth = biscuits::Authentication::new(config.authentication_path)?;
+
     let _runner = queue_listener(
         pool.clone(),
         mailing::AdminEmail(config.admin_address.to_string()),
@@ -119,6 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         transport,
         auth.clone(),
     ).await?;
+
     let state = AppState{pool, auth: auth.clone()};
 
     let app = Router::new()
@@ -161,7 +165,7 @@ async fn queue_listener(
         .runner(&pool)
         .set_concurrency(1, 20)
         .run()
-        .await?;
+    .await?;
 
     // The job runner will continue listening and running
     // jobs until `runner` is dropped.
@@ -171,6 +175,31 @@ async fn queue_listener(
 
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
     routing::api_doc(nested_at.as_str())
+}
+
+fn governor_setup<K,M>(cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<K,M>
+where K: KeyExtractor + Sync,
+    M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
+    <K as KeyExtractor>::Key: Send + Sync + 'static
+{
+    let governor_conf = Arc::new(
+            cfg_builder
+            .finish()
+            .unwrap(),
+    );
+
+    let governor_limiter = governor_conf.limiter().clone();
+    let interval = Duration::from_secs(60);
+    // a separate background task to clean up
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(interval);
+            tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+            governor_limiter.retain_recent();
+        }
+    });
+
+    GovernorLayer { config: governor_conf }
 }
 
 fn open_api_router() -> Router<AppState> {
@@ -187,6 +216,10 @@ fn open_api_router() -> Router<AppState> {
         .route(&path(Profile), put(authentication::register))
 
         .route(&path(PasswordReset), post(authentication::reset_password))
+        .layer(governor_setup( GovernorConfigBuilder::default()
+            .per_second(4)
+            .burst_size(2)
+        ))
 }
 
 fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router<AppState> {
@@ -230,6 +263,7 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
         .route(&path(Recommend), post(recommendation::make))
 
         .layer(tower::ServiceBuilder::new()
+            .layer(governor_setup( &mut GovernorConfigBuilder::default()))
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
             .layer(middleware::from_fn_with_state(state, authentication::add_rejections))
             .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
