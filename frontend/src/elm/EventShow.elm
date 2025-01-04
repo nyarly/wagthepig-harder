@@ -3,7 +3,8 @@ module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, view)
 import Auth
 import Dict
 import Event exposing (browseToEvent, nickToVars)
-import Html exposing (Html, dd, dl, dt, table, td, text, th, thead, tr)
+import Html exposing (Html, a, dd, dl, dt, table, td, text, th, thead, tr)
+import Html.Attributes exposing (href)
 import Html.Keyed as Keyed
 import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
@@ -59,14 +60,14 @@ gameDecoder =
     D.succeed Game
         |> custom (D.map (HM.link GET) (D.field "id" D.string))
         |> decodeMaybe "name" D.string
-        |> decodeMaybe "min_players" D.int
-        |> decodeMaybe "max_players" D.int
-        |> decodeMaybe "bgg_link" D.string
-        |> decodeMaybe "duration_secs" D.int
-        |> decodeMaybe "bgg_id" D.string
+        |> decodeMaybe "minPlayers" D.int
+        |> decodeMaybe "maxPlayers" D.int
+        |> decodeMaybe "bggLink" D.string
+        |> decodeMaybe "durationSecs" D.int
+        |> decodeMaybe "bggId" D.string
         |> decodeMaybe "pitch" D.string
         |> decodeMaybe "interested" D.bool
-        |> decodeMaybe "can_teach" D.bool
+        |> decodeMaybe "canTeach" D.bool
         |> decodeMaybe "notes" D.bool
 
 
@@ -134,7 +135,7 @@ bidiupdate msg model =
         Entered creds loc ->
             case loc of
                 Nickname id ->
-                    ( { model | creds = creds }, fetchByNick creds model id, OutMsg.None )
+                    ( { model | creds = creds }, fetchByNick creds id, OutMsg.None )
 
                 Url url ->
                     ( { model | creds = creds }, fetchFromUrl creds url, OutMsg.None )
@@ -172,6 +173,7 @@ eventView model =
                     ++ defPair "Time" (Event.formatTime ev)
                     ++ defPair "Location" ev.location
                 )
+            , a [ href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
             ]
 
         Nothing ->
@@ -202,16 +204,16 @@ gamesView model =
                     , th [] [ text "canTeach" ]
                     , th [] [ text "notes" ]
                     ]
+                , Keyed.node "tbody" [] (List.map makeGameRow list)
                 ]
-            , Keyed.node "tbody" [] (List.foldr addGameRow [] list)
             ]
 
         Nothing ->
             []
 
 
-addGameRow : Game -> List ( String, Html msg ) -> List ( String, Html msg )
-addGameRow game list =
+makeGameRow : Game -> ( String, Html msg )
+makeGameRow game =
     ( Maybe.withDefault "noid" game.bggID
     , tr []
         [ td [] [ text (Maybe.withDefault "(missing)" game.name) ]
@@ -226,7 +228,6 @@ addGameRow game list =
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.notes)) ]
         ]
     )
-        :: list
 
 
 boolStr : Bool -> String
@@ -257,9 +258,9 @@ handleGameListResult res =
             ErrGameList err
 
 
-fetchByNick : Auth.Cred -> Model -> Int -> Cmd Msg
-fetchByNick creds model id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent (Maybe.map .template model.resource) creds id
+fetchByNick : Auth.Cred -> Int -> Cmd Msg
+fetchByNick creds id =
+    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToEvent) creds id
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
@@ -274,9 +275,6 @@ fetchFromUrl creds url =
 makeMsg : Auth.Cred -> Up.Representation Resource -> Msg
 makeMsg cred ex =
     case ex of
-        Up.None ->
-            Entered cred None
-
         Up.Loc aff ->
             Entered cred (Url aff.uri)
 

@@ -14,6 +14,8 @@ type Target
     | CreateEvent
     | EventEdit Int
     | EventShow Int
+    | CreateGame Int
+    | GameEdit Int Int
     | CredentialedArrival Target Cred
     | Register
     | CompleteRegistration String
@@ -47,6 +49,12 @@ buildFromTarget target =
 
         EventShow id ->
             absolute [ "games", String.fromInt id ] []
+
+        CreateGame event_id ->
+            absolute [ "games", String.fromInt event_id, "create" ] []
+
+        GameEdit event_id game_id ->
+            absolute [ "games", String.fromInt event_id, "edit", String.fromInt game_id ] []
 
         Register ->
             absolute [ "register" ] []
@@ -86,6 +94,12 @@ pageName target =
         EventShow _ ->
             "games"
 
+        CreateGame _ ->
+            "game_edit"
+
+        GameEdit _ _ ->
+            "game_edit"
+
         Register ->
             "register"
 
@@ -107,6 +121,8 @@ router =
         , map Register (s "register")
         , map EventEdit (s "event" </> int)
         , map EventShow (s "games" </> int)
+        , map CreateGame (s "games" </> int </> s "create")
+        , map GameEdit (s "games" </> int </> s "edit" </> int)
         , map registrationArrival (s "handle_registration" </> string </> Auth.fragmentParser)
         , map CompleteRegistration (s "complete_registration" </> string)
         ]

@@ -5,13 +5,15 @@
   * lower limits on infrequent auth endpoints
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
+* Rate limits on API per endpoint - lower for authn
 
 WTP parity:
 
 F/E
 * Event view (game list)
+  * Add game
+  * Search BGG
   * Table is sorted
-  * Add game (BGG JS interface)
   * Want to play
   * Know rules
   * Personal notes
@@ -19,6 +21,13 @@ F/E
 * What should we play?
   * Other players
   * extra players
+
+* Error handling - ideas
+  * Toasts
+  * Highlight/jump to issue
+  * Message near interaction (submit turns red)
+  * Retries
+  * Handling - e.g. creds rejected - drop creds (and toast)
 
 * Fork and strip for future projects
   * Rename semweb_api - "mattak" (b/c axum-mattak)

@@ -143,13 +143,13 @@ view model =
             , sortingHeader "Where" Location
             , th [ colspan 3 ] []
             ]
-        , Keyed.node "tbody" [] (List.foldr addRow [] (sortEvents model.sorting model.resource.events))
+        , Keyed.node "tbody" [] (List.map makeRow (sortEvents model.sorting model.resource.events))
         ]
     ]
 
 
-addRow : Event -> List ( String, Html Msg ) -> List ( String, Html Msg )
-addRow event list =
+makeRow : Event -> ( String, Html Msg )
+makeRow event =
     ( event.id
     , tr []
         [ td [] [ text event.name ]
@@ -159,7 +159,6 @@ addRow event list =
         , td [] [ eventEditButton event ]
         ]
     )
-        :: list
 
 
 createEventButton : Resource -> Html Msg

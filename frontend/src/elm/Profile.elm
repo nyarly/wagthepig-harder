@@ -135,7 +135,7 @@ bidiupdate msg model =
         Entered creds loc ->
             case loc of
                 Creds ->
-                    ( { model | creds = creds }, fetchByCreds creds model, OutMsg.None )
+                    ( { model | creds = creds }, fetchByCreds creds, OutMsg.None )
 
                 Url url ->
                     ( { model | creds = creds }, fetchFromUrl creds url.uri, OutMsg.None )
@@ -209,9 +209,6 @@ submitPasswordUpdate model =
 makeMsg : Auth.Cred -> Up.Representation Profile -> Msg
 makeMsg cred rep =
     case rep of
-        Up.None ->
-            Entered cred Creds
-
         Up.Loc aff ->
             Entered cred (Url aff)
 
@@ -237,9 +234,9 @@ putProfile creds model =
     Up.put encode decoder (makeMsg creds) creds model.etag model.profile
 
 
-fetchByCreds : Auth.Cred -> Model -> Cmd Msg
-fetchByCreds creds model =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile model.profile.template creds (Auth.accountID creds)
+fetchByCreds : Auth.Cred -> Cmd Msg
+fetchByCreds creds =
+    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToProfile) creds (Auth.accountID creds)
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg

@@ -1,11 +1,11 @@
-module ViewUtil exposing (inputPair, maybeSubmit, svgIcon, viewLink)
+module ViewUtil exposing (checkbox, inputPair, maybeSubmit, svgIcon, viewLink)
 
 -- more like "EwwwwUtil" amirite?
 
 import Html exposing (Attribute, Html, a, button, div, input, label, text)
-import Html.Attributes exposing (class, disabled, for, href, id, type_, value)
+import Html.Attributes exposing (checked, class, disabled, for, href, id, type_, value)
 import Html.Attributes.Extra exposing (attributeIf)
-import Html.Events exposing (onInput)
+import Html.Events exposing (onCheck, onInput)
 import Router
 import Svg exposing (svg, use)
 import Svg.Attributes as SAttr
@@ -20,6 +20,18 @@ inputPair attrs name v event =
     div [ class "field" ]
         [ label [ for pid ] [ text name ]
         , input ([ id pid, onInput event, value v ] ++ attrs) []
+        ]
+
+
+checkbox : List (Attribute msg) -> String -> Bool -> (Bool -> msg) -> Html msg
+checkbox attrs name tf event =
+    let
+        pid =
+            String.toLower name
+    in
+    div [ class "field" ]
+        [ input ([ type_ "checkbox", id pid, onCheck event, checked tf ] ++ attrs) []
+        , label [ for pid ] [ text name ]
         ]
 
 

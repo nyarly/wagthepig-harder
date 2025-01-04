@@ -197,7 +197,7 @@ follow maybeCred headers body makeRes aff =
             , body = body
             , timeout = Nothing
             , resolver = baseResolver makeRes
-            , headers = Debug.log "cred-header" (Auth.credHeader maybeCred) ++ headers
+            , headers = Auth.credHeader maybeCred ++ headers
             }
         )
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use iri_string::types::IriReferenceString;
 
-use crate::{db::{self, EventId, GameId, Omit, UserId}, routing::{GameLocate, RecommendLocate, RouteMap, UserLocate}, AppState, Error};
+use crate::{db::{self, EventId, GameId, Omit, UserId}, routing::{RecommendLocate, RouteMap, UserLocate}, AppState, Error};
 
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase")]
@@ -52,7 +52,7 @@ impl RecommendListResponse {
 #[serde(rename_all="camelCase")]
 pub(crate) struct RecommendResponse {
     #[serde(flatten)]
-    pub resource_fields: ResourceFields<GameLocate>,
+    pub resource_fields: ResourceFields<RecommendLocate>,
 
     pub name: Option<String>,
     pub min_players: Option<i32>,
@@ -63,11 +63,11 @@ pub(crate) struct RecommendResponse {
 }
 
 impl RecommendResponse {
-    pub fn from_query<E, U>(nested_at: &str, value: db::Game<GameId, E, U, Omit>) -> Result<Self, Error> {
+    pub fn from_query<U>(nested_at: &str, value: db::Game<GameId, EventId, U, Omit>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
-                &RouteMap::Game.prefixed(nested_at),
-                GameLocate{ game_id: value.id },
+                &RouteMap::Recommend.prefixed(nested_at),
+                RecommendLocate{ event_id: value.event_id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,

@@ -5,6 +5,7 @@ import CompleteRegistration
 import EventEdit
 import EventShow
 import Events
+import GameEdit
 import Html exposing (Html)
 import Landing
 import Login
@@ -20,6 +21,7 @@ type Msg
     | ProfileMsg Profile.Msg
     | EventsMsg Events.Msg
     | EventEditMsg EventEdit.Msg
+    | GameEditMsg GameEdit.Msg
     | EventShowMsg EventShow.Msg
     | RegisterMsg Register.Msg
     | CompleteRegistrationMsg CompleteRegistration.Msg
@@ -32,6 +34,7 @@ type alias Models =
     , events : Events.Model
     , event : EventEdit.Model
     , games : EventShow.Model
+    , game : GameEdit.Model
     , register : Register.Model
     , complete_registration : CompleteRegistration.Model
     }
@@ -46,6 +49,7 @@ init =
         Events.init
         EventEdit.init
         EventShow.init
+        GameEdit.init
         Register.init
         CompleteRegistration.init
 
@@ -89,6 +93,14 @@ view target models toMsg =
             EventEdit.view models.event
                 |> wrapMsg EventEditMsg
 
+        Router.CreateGame _ ->
+            GameEdit.view models.game
+                |> wrapMsg GameEditMsg
+
+        Router.GameEdit _ _ ->
+            GameEdit.view models.game
+                |> wrapMsg GameEditMsg
+
         Router.Register ->
             Register.view models.register
                 |> wrapMsg RegisterMsg
@@ -113,11 +125,20 @@ pageNav target creds models =
         Router.Register ->
             bidiupdate (RegisterMsg Register.Entered) models
 
+        Router.EventShow id ->
+            bidiupdate (EventShowMsg (EventShow.Entered creds (EventShow.Nickname id))) models
+
         Router.CreateEvent ->
             bidiupdate (EventEditMsg (EventEdit.Entered creds EventEdit.None)) models
 
         Router.EventEdit id ->
             bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname id))) models
+
+        Router.CreateGame ev ->
+            bidiupdate (GameEditMsg (GameEdit.ForCreate creds ev)) models
+
+        Router.GameEdit event_id game_id ->
+            bidiupdate (GameEditMsg (GameEdit.ForEdit creds event_id game_id)) models
 
         Router.CompleteRegistration email ->
             bidiupdate (CompleteRegistrationMsg (CompleteRegistration.Entered creds email)) models
@@ -165,6 +186,11 @@ bidiupdate msg models =
         CompleteRegistrationMsg submsg ->
             CompleteRegistration.bidiupdate submsg models.complete_registration
                 |> OutMsg.mapBoth (\pm -> { models | complete_registration = pm }) (Cmd.map CompleteRegistrationMsg)
+                |> consumeOutmsg
+
+        GameEditMsg submsg ->
+            GameEdit.bidiupdate submsg models.game
+                |> OutMsg.mapBoth (\pm -> { models | game = pm }) (Cmd.map GameEditMsg)
                 |> consumeOutmsg
 
 

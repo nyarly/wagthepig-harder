@@ -80,13 +80,13 @@ impl EventResponse {
                 &RouteMap::Event.prefixed(nested_at),
                 EventLocate{ event_id: value.id },
                 "api:eventByIdTemplate",
-                vec![ op(ActionType::View), op(ActionType::Update) ]
+                vec![ op(ActionType::View), op(ActionType::Update)]
             )?,
 
             games: IriTemplate {
                 id: "api:userEventGames".try_into()?,
                 template: usergames_tmpl,
-                operation: vec![ op(ActionType::Find)]
+                operation: vec![ op(ActionType::Find), op(ActionType::Add) ]
             },
 
             name: value.name,

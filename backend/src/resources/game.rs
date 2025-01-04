@@ -1,7 +1,7 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use chrono::NaiveDateTime;
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, hypermedia::{self, op, ActionType, Link, ResourceFields}};
+use semweb_api::{condreq, hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 
@@ -65,15 +65,17 @@ pub(crate) struct EventGameListResponse {
 
     pub make_recommendation: Link,
     pub users: Link,
+    pub game: IriTemplate,
     pub games: Vec<GameResponse>
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, semweb_api::Error> {
+        let game_tmpl = RouteMap::Game.prefixed(nested_at).template()?;
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::EventGames.prefixed(nested_at),
-                EventGamesLocate{ event_id, user_id },
+                EventGamesLocate{ event_id, user_id: user_id.clone() },
                 "api:gamesListByEventIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
@@ -90,8 +92,15 @@ impl EventGameListResponse {
                 id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id })?,
                 operation: vec![ op(ActionType::View) ]
             },
+
+            game: IriTemplate {
+                id: "api:userGame".try_into()?,
+                template: game_tmpl,
+                operation: vec![ op(ActionType::Find), op(ActionType::Update) ]
+            },
+
             games: list.into_iter().map(|game|
-                GameResponse::from_query(nested_at, game)
+                GameResponse::from_query(nested_at, user_id.clone(), game)
             ).collect::<Result<_,_>>()?
         })
     }
@@ -117,11 +126,11 @@ pub(crate) struct GameResponse {
 }
 
 impl GameResponse {
-    pub fn from_query<E, U>(nested_at: &str, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, Error> {
+    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, semweb_api::Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Game.prefixed(nested_at),
-                GameLocate{ game_id: value.id },
+                GameLocate{ game_id: value.id, user_id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
@@ -155,13 +164,14 @@ pub(crate) async fn create_new(
 
     let game = body.db_param().with_event_id(event_id);
     let new_id = game.add_new(&mut *tx, user_id.clone()).await?;
+    // XXX validate: interested must be true (or force true)
     let game = game.with_id(new_id).with_interest_data(body.interest_part());
-    game.update_interests(&mut *tx, user_id).await?;
+    game.update_interests(&mut *tx, user_id.clone()).await?;
 
     tx.commit().await.map_err(db::Error::from)?;
 
     let location_uri = RouteMap::Game.prefixed(nested_at.as_str())
-        .fill(GameLocate{ game_id: new_id })
+        .fill(GameLocate{ game_id: new_id, user_id })
         .map_err(Error::from)?;
 
     Ok((StatusCode::CREATED, [(header::LOCATION, location_uri.to_string())]))
@@ -176,6 +186,17 @@ pub(crate) async fn get_scoped_list(
 ) -> Result<impl IntoResponse, Error> {
     let games = Game::get_all_for_event_and_user(&db, event_id, user_id.clone()).await?;
     let resp = EventGameListResponse::from_query(nested_at.as_str(), event_id, user_id, games)?;
+    if_none_match.respond(resp).map_err(Error::from)
+}
+
+#[debug_handler(state = AppState)]
+pub(crate) async fn get(
+    State(db): State<Pool<Postgres>>,
+    if_none_match: condreq::CondRetreiveHeader,
+    nested_at: extract::NestedPath,
+    Path((game_id, user_id)): extract::Path<(GameId, String)>,
+) -> Result<impl IntoResponse, Error> {
+    let resp = retrieve(&db, &nested_at, game_id, user_id.clone()).await?;
     if_none_match.respond(resp).map_err(Error::from)
 }
 
@@ -199,12 +220,12 @@ pub(crate) async fn update(
 
     let game = game.with_interest_data(body.interest_part());
 
-    game.update_interests(&mut *tx, user_id).await
+    game.update_interests(&mut *tx, user_id.clone()).await
         .map_err(Error::from)?;
 
     tx.commit().await.map_err(db::Error::from)?;
 
-    Ok(Json(GameResponse::from_query(nested_at.as_str(), game)?))
+    Ok(Json(GameResponse::from_query(nested_at.as_str(), user_id, game)?))
 }
 
 async fn retrieve(
@@ -213,11 +234,11 @@ async fn retrieve(
     game_id: GameId,
     user_id: String,
 ) -> Result<GameResponse, Error> {
-    let maybe_game = Game::get_by_id_and_user(db, game_id, user_id).await?;
+    let maybe_game = Game::get_by_id_and_user(db, game_id, user_id.clone()).await?;
 
     match maybe_game {
         Some(game) => {
-            GameResponse::from_query(nested_at.as_str(), game)
+            GameResponse::from_query(nested_at.as_str(), user_id, game)
                 .map_err(Error::from)
         },
         None => Err((StatusCode::NOT_FOUND, "not found").into())

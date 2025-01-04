@@ -21,3 +21,7 @@ tmux swap-window -t :2 -s =process-compose
 tmux swap-window -t :3 -s =top
 tmux swap-window -t :4 -s =BE
 tmux swap-window -t :5 -s =BE-edit
+
+for n in FE-edit FE process-compose top BE BE-edit; do
+  tmux set-option -t "=:$n" remain-on-exit on
+done

@@ -13,7 +13,7 @@ nickToVars id =
 browseToEvent : HM.TemplateVars -> List (Response -> Result String Affordance)
 browseToEvent vars =
     [ HM.browse [ "events" ] (ByType "ViewAction")
-    , HM.browse [] (ByType "FindAction") |> HM.fillIn vars
+    , HM.browse [ "eventById" ] (ByType "FindAction") |> HM.fillIn vars
     ]
 
 

@@ -87,9 +87,10 @@ pub(crate) struct EventGamesLocate {
     pub user_id: String
 }
 
-#[derive(Serialize, Copy, Clone, Listable, Context, Extract)]
+#[derive(Serialize, Clone, Listable, Context, Extract)]
 pub(crate) struct GameLocate {
-    pub game_id: GameId
+    pub game_id: GameId,
+    pub user_id: String
 }
 
 #[derive(Serialize, Copy, Clone, Listable, Context, Extract)]

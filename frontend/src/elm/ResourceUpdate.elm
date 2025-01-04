@@ -1,4 +1,4 @@
-module ResourceUpdate exposing (Etag, Representation(..), fetchByNick, fetchFromUrl, put)
+module ResourceUpdate exposing (Etag, FetchPlan(..), Representation(..), browseToSend, fetchByNick, fetchFromUrl, put)
 
 import Auth
 import Dict
@@ -13,6 +13,13 @@ import Router
 
 {-
    Goal with this module is to handle the exchanges with the HM server that are standard
+
+   We want to be able to
+   - create a resource from whole cloth, and browse to "where to put it"
+     - then either load the server's response
+     - or fetch the response from the Location returned
+   - browse to a resource based on a "nickname" stored in a FE route
+   - edit and update (via a local affordance) a resource we have "in hand"
 
    So far:
    * FE needs to be able to fetch a resource based on its own router, so we need to take a nickname locator
@@ -67,13 +74,13 @@ import Router
 
    makeMsg = (then creds)
 -}
+{- The encodes the response from creating/updating a resource -}
 
 
 type Representation r
     = Loc Affordance
     | Res Etag r OutMsg.Msg
     | Error HM.Error
-    | None
 
 
 type alias Etag =
@@ -94,7 +101,30 @@ type alias MakeMsg r msg =
     Representation r -> msg
 
 
-put : ({ r | update : Maybe Affordance } -> E.Value) -> D.Decoder { r | update : Maybe Affordance } -> MakeMsg { r | update : Maybe Affordance } msg -> Auth.Cred -> Etag -> { r | update : Maybe Affordance } -> Cmd msg
+type alias BrowsePath =
+    Dict.Dict String String -> List AffordanceExtractor
+
+
+type FetchPlan
+    = Browse BrowsePath
+    | Template Affordance
+
+
+browseToSend : (r -> E.Value) -> D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String) -> BrowsePath -> n -> Auth.Cred -> r -> Cmd msg
+browseToSend encode decoder makeMsg nickToVars browsePath nick creds resource =
+    HM.chain creds (browsePath (nickToVars nick)) [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+
+
+
+-- XXX "has an affordance called 'update'" hits weird
+-- XXX even moreso, should we consider a generic Model with etag, affordances, and (generic) resource
+
+
+type alias Updateable r =
+    { r | update : Maybe Affordance }
+
+
+put : (Updateable r -> E.Value) -> D.Decoder (Updateable r) -> MakeMsg (Updateable r) msg -> Auth.Cred -> Etag -> Updateable r -> Cmd msg
 put encode decoder makeMsg cred etag resource =
     case resource.update of
         Just aff ->
@@ -104,14 +134,14 @@ put encode decoder makeMsg cred etag resource =
             Cmd.none
 
 
-fetchByNick : D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String) -> (Dict.Dict String String -> List AffordanceExtractor) -> Maybe Affordance -> Auth.Cred -> n -> Cmd msg
-fetchByNick decoder makeMsg nickToVars browsePath template creds nick =
+fetchByNick : D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String) -> FetchPlan -> Auth.Cred -> n -> Cmd msg
+fetchByNick decoder makeMsg nickToVars fetchPlan creds nick =
     let
         handleNickGetResult =
             handleGetResult (\_ -> OutMsg.None) makeMsg
     in
-    case template of
-        Just aff ->
+    case fetchPlan of
+        Template aff ->
             HM.chainFrom creds
                 (HM.fill (nickToVars nick) aff)
                 []
@@ -120,8 +150,12 @@ fetchByNick decoder makeMsg nickToVars browsePath template creds nick =
                 (modelRes decoder)
                 handleNickGetResult
 
-        Nothing ->
+        Browse browsePath ->
             HM.chain creds (browsePath (nickToVars nick)) [] HM.emptyBody (modelRes decoder) handleNickGetResult
+
+
+
+-- XXX Consider having Representation.Loc wrap an opaque type and use that instead of HM.Uri
 
 
 fetchFromUrl : D.Decoder r -> MakeMsg r msg -> (r -> Router.Target) -> Auth.Cred -> HM.Uri -> Cmd msg

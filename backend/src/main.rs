@@ -223,7 +223,7 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
                 .post(game::create_new)
         )
 
-        .route(&path(Game), put(game::update))
+        .route(&path(Game), get(game::get).put(game::update))
 
         .route(&path(GameUsers), get(profile::get_game_list))
 

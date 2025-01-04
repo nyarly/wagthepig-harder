@@ -21,7 +21,7 @@ import ViewUtil as Eww
 type alias Model =
     { creds : Auth.Cred
     , etag : Up.Etag
-    , resource : Resource -- XXX Maybe?
+    , resource : Resource
     }
 
 
@@ -88,8 +88,8 @@ decoder =
     D.map7 Resource
         (D.map (\u -> Just (HM.link GET u)) (D.field "id" D.string))
         (D.at [ "nick", "event_id" ] D.int)
-        (D.map (\laff -> HM.selectAffordance (ByType "FindAction") laff) HM.affordanceListDecoder)
-        (D.map (\laff -> HM.selectAffordance (ByType "UpdateAction") laff) HM.affordanceListDecoder)
+        (D.map (HM.selectAffordance (ByType "FindAction")) HM.affordanceListDecoder)
+        (D.map (HM.selectAffordance (ByType "UpdateAction")) HM.affordanceListDecoder)
         (D.field "name" D.string)
         (D.field "time" Iso8601.decoder)
         (D.field "location" D.string)
@@ -145,7 +145,7 @@ bidiupdate msg model =
 
                 -- creating a new Event
                 Nickname id ->
-                    ( { model | creds = creds }, fetchByNick creds model id, OutMsg.None )
+                    ( { model | creds = creds }, fetchByNick creds id, OutMsg.None )
 
                 Url url ->
                     ( { model | creds = creds }, fetchFromUrl creds url, OutMsg.None )
@@ -187,9 +187,6 @@ getCurrentTime =
 makeMsg : Auth.Cred -> Up.Representation Resource -> Msg
 makeMsg cred ex =
     case ex of
-        Up.None ->
-            Entered cred None
-
         Up.Loc aff ->
             Entered cred (Url aff.uri)
 
@@ -202,12 +199,12 @@ makeMsg cred ex =
 
 putEvent : Auth.Cred -> Model -> Cmd Msg
 putEvent creds model =
-    Up.put encodeEvent decoder (makeMsg creds) (Debug.log "creds" creds) model.etag model.resource
+    Up.put encodeEvent decoder (makeMsg creds) creds model.etag model.resource
 
 
-fetchByNick : Auth.Cred -> Model -> Int -> Cmd Msg
-fetchByNick creds model id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent model.resource.template creds id
+fetchByNick : Auth.Cred -> Int -> Cmd Msg
+fetchByNick creds id =
+    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToEvent) creds id
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
