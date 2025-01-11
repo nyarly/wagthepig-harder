@@ -1,10 +1,10 @@
-module ViewUtil exposing (checkbox, inputPair, maybeSubmit, svgIcon, viewLink)
+module ViewUtil exposing (checkbox, disabledUnless, inputPair, maybeSubmit, svgIcon, viewLink)
 
 -- more like "EwwwwUtil" amirite?
 
 import Html exposing (Attribute, Html, a, button, div, input, label, text)
 import Html.Attributes exposing (checked, class, disabled, for, href, id, type_, value)
-import Html.Attributes.Extra exposing (attributeIf)
+import Html.Attributes.Extra as Extra exposing (attributeIf)
 import Html.Events exposing (onCheck, onInput)
 import Router
 import Svg exposing (svg, use)
@@ -38,6 +38,16 @@ checkbox attrs name tf event =
 maybeSubmit : Bool -> String -> Html msg
 maybeSubmit pred label =
     button [ type_ "submit", attributeIf (not pred) (disabled True) ] [ text label ]
+
+
+disabledUnless : Maybe a -> Attribute msg
+disabledUnless maybe =
+    case maybe of
+        Just _ ->
+            Extra.empty
+
+        Nothing ->
+            disabled True
 
 
 svgIcon : String -> Html msg

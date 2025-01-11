@@ -177,8 +177,8 @@ async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
     routing::api_doc(nested_at.as_str())
 }
 
-fn governor_setup<K,M>(cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<K,M>
-where K: KeyExtractor + Sync,
+fn governor_setup<K,M>(name: &str, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<K,M>
+where K: KeyExtractor + Sync + std::fmt::Debug,
     M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
     <K as KeyExtractor>::Key: Send + Sync + 'static
 {
@@ -188,13 +188,15 @@ where K: KeyExtractor + Sync,
             .unwrap(),
     );
 
+    tracing::debug!("{name} governor created: {governor_conf:?}");
+
     let governor_limiter = governor_conf.limiter().clone();
     let interval = Duration::from_secs(60);
     // a separate background task to clean up
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(interval);
-            tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+            tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
             governor_limiter.retain_recent();
         }
     });
@@ -216,7 +218,7 @@ fn open_api_router() -> Router<AppState> {
         .route(&path(Profile), put(authentication::register))
 
         .route(&path(PasswordReset), post(authentication::reset_password))
-        .layer(governor_setup( GovernorConfigBuilder::default()
+        .layer(governor_setup("anonymous", GovernorConfigBuilder::default()
             .per_second(4)
             .burst_size(2)
         ))
@@ -263,7 +265,7 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
         .route(&path(Recommend), post(recommendation::make))
 
         .layer(tower::ServiceBuilder::new()
-            .layer(governor_setup( &mut GovernorConfigBuilder::default()))
+            .layer(governor_setup("authenticated",  &mut GovernorConfigBuilder::default()))
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
             .layer(middleware::from_fn_with_state(state, authentication::add_rejections))
             .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"

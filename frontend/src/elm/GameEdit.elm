@@ -1,11 +1,12 @@
 module GameEdit exposing (..)
 
 import Auth
+import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGItem, requestBGGSearch)
 import Dict
-import Html exposing (Html, a, button, div, form, text)
-import Html.Attributes exposing (class, disabled, href, name)
+import Html exposing (Html, a, button, div, form, img, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, disabled, href, name, src, type_)
 import Html.Attributes.Extra as Attr
-import Html.Events exposing (onSubmit)
+import Html.Events exposing (onClick, onSubmit)
 import Html.Extra as HtmlExtra
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import Json.Decode as D
@@ -31,6 +32,7 @@ type alias Model =
     , etag : Up.Etag
     , event_id : EventId
     , id : Maybe GameId
+    , bggSearchResults : List BGGGame
     , resource : Game -- XXX Maybe?
     }
 
@@ -150,9 +152,13 @@ type Msg
     | ChangeInterested Bool
     | ChangeCanTeach Bool
     | ChangeNotes String
+    | Pick BGGThing
+    | SearchName
     | Submit
     | CreatedGame
     | GotGame Up.Etag Game OutMsg.Msg
+    | BGGSearchResult (Result BGGAPI.Error (List BGGGame))
+    | BGGThingResult (Result BGGAPI.Error BGGThing)
     | ErrGetGame HM.Error
 
 
@@ -163,6 +169,7 @@ init =
         Nothing
         0
         Nothing
+        []
         (Game
             Nothing
             Nothing
@@ -199,6 +206,8 @@ view model =
     [ a [ href (Router.buildFromTarget (Router.EventShow model.event_id)) ] [ text "Back to Event" ]
     , form [ onSubmit Submit ]
         [ Eww.inputPair [] "Name" (qstr g.name) ChangeName
+        , button [ type_ "button", onClick SearchName, Eww.disabledUnless model.resource.name ] [ text "Search" ]
+        , searchResults model
         , Eww.inputPair [] "MinPlayers" (String.fromInt (qnum g.minPlayers)) (numMsg ChangeMinPlayers)
         , Eww.inputPair [] "MaxPlayers" (String.fromInt (qnum g.maxPlayers)) (numMsg ChangeMaxPlayers)
         , Eww.inputPair [] "DurationSecs" (String.fromInt (qnum g.durationSecs)) (numMsg ChangeDurationSecs)
@@ -224,6 +233,47 @@ view model =
             ]
         ]
     ]
+
+
+searchResults : Model -> Html Msg
+searchResults model =
+    if List.length model.bggSearchResults > 0 then
+        table []
+            [ thead []
+                [ th [] [ text "Thumb" ]
+                , th [] [ text "Name" ]
+                , th [] [ text "Description" ]
+                , th [] [ text "Pick" ]
+                ]
+            , tbody []
+                (List.map
+                    viewBggResult
+                    model.bggSearchResults
+                )
+            ]
+
+    else
+        HtmlExtra.nothing
+
+
+viewBggResult : BGGGame -> Html Msg
+viewBggResult game =
+    case game of
+        SearchResult bggRes ->
+            tr []
+                [ td [] [ text "placeholder" ]
+                , td [] [ text bggRes.name ]
+                , td [] [ text "?" ]
+                , td [] [ button [ type_ "button", disabled True ] [ text "Pick" ] ]
+                ]
+
+        Thing thing ->
+            tr []
+                [ td [] [ img [ src thing.thumbnail ] [] ]
+                , td [] [ text thing.name ]
+                , td [] [ text thing.description ]
+                , td [] [ button [ type_ "button", onClick (Pick thing) ] [ text "Pick" ] ]
+                ]
 
 
 interestedInput : Maybe Int -> Game -> Html Msg
@@ -282,8 +332,40 @@ bidiupdate msg model =
         ChangeNotes n ->
             ( updateRes (\r -> { r | notes = Just n }) model, Cmd.none, OutMsg.None )
 
+        Pick thing ->
+            let
+                res =
+                    model.resource
+
+                newRes =
+                    { res
+                        | name = Just thing.name
+                        , bggID = Just (String.fromInt thing.bggId)
+                        , minPlayers = Just thing.minPlayers
+                        , maxPlayers = Just thing.maxPlayers
+                        , durationSecs = Just (thing.durationMinutes * 60)
+                    }
+
+                onlyPicked g =
+                    case g of
+                        SearchResult _ ->
+                            False
+
+                        Thing t ->
+                            t.bggId == thing.bggId
+            in
+            ( { model | resource = newRes, bggSearchResults = List.filter onlyPicked model.bggSearchResults }, Cmd.none, OutMsg.None )
+
         Submit ->
             ( model, putGame model.creds model, OutMsg.None )
+
+        SearchName ->
+            case model.resource.name of
+                Just name ->
+                    ( model, requestBGGSearch BGGSearchResult name, OutMsg.None )
+
+                Nothing ->
+                    ( model, Cmd.none, OutMsg.None )
 
         CreatedGame ->
             ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id)) )
@@ -291,8 +373,56 @@ bidiupdate msg model =
         GotGame etag g outmsg ->
             ( { model | etag = etag, resource = g }, Cmd.none, outmsg )
 
+        BGGSearchResult r ->
+            case r of
+                Ok l ->
+                    ( { model | bggSearchResults = l }, shotgunGames l, OutMsg.None )
+
+                Err _ ->
+                    ( model, Cmd.none, OutMsg.None )
+
+        BGGThingResult r ->
+            case r of
+                Ok newGame ->
+                    ( { model | bggSearchResults = enrichGame model.bggSearchResults newGame }, Cmd.none, OutMsg.None )
+
+                Err _ ->
+                    ( model, Cmd.none, OutMsg.None )
+
         ErrGetGame _ ->
             ( model, Cmd.none, OutMsg.None )
+
+
+shotgunGames : List BGGGame -> Cmd Msg
+shotgunGames list =
+    let
+        fetchFromSearch game =
+            case game of
+                SearchResult res ->
+                    requestBGGItem BGGThingResult res.id
+
+                _ ->
+                    Cmd.none
+    in
+    Cmd.batch (List.map fetchFromSearch list)
+
+
+enrichGame : List BGGGame -> BGGThing -> List BGGGame
+enrichGame list newGame =
+    let
+        swapGame oldGame =
+            case oldGame of
+                SearchResult res ->
+                    if res.id == newGame.bggId then
+                        Thing newGame
+
+                    else
+                        oldGame
+
+                _ ->
+                    oldGame
+    in
+    List.map swapGame list
 
 
 updateMsg : Up.Representation Game -> Msg
