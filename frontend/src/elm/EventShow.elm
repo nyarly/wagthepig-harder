@@ -10,7 +10,7 @@ import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (custom, optional)
+import Json.Decode.Pipeline exposing (custom, optional, required)
 import OutMsg
 import ResourceUpdate as Up
 import Router
@@ -42,6 +42,7 @@ type alias GameList =
 
 type alias Game =
     { id : Affordance
+    , nick : GameNick
     , name : Maybe String
     , minPlayers : Maybe Int
     , maxPlayers : Maybe Int
@@ -55,10 +56,24 @@ type alias Game =
     }
 
 
+type alias GameNick =
+    { game_id : Int
+    , user_id : String
+    }
+
+
+gameNickDecoder : D.Decoder GameNick
+gameNickDecoder =
+    D.map2 GameNick
+        (D.field "game_id" D.int)
+        (D.field "user_id" D.string)
+
+
 gameDecoder : D.Decoder Game
 gameDecoder =
     D.succeed Game
         |> custom (D.map (HM.link GET) (D.field "id" D.string))
+        |> required "nick" gameNickDecoder
         |> decodeMaybe "name" D.string
         |> decodeMaybe "minPlayers" D.int
         |> decodeMaybe "maxPlayers" D.int
@@ -90,8 +105,8 @@ decoder =
     D.map7 Resource
         (D.map (\u -> HM.link GET u) (D.field "id" D.string))
         (D.at [ "nick", "event_id" ] D.int)
-        (D.map (HM.selectAffordance (ByType "ViewAction")) HM.affordanceListDecoder |> required "no view action!")
-        (D.field "games" (D.map (HM.selectAffordance (ByType "FindAction")) HM.affordanceListDecoder) |> required "no games template!")
+        (D.map (HM.selectAffordance (ByType "ViewAction")) HM.affordanceListDecoder |> mustHave "no view action!")
+        (D.field "games" (D.map (HM.selectAffordance (ByType "FindAction")) HM.affordanceListDecoder) |> mustHave "no games template!")
         (D.field "name" D.string)
         (D.field "time" Iso8601.decoder)
         (D.field "location" D.string)
@@ -102,8 +117,8 @@ gameListDecoder =
     D.field "games" (D.list gameDecoder)
 
 
-required : String -> D.Decoder (Maybe a) -> D.Decoder a
-required emsg =
+mustHave : String -> D.Decoder (Maybe a) -> D.Decoder a
+mustHave emsg =
     D.andThen
         (\m ->
             case m of
@@ -189,8 +204,8 @@ defPair term def =
 
 gamesView : Model -> List (Html Msg)
 gamesView model =
-    case model.games of
-        Just list ->
+    case ( model.resource, model.games ) of
+        ( Just ev, Just list ) ->
             [ table []
                 [ thead []
                     [ th [] [ text "name" ]
@@ -200,20 +215,20 @@ gamesView model =
                     , th [] [ text "durationSecs" ]
                     , th [] [ text "bggID" ]
                     , th [] [ text "pitch" ]
-                    , th [] [ text "interested" ]
-                    , th [] [ text "canTeach" ]
+                    , th [] [ text "my interest" ]
+                    , th [] [ text "tools" ]
                     , th [] [ text "notes" ]
                     ]
-                , Keyed.node "tbody" [] (List.map makeGameRow list)
+                , Keyed.node "tbody" [] (List.map (makeGameRow ev.nick) list)
                 ]
             ]
 
-        Nothing ->
+        _ ->
             []
 
 
-makeGameRow : Game -> ( String, Html msg )
-makeGameRow game =
+makeGameRow : Int -> Game -> ( String, Html msg )
+makeGameRow event_id game =
     ( Maybe.withDefault "noid" game.bggID
     , tr []
         [ td [] [ text (Maybe.withDefault "(missing)" game.name) ]
@@ -223,8 +238,13 @@ makeGameRow game =
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
         , td [] [ text (Maybe.withDefault "(missing)" game.bggID) ]
         , td [] [ text (Maybe.withDefault "(missing)" game.pitch) ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.interested)) ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.canTeach)) ]
+        , td []
+            [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.interested))
+            , text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.canTeach))
+            ]
+        , td []
+            [ a [ href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ text "Edit" ]
+            ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.notes)) ]
         ]
     )
@@ -245,7 +265,7 @@ fetchGamesList creds tmpl =
         credvars =
             Dict.fromList [ ( "user_id", Auth.accountID creds ) ]
     in
-    HM.chainFrom creds (HM.fill credvars tmpl) [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handleGameListResult
+    HM.chainFrom (HM.fill credvars tmpl) creds [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handleGameListResult
 
 
 handleGameListResult : Result Http.Error GameList -> Msg
@@ -260,7 +280,7 @@ handleGameListResult res =
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToEvent) creds id
+    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent creds id
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
@@ -272,7 +292,7 @@ fetchFromUrl creds url =
     Up.fetchFromUrl decoder (makeMsg creds) routeByHasNick creds url
 
 
-makeMsg : Auth.Cred -> Up.Representation Resource -> Msg
+makeMsg : Auth.Cred -> Up.Representation HM.Error Resource -> Msg
 makeMsg cred ex =
     case ex of
         Up.Loc aff ->

@@ -1,4 +1,4 @@
-module ViewUtil exposing (checkbox, disabledUnless, inputPair, maybeSubmit, svgIcon, viewLink)
+module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, svgIcon, viewLink)
 
 -- more like "EwwwwUtil" amirite?
 
@@ -40,8 +40,17 @@ maybeSubmit pred label =
     button [ type_ "submit", attributeIf (not pred) (disabled True) ] [ text label ]
 
 
-disabledUnless : Maybe a -> Attribute msg
-disabledUnless maybe =
+disabledIf : Bool -> Attribute msg
+disabledIf cond =
+    if cond then
+        disabled True
+
+    else
+        Extra.empty
+
+
+disabledMaybe : Maybe a -> Attribute msg
+disabledMaybe maybe =
     case maybe of
         Just _ ->
             Extra.empty

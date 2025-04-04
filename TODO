@@ -8,19 +8,21 @@ WTP parity:
 F/E
 * Event view (game list)
   * Table is sorted
-  * Want to play
-  * Know rules
-  * Who else? (is interested in this game)
+  * Buttons:
+    * Edit
+    * Want to play
+    * Know rules
+    * Who else? (is interested in this game)
 * What should we play?
   * Other players
   * extra players
 
 * View state
   * Table sorts (and eventually perspectives)
-  * Query in FE path?
+  * Query in FE path? Fragment?
 
 * Error handling - ideas
-  * Toasts
+  * Toasts - plugin
   * Highlight/jump to issue
   * Message near interaction (submit turns red)
   * Retries
@@ -31,7 +33,9 @@ F/E
 
 == Future work
 
+* In frontend, relationship between nick (= B/E Locator) and routes
 * investigate elm-concurrent-task (enables JSON-LD and Biscuits in Elm)
+* asset fingerprinting; seems like will require a bunder
 * Client-side JSON-LD
   - flatten/expand responses
   - validate `expect`
@@ -39,12 +43,15 @@ F/E
 * Biscuit WASM port for Elm e.g.
   - check if my ip = requesting ip
   - check if time is in the next 60 seconds
-* Sophisticated 409 handling in F/E for conditional updates (automatic 3-way merge)
+* Sophisticated 409 handling in F/E for conditional updates
+  (automatic 3-way merge)
 * For the URITemplate/matchit "bridge"
-  - consider adding the ability to "trade" '//' for a limit of 1 pre-path expression
+  - consider adding the ability to "trade" '//' for a limit of 1 pre-path
+    expression
 * Derive macro for RouteTemplate enums - like:
-Continuing to consider while building out the `routing` module. Would that be clearer?
-Consideration also: would that be aligning Locator with RM variants.
+
+Continuing to consider while building out the `routing` module. Would that be
+clearer? Consideration also: would that be aligning Locator with RM variants.
 ```
 #[derive(Copy, Clone, RouteTemplate)]
 pub(crate) enum RouteMap {
@@ -62,8 +69,19 @@ pub(crate) enum RouteMap {
     // ...
 }
 ```
-  - datapoint: have seen errors that were confusing when URITemplate and Locator struct didn't align
-    it would be great if that were impossible
+  - datapoint: have seen errors that were confusing when URITemplate and
+    Locator struct didn't align it would be great if that were impossible
+  - the considerations here are the locator and the route string - the locator
+    fixes the name and types of fields, but not the route...
+  - does the RouteMap need to be an enum? Consider instead `impl
+    RouteTemplate`, and change the "locator" structs to just the routes
+    themselves.
+
+Pre-ITP, had a moment thinking through Locator as an extra thing...
+- if using traits instead of enum, then Locator can simply become Route
+- since using traits on the enum anyway, we aren't getting a static dispatch advantage anymore.
+- simple derive for the RouteTemplate might also validate fields
+- (all this discussed in comment in src/routing.rs)
 
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
@@ -132,7 +150,7 @@ Interactions with the client are going to be the most painful to unpick.
 Routing remains an area of interest.
 
 
-HTTP DTOs: a delimma - do the DTOs get told `nested_at`, which feels a little out of scope,
+HTTP DTOs: a dilemma - do the DTOs get told `nested_at`, which feels a little out of scope,
 or do we hand them their routing::Entries to work with.
 Either could be made to work, but certainly lists would have to be given their item Entry as well....
 and then any other relationship would have to be provided by the consumer,

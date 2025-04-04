@@ -184,7 +184,7 @@ getCurrentTime =
     Task.perform TimeNow Time.now
 
 
-makeMsg : Auth.Cred -> Up.Representation Resource -> Msg
+makeMsg : Auth.Cred -> Up.Representation HM.Error Resource -> Msg
 makeMsg cred ex =
     case ex of
         Up.Loc aff ->
@@ -204,7 +204,7 @@ putEvent creds model =
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToEvent) creds id
+    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent creds id
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg

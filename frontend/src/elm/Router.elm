@@ -15,15 +15,23 @@ type Target
     | EventEdit Int
     | EventShow Int
     | CreateGame Int
-    | GameEdit Int Int
+    | EditGame Int Int
     | CredentialedArrival Target Cred
     | Register
     | CompleteRegistration String
 
 
+
+{- convert a path to a page route -}
+
+
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
     Debug.log "route-to" (parse router (Debug.log "log-from" url))
+
+
+
+{- render a path based on a page target -}
 
 
 buildFromTarget : Target -> String
@@ -51,10 +59,10 @@ buildFromTarget target =
             absolute [ "games", String.fromInt id ] []
 
         CreateGame event_id ->
-            absolute [ "games", String.fromInt event_id, "create" ] []
+            absolute [ "event", String.fromInt event_id, "create_game" ] []
 
-        GameEdit event_id game_id ->
-            absolute [ "games", String.fromInt event_id, "edit", String.fromInt game_id ] []
+        EditGame event_id game_id ->
+            absolute [ "events", String.fromInt event_id, "game", String.fromInt game_id, "edit" ] []
 
         Register ->
             absolute [ "register" ] []
@@ -95,9 +103,9 @@ pageName target =
             "games"
 
         CreateGame _ ->
-            "game_edit"
+            "game_create"
 
-        GameEdit _ _ ->
+        EditGame _ _ ->
             "game_edit"
 
         Register ->
@@ -119,10 +127,10 @@ router =
         , map Events (s "events")
         , map CreateEvent (s "new_event")
         , map Register (s "register")
+        , map CreateGame (s "event" </> int </> s "create_game")
         , map EventEdit (s "event" </> int)
         , map EventShow (s "games" </> int)
-        , map CreateGame (s "games" </> int </> s "create")
-        , map GameEdit (s "games" </> int </> s "edit" </> int)
+        , map EditGame (s "events" </> int </> s "game" </> int </> s "edit")
         , map registrationArrival (s "handle_registration" </> string </> Auth.fragmentParser)
         , map CompleteRegistration (s "complete_registration" </> string)
         ]

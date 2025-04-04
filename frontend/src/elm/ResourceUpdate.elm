@@ -8,6 +8,7 @@ import Json.Decode as D
 import Json.Encode as E
 import OutMsg
 import Router
+import Task
 
 
 
@@ -77,10 +78,10 @@ import Router
 {- The encodes the response from creating/updating a resource -}
 
 
-type Representation r
+type Representation e r
     = Loc Affordance
     | Res Etag r OutMsg.Msg
-    | Error HM.Error
+    | Error e
 
 
 type alias Etag =
@@ -97,8 +98,8 @@ etagHeader etag =
             []
 
 
-type alias MakeMsg r msg =
-    Representation r -> msg
+type alias MakeMsg e r msg =
+    Representation e r -> msg
 
 
 type alias BrowsePath =
@@ -110,9 +111,14 @@ type FetchPlan
     | Template Affordance
 
 
-browseToSend : (r -> E.Value) -> D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String) -> BrowsePath -> n -> Auth.Cred -> r -> Cmd msg
+browseToSend : (r -> E.Value) -> D.Decoder r -> MakeMsg HM.Error r msg -> (n -> Dict.Dict String String) -> BrowsePath -> n -> Auth.Cred -> r -> Cmd msg
 browseToSend encode decoder makeMsg nickToVars browsePath nick creds resource =
     HM.chain creds (browsePath (nickToVars nick)) [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+
+
+type RTError r
+    = HTTPErr Http.Error
+    | Malformed r
 
 
 
@@ -124,47 +130,75 @@ type alias Updateable r =
     { r | update : Maybe Affordance }
 
 
-put : (Updateable r -> E.Value) -> D.Decoder (Updateable r) -> MakeMsg (Updateable r) msg -> Auth.Cred -> Etag -> Updateable r -> Cmd msg
+type alias RoundTrip r msg =
+    { encode : Updateable r -> E.Value
+    , decoder : D.Decoder r
+    , makeMsg : MakeMsg (RTError (Updateable r)) r msg
+    , browsePlan : List AffordanceExtractor
+    , updateRes : r -> Updateable r
+    , creds : Auth.Cred
+    , vars : Dict.Dict String String
+    }
+
+
+doRoundTrip : RoundTrip r msg -> Cmd msg
+doRoundTrip rt =
+    let
+        doUpdate ( e, r ) =
+            Task.succeed ( e, rt.updateRes r )
+
+        toMsg =
+            handlePutResult rt.makeMsg
+
+        trip =
+            HM.browseFrom (HM.link HM.GET "/api") rt.creds rt.browsePlan [] HM.emptyBody (modelRes rt.decoder)
+                |> Task.mapError HTTPErr
+                |> Task.andThen doUpdate
+                |> Task.andThen
+                    (\( etag, resource ) ->
+                        case resource.update of
+                            Just aff ->
+                                HM.browseFrom aff rt.creds [] (etagHeader etag) (resource |> rt.encode >> Http.jsonBody) (putResponse rt.decoder)
+                                    |> Task.mapError HTTPErr
+
+                            _ ->
+                                Task.fail (Malformed resource)
+                    )
+    in
+    Task.attempt toMsg trip
+
+
+put : (Updateable r -> E.Value) -> D.Decoder (Updateable r) -> MakeMsg HM.Error (Updateable r) msg -> Auth.Cred -> Etag -> Updateable r -> Cmd msg
 put encode decoder makeMsg cred etag resource =
     case resource.update of
         Just aff ->
-            HM.chainFrom cred aff [] (etagHeader etag) (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+            HM.chainFrom aff cred [] (etagHeader etag) (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
 
         _ ->
             Cmd.none
 
 
-fetchByNick : D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String) -> FetchPlan -> Auth.Cred -> n -> Cmd msg
-fetchByNick decoder makeMsg nickToVars fetchPlan creds nick =
+fetchByNick : D.Decoder r -> MakeMsg HM.Error r msg -> (n -> Dict.Dict String String) -> BrowsePath -> Auth.Cred -> n -> Cmd msg
+fetchByNick decoder makeMsg nickToVars browsePath creds nick =
     let
         handleNickGetResult =
             handleGetResult (\_ -> OutMsg.None) makeMsg
     in
-    case fetchPlan of
-        Template aff ->
-            HM.chainFrom creds
-                (HM.fill (nickToVars nick) aff)
-                []
-                []
-                HM.emptyBody
-                (modelRes decoder)
-                handleNickGetResult
-
-        Browse browsePath ->
-            HM.chain creds (browsePath (nickToVars nick)) [] HM.emptyBody (modelRes decoder) handleNickGetResult
+    HM.chain creds (browsePath (nickToVars nick)) [] HM.emptyBody (modelRes decoder) handleNickGetResult
 
 
 
 -- XXX Consider having Representation.Loc wrap an opaque type and use that instead of HM.Uri
 
 
-fetchFromUrl : D.Decoder r -> MakeMsg r msg -> (r -> Router.Target) -> Auth.Cred -> HM.Uri -> Cmd msg
+fetchFromUrl : D.Decoder r -> MakeMsg HM.Error r msg -> (r -> Router.Target) -> Auth.Cred -> HM.Uri -> Cmd msg
 fetchFromUrl decoder makeMsg routeByHasNick creds access =
-    HM.chainFrom creds
+    HM.chainFrom
         (HM.link
             HM.GET
             access
         )
+        creds
         []
         []
         HM.emptyBody
@@ -217,7 +251,7 @@ putResponse decoder res =
             Err ("Unexpected status sending resource: " ++ String.fromInt other)
 
 
-handleResult : (r -> OutMsg.Msg) -> MakeMsg r msg -> Result HM.Error (HopOrResource r) -> msg
+handleResult : (r -> OutMsg.Msg) -> MakeMsg e r msg -> Result e (HopOrResource r) -> msg
 handleResult makeOut makeMsg res =
     makeMsg <|
         case res of
@@ -231,11 +265,11 @@ handleResult makeOut makeMsg res =
                 Error err
 
 
-handlePutResult : MakeMsg r msg -> Result HM.Error (HopOrResource r) -> msg
+handlePutResult : MakeMsg e r msg -> Result e (HopOrResource r) -> msg
 handlePutResult makeMsg res =
     handleResult (\_ -> OutMsg.None) makeMsg res
 
 
-handleGetResult : (r -> OutMsg.Msg) -> MakeMsg r msg -> Result HM.Error ( Etag, r ) -> msg
+handleGetResult : (r -> OutMsg.Msg) -> MakeMsg e r msg -> Result e ( Etag, r ) -> msg
 handleGetResult makeOut makeMsg rz =
     handleResult makeOut makeMsg (Result.map gotFromTuple rz)

@@ -18,7 +18,7 @@ pub fn fileserver<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_
     let app = router
         .nest_service("/",
             ServeDir::new(path::Path::new(&frontend_path))
-                .fallback(ServeFile::new(format!("{}/html/index.html", frontend_path)))
+                .not_found_service(ServeFile::new(format!("{}/html/index.html", frontend_path)))
         );
 
     Ok(app)
@@ -33,7 +33,7 @@ pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_
     let app = router
         .nest_service("/",
             ServeDir::new(path::Path::new(&frontend_path))
-                .fallback(ServeFile::new(format!("{}/html/index.html", frontend_path)))
+                .not_found_service(ServeFile::new(format!("{}/html/index.html", frontend_path)))
         )
         .layer(livereload);
 

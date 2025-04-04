@@ -12,6 +12,7 @@ module Hypermedia exposing
     , Uri
     , affordanceListDecoder
     , browse
+    , browseFrom
     , chain
     , chainFrom
     , decodeBody
@@ -165,21 +166,27 @@ type alias ResToMsg x a msg =
 
 
 chain : Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chain cred =
-    chainFrom cred (link GET "/api")
+chain =
+    chainFrom (link GET "/api")
 
 
-chainFrom : Auth.Cred -> Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chainFrom cred start extractors headers body makeRes toMsg =
+chainFrom : Affordance -> Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
+chainFrom start cred extractors headers body makeRes toMsg =
+    let
+        plan =
+            browseFrom start cred extractors headers body makeRes
+    in
+    Task.attempt toMsg plan
+
+
+browseFrom : Affordance -> Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> Task Http.Error a
+browseFrom start cred extractors headers body makeRes =
     let
         nextHop ex task =
             task |> andThen (follow cred [] Http.emptyBody ex)
-
-        plan =
-            List.foldl nextHop (Task.succeed start) extractors
-                |> andThen (follow cred headers body makeRes)
     in
-    Task.attempt toMsg plan
+    List.foldl nextHop (Task.succeed start) extractors
+        |> andThen (follow cred headers body makeRes)
 
 
 request : Auth.Cred -> Method -> String -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg

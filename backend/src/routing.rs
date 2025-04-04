@@ -6,6 +6,25 @@ use serde_json::json;
 
 use crate::db::{EventId, GameId, UserId};
 
+/*
+* Serious consideration:
+* All of the "*Locate" struct could themselves have a impl RouteTemplate
+* A trivial derive in semweb_api could implement the method - and check that the route and the
+* fields align?
+* Something like:
+*
+#[derive(Serialize, Clone, Route)]
+#[route_tmpl("/event_games/{event_id}/user/{user_id}")]
+pub(crate) struct EventGames {
+    pub event_id: EventId,
+    pub user_id: String
+}
+... with a compile time error if the template and the fields don't line up
+
+Something to add to semweb_api/mattok for next project
+*
+*/
+
 #[derive(Copy, Clone)]
 pub(crate) enum RouteMap {
     Root,

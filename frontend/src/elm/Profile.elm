@@ -206,7 +206,7 @@ submitPasswordUpdate model =
         AuthResponse
 
 
-makeMsg : Auth.Cred -> Up.Representation Profile -> Msg
+makeMsg : Auth.Cred -> Up.Representation Http.Error Profile -> Msg
 makeMsg cred rep =
     case rep of
         Up.Loc aff ->
@@ -236,7 +236,7 @@ putProfile creds model =
 
 fetchByCreds : Auth.Cred -> Cmd Msg
 fetchByCreds creds =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars (Up.Browse browseToProfile) creds (Auth.accountID creds)
+    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile creds (Auth.accountID creds)
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg

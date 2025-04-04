@@ -5,7 +5,8 @@ import CompleteRegistration
 import EventEdit
 import EventShow
 import Events
-import GameEdit
+import Game.Create
+import Game.Edit
 import Html exposing (Html)
 import Landing
 import Login
@@ -21,10 +22,23 @@ type Msg
     | ProfileMsg Profile.Msg
     | EventsMsg Events.Msg
     | EventEditMsg EventEdit.Msg
-    | GameEditMsg GameEdit.Msg
+    | GameCreateMsg Game.Create.Msg
+    | GameEditMsg Game.Edit.Msg
     | EventShowMsg EventShow.Msg
     | RegisterMsg Register.Msg
     | CompleteRegistrationMsg CompleteRegistration.Msg
+
+
+
+{-
+   future iterations: use the named record pattern thing
+   e.g. (in a page)
+   type alias Model = { model | fields: String, needed: Bool, here: Nick }
+   then there's one app model in Main, and modules to manage special types
+   (in this case Game, Event)
+
+   pro: Pages just passes the model on, we don't repeat things like creds
+-}
 
 
 type alias Models =
@@ -34,7 +48,8 @@ type alias Models =
     , events : Events.Model
     , event : EventEdit.Model
     , games : EventShow.Model
-    , game : GameEdit.Model
+    , editGame : Game.Edit.Model
+    , createGame : Game.Create.Model
     , register : Register.Model
     , complete_registration : CompleteRegistration.Model
     }
@@ -49,7 +64,8 @@ init =
         Events.init
         EventEdit.init
         EventShow.init
-        GameEdit.init
+        Game.Edit.init
+        Game.Create.init
         Register.init
         CompleteRegistration.init
 
@@ -94,11 +110,11 @@ view target models toMsg =
                 |> wrapMsg EventEditMsg
 
         Router.CreateGame _ ->
-            GameEdit.view models.game
-                |> wrapMsg GameEditMsg
+            Game.Create.view models.createGame
+                |> wrapMsg GameCreateMsg
 
-        Router.GameEdit _ _ ->
-            GameEdit.view models.game
+        Router.EditGame _ _ ->
+            Game.Edit.view models.editGame
                 |> wrapMsg GameEditMsg
 
         Router.Register ->
@@ -108,6 +124,22 @@ view target models toMsg =
         Router.CompleteRegistration _ ->
             CompleteRegistration.view models.complete_registration
                 |> wrapMsg CompleteRegistrationMsg
+
+
+
+{-
+   Consider for future iterations:
+   what if the router produced XXXMsg( XXX.Entered ... ) messages
+   instead of Router.Page enum values
+
+   pro: we could skip the pageNav function, because it becomes just
+   Pages.bidiupdate(enteredMsg)
+
+   cons: ?
+
+   weird: is there a reference cycle introduced that way?
+   could it be broken via OutMsg somehow?
+-}
 
 
 pageNav : Router.Target -> Auth.Cred -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
@@ -135,16 +167,23 @@ pageNav target creds models =
             bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname id))) models
 
         Router.CreateGame ev ->
-            bidiupdate (GameEditMsg (GameEdit.ForCreate creds ev)) models
+            bidiupdate (GameCreateMsg (Game.Create.Entered creds ev)) models
 
-        Router.GameEdit event_id game_id ->
-            bidiupdate (GameEditMsg (GameEdit.ForEdit creds event_id game_id)) models
+        Router.EditGame event_id game_id ->
+            bidiupdate (GameEditMsg (Game.Edit.Entered creds event_id game_id)) models
 
         Router.CompleteRegistration email ->
             bidiupdate (CompleteRegistrationMsg (CompleteRegistration.Entered creds email)) models
 
         _ ->
             ( models, Cmd.none, OutMsg.None )
+
+
+
+-- I wish Elm had a better way to map modules
+-- fundamentally there's a pattern I want to follow here around building an interface
+-- which Elm uses for App in the first place...
+-- consider cribbing from Elm.Main.init({}) - is that possible?
 
 
 bidiupdate : Msg -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
@@ -189,8 +228,13 @@ bidiupdate msg models =
                 |> consumeOutmsg
 
         GameEditMsg submsg ->
-            GameEdit.bidiupdate submsg models.game
-                |> OutMsg.mapBoth (\pm -> { models | game = pm }) (Cmd.map GameEditMsg)
+            Game.Edit.bidiupdate submsg models.editGame
+                |> OutMsg.mapBoth (\pm -> { models | editGame = pm }) (Cmd.map GameEditMsg)
+                |> consumeOutmsg
+
+        GameCreateMsg submsg ->
+            Game.Create.bidiupdate submsg models.createGame
+                |> OutMsg.mapBoth (\pm -> { models | createGame = pm }) (Cmd.map GameCreateMsg)
                 |> consumeOutmsg
 
 
