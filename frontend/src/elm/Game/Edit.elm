@@ -7,6 +7,7 @@ import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
+import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
@@ -210,3 +211,28 @@ fetchFromUrl creds event_id =
             Router.EditGame event_id r.nick.game_id
     in
     Up.fetchFromUrl decoder updateMsg routeByNick creds
+
+
+roundTrip : Up.MakeMsg Http.Error LoadedResource msg -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
+roundTrip makeMsg update cred event_id nick =
+    let
+        updateRz lr =
+            let
+                rz =
+                    update lr.resource
+            in
+            case lr.update of
+                Just aff ->
+                    Ok ( { lr | resource = rz }, aff )
+
+                Nothing ->
+                    Err (Http.BadStatus 429)
+    in
+    Up.doRoundTrip
+        { encode = encoder
+        , decoder = decoder
+        , makeMsg = makeMsg
+        , browsePlan = browseToFetch (nickToVars cred event_id nick)
+        , updateRes = updateRz
+        , creds = cred
+        }

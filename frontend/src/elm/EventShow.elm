@@ -3,8 +3,11 @@ module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, view)
 import Auth
 import Dict
 import Event exposing (browseToEvent, nickToVars)
-import Html exposing (Html, a, dd, dl, dt, table, td, text, th, thead, tr)
+import Game.Edit
+import Game.View as G
+import Html exposing (Html, a, button, dd, dl, dt, span, table, td, text, th, thead, tr)
 import Html.Attributes exposing (href)
+import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
@@ -15,6 +18,7 @@ import OutMsg
 import ResourceUpdate as Up
 import Router
 import Time
+import ViewUtil as Ew
 
 
 type alias Model =
@@ -42,7 +46,7 @@ type alias GameList =
 
 type alias Game =
     { id : Affordance
-    , nick : GameNick
+    , nick : G.Nick
     , name : Maybe String
     , minPlayers : Maybe Int
     , maxPlayers : Maybe Int
@@ -56,15 +60,9 @@ type alias Game =
     }
 
 
-type alias GameNick =
-    { game_id : Int
-    , user_id : String
-    }
-
-
-gameNickDecoder : D.Decoder GameNick
+gameNickDecoder : D.Decoder G.Nick
 gameNickDecoder =
-    D.map2 GameNick
+    D.map2 G.Nick
         (D.field "game_id" D.int)
         (D.field "user_id" D.string)
 
@@ -142,6 +140,11 @@ type Msg
     | GotGameList GameList
     | ErrGetEvent HM.Error
     | ErrGameList HM.Error
+    | UpdateGameInterest Bool Int G.Nick
+    | UpdatedGameInterest Bool G.Nick
+    | UpdateGameTeaching Bool Int G.Nick
+    | UpdatedGameTeaching Bool G.Nick
+    | UpdateError HM.Error
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -169,6 +172,48 @@ bidiupdate msg model =
 
         ErrGameList _ ->
             ( model, Cmd.none, OutMsg.None )
+
+        UpdateGameInterest val event_id nick ->
+            ( model, updateInterest val model.creds event_id nick, OutMsg.None )
+
+        -- XXX need to update table
+        UpdatedGameInterest val nick ->
+            ( { model
+                | games = gameItemUpdate nick (\g -> { g | interested = Just val }) model.games
+              }
+            , Cmd.none
+            , OutMsg.None
+            )
+
+        UpdateGameTeaching val event_id nick ->
+            ( model, updateTeaching val model.creds event_id nick, OutMsg.None )
+
+        -- XXX need to update table
+        UpdatedGameTeaching val nick ->
+            ( { model
+                | games = gameItemUpdate nick (\g -> { g | canTeach = Just val }) model.games
+              }
+            , Cmd.none
+            , OutMsg.None
+            )
+
+        UpdateError _ ->
+            ( model, Cmd.none, OutMsg.None )
+
+
+gameItemUpdate : G.Nick -> (Game -> Game) -> Maybe GameList -> Maybe GameList
+gameItemUpdate nick doUpdate games =
+    Maybe.map
+        (List.map
+            (\g ->
+                if g.nick == nick then
+                    doUpdate g
+
+                else
+                    g
+            )
+        )
+        games
 
 
 view : Model -> List (Html Msg)
@@ -227,8 +272,16 @@ gamesView model =
             []
 
 
-makeGameRow : Int -> Game -> ( String, Html msg )
+makeGameRow : Int -> Game -> ( String, Html Msg )
 makeGameRow event_id game =
+    let
+        checkbox bool =
+            if bool then
+                Ew.svgIcon "checkbox-checked"
+
+            else
+                Ew.svgIcon "checkbox-unchecked"
+    in
     ( Maybe.withDefault "noid" game.bggID
     , tr []
         [ td [] [ text (Maybe.withDefault "(missing)" game.name) ]
@@ -239,15 +292,68 @@ makeGameRow event_id game =
         , td [] [ text (Maybe.withDefault "(missing)" game.bggID) ]
         , td [] [ text (Maybe.withDefault "(missing)" game.pitch) ]
         , td []
-            [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.interested))
-            , text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.canTeach))
+            [ let
+                current =
+                    Maybe.withDefault True game.interested
+              in
+              button [ onClick (UpdateGameInterest (not current) event_id game.nick) ] [ span [] [ text "Interested" ], checkbox current ]
+            , let
+                current =
+                    Maybe.withDefault True game.canTeach
+              in
+              button [ onClick (UpdateGameTeaching (not current) event_id game.nick) ] [ span [] [ text "Can Teach" ], checkbox current ]
             ]
         , td []
-            [ a [ href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ text "Edit" ]
+            [ a [ href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
             ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.notes)) ]
         ]
     )
+
+
+updateGame :
+    { doUpdate : a -> G.Game -> G.Game
+    , successMsg : a -> G.Nick -> Msg
+    , failMsg : Http.Error -> Msg
+    }
+    -> a
+    -> Auth.Cred
+    -> Int
+    -> G.Nick
+    -> Cmd Msg
+updateGame { doUpdate, successMsg, failMsg } val creds event_id game_nick =
+    let
+        mkMsg rep =
+            -- Representation e r -> msg
+            case rep of
+                Up.Loc _ ->
+                    successMsg val game_nick
+
+                Up.Res _ _ _ ->
+                    successMsg val game_nick
+
+                Up.Error e ->
+                    failMsg e
+    in
+    Game.Edit.roundTrip mkMsg (doUpdate val) creds event_id game_nick
+
+
+updateInterest : Bool -> Auth.Cred -> Int -> G.Nick -> Cmd Msg
+updateInterest =
+    updateGame
+        { doUpdate = \v -> \g -> { g | interested = Just v }
+        , successMsg = UpdatedGameInterest
+        , failMsg = UpdateError
+        }
+
+
+updateTeaching : Bool -> Auth.Cred -> Int -> G.Nick -> Cmd Msg
+updateTeaching =
+    updateGame
+        { doUpdate = \v -> \g -> { g | canTeach = Just v }
+        , successMsg = UpdatedGameTeaching
+        , failMsg = UpdateError
+        }
 
 
 boolStr : Bool -> String

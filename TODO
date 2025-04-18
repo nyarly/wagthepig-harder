@@ -9,9 +9,6 @@ F/E
 * Event view (game list)
   * Table is sorted
   * Buttons:
-    * Edit
-    * Want to play
-    * Know rules
     * Who else? (is interested in this game)
 * What should we play?
   * Other players
@@ -33,9 +30,12 @@ F/E
 
 == Future work
 
+* Pre compress frontend assets in prod deploy?
+* Pact for tests?
+* Halogen/Purescript FE?
 * In frontend, relationship between nick (= B/E Locator) and routes
 * investigate elm-concurrent-task (enables JSON-LD and Biscuits in Elm)
-* asset fingerprinting; seems like will require a bunder
+* asset fingerprinting; seems like will require a bundler
 * Client-side JSON-LD
   - flatten/expand responses
   - validate `expect`
@@ -48,7 +48,16 @@ F/E
 * For the URITemplate/matchit "bridge"
   - consider adding the ability to "trade" '//' for a limit of 1 pre-path
     expression
-* Derive macro for RouteTemplate enums - like:
+* Derive macro: Route that includes
+  - RouteTemplate
+  - Listable
+  - Context
+  - Extract
+  So that locators can be used as routes. Pattern might be just to have a
+  `resources` with all the code for a particular resource (family) to be in one
+  place, including their locator-route. Then `main` bundles them all up
+  into the Axum route map.
+* [Thinking this isn't actually what we want] Derive macro for RouteTemplate enums - like:
 
 Continuing to consider while building out the `routing` module. Would that be
 clearer? Consideration also: would that be aligning Locator with RM variants.

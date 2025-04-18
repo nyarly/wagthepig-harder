@@ -246,14 +246,11 @@ consumeOutmsg ( models, cmd, out ) =
                 OutMsg.CreateEvent aff ->
                     ( { models | event = EventEdit.forCreate aff }, cmd, OutMsg.Main << OutMsg.Nav <| Router.CreateEvent )
 
-                -- XXX Hrrm. This creates a whole regime where I have to add outmsgs
-                OutMsg.EditEvent creds aff ->
-                    EventEdit.bidiupdate (EventEdit.Entered creds (EventEdit.Url aff.uri)) EventEdit.init
-                        |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
-
-                OutMsg.ShowEvent creds aff ->
-                    EventShow.bidiupdate (EventShow.Entered creds (EventShow.Url aff.uri)) EventShow.init
-                        |> OutMsg.mapBoth (\pm -> { models | games = pm }) (Cmd.map EventShowMsg)
-
+        {-
+           -- XXX Hrrm. This creates a whole regime where I have to add outmsgs
+           OutMsg.EditEvent creds aff ->
+               EventEdit.bidiupdate (EventEdit.Entered creds (EventEdit.Url aff.uri)) EventEdit.init
+                   |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
+        -}
         _ ->
             ( models, cmd, out )

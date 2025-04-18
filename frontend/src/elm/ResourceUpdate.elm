@@ -1,4 +1,14 @@
-module ResourceUpdate exposing (Etag, FetchPlan(..), Representation(..), browseToSend, fetchByNick, fetchFromUrl, put)
+module ResourceUpdate exposing
+    ( Etag
+    , FetchPlan(..)
+    , MakeMsg
+    , Representation(..)
+    , browseToSend
+    , doRoundTrip
+    , fetchByNick
+    , fetchFromUrl
+    , put
+    )
 
 import Auth
 import Dict
@@ -116,11 +126,6 @@ browseToSend encode decoder makeMsg nickToVars browsePath nick creds resource =
     HM.chain creds (browsePath (nickToVars nick)) [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
 
 
-type RTError r
-    = HTTPErr Http.Error
-    | Malformed r
-
-
 
 -- XXX "has an affordance called 'update'" hits weird
 -- XXX even moreso, should we consider a generic Model with etag, affordances, and (generic) resource
@@ -131,38 +136,35 @@ type alias Updateable r =
 
 
 type alias RoundTrip r msg =
-    { encode : Updateable r -> E.Value
+    { encode : r -> E.Value
     , decoder : D.Decoder r
-    , makeMsg : MakeMsg (RTError (Updateable r)) r msg
+    , makeMsg : MakeMsg Http.Error r msg
     , browsePlan : List AffordanceExtractor
-    , updateRes : r -> Updateable r
+    , updateRes : r -> Result Http.Error ( r, Affordance )
     , creds : Auth.Cred
-    , vars : Dict.Dict String String
     }
 
 
-doRoundTrip : RoundTrip r msg -> Cmd msg
-doRoundTrip rt =
+doRoundTrip : RoundTrip rz msg -> Cmd msg
+doRoundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
     let
         doUpdate ( e, r ) =
-            Task.succeed ( e, rt.updateRes r )
+            case updateRes r of
+                Ok ( new, aff ) ->
+                    Task.succeed ( e, new, aff )
+
+                Err x ->
+                    Task.fail x
 
         toMsg =
-            handlePutResult rt.makeMsg
+            handlePutResult makeMsg
 
         trip =
-            HM.browseFrom (HM.link HM.GET "/api") rt.creds rt.browsePlan [] HM.emptyBody (modelRes rt.decoder)
-                |> Task.mapError HTTPErr
+            HM.browseFrom (HM.link HM.GET "/api") creds browsePlan [] HM.emptyBody (modelRes decoder)
                 |> Task.andThen doUpdate
                 |> Task.andThen
-                    (\( etag, resource ) ->
-                        case resource.update of
-                            Just aff ->
-                                HM.browseFrom aff rt.creds [] (etagHeader etag) (resource |> rt.encode >> Http.jsonBody) (putResponse rt.decoder)
-                                    |> Task.mapError HTTPErr
-
-                            _ ->
-                                Task.fail (Malformed resource)
+                    (\( etag, resource, aff ) ->
+                        HM.browseFrom aff creds [] (etagHeader etag) (resource |> encode >> Http.jsonBody) (putResponse decoder)
                     )
     in
     Task.attempt toMsg trip

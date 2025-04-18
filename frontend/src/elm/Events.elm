@@ -2,8 +2,8 @@ module Events exposing (Model, Msg(..), bidiupdate, init, view)
 
 import Auth
 import Event
-import Html exposing (Html, a, button, h1, table, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan)
+import Html exposing (Html, a, button, h1, span, table, td, text, th, thead, tr)
+import Html.Attributes exposing (class, colspan, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
@@ -11,6 +11,7 @@ import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
 import OutMsg
+import Router
 import TableSort
 import Time
 
@@ -31,11 +32,20 @@ type alias Resource =
 
 type alias Event =
     { id : Uri
+    , nick : EventNick
     , name : String
     , time : Time.Posix
     , location : String
     , affordances : List Affordance
     }
+
+
+type alias EventNick =
+    { event_id : EventId }
+
+
+type alias EventId =
+    Int
 
 
 type SortBy
@@ -54,12 +64,18 @@ decoder =
 
 itemDecoder : D.Decoder Event
 itemDecoder =
-    D.map5 Event
+    D.map6 Event
         (D.field "id" D.string)
+        (D.field "nick" nickDecoder)
         (D.field "name" D.string)
         (D.field "time" Iso8601.decoder)
         (D.field "location" D.string)
         HM.affordanceListDecoder
+
+
+nickDecoder : D.Decoder EventNick
+nickDecoder =
+    D.map EventNick (D.field "event_id" D.int)
 
 
 type Msg
@@ -67,8 +83,6 @@ type Msg
     | GotEvents Resource
     | ErrGetEvents Http.Error
     | CreateNewEvent Affordance
-    | EditEvent Affordance
-    | ShowEvent Affordance
     | ChangeSort SortBy
 
 
@@ -95,12 +109,6 @@ bidiupdate msg model =
         -- XXX
         CreateNewEvent aff ->
             ( model, Cmd.none, OutMsg.Page << OutMsg.CreateEvent <| aff )
-
-        EditEvent aff ->
-            ( model, Cmd.none, OutMsg.Page (OutMsg.EditEvent model.creds aff) )
-
-        ShowEvent aff ->
-            ( model, Cmd.none, OutMsg.Page (OutMsg.ShowEvent model.creds aff) )
 
         ChangeSort by ->
             ( { model | sorting = TableSort.changeSort by model.sorting }, Cmd.none, OutMsg.None )
@@ -173,22 +181,12 @@ createEventButton eventlist =
 
 eventEditButton : Event -> Html Msg
 eventEditButton event =
-    case HM.selectAffordance (HM.ByType "UpdateAction") event.affordances of
-        Just aff ->
-            button [ class "edit", onClick (EditEvent aff) ] [ text "Edit" ]
-
-        Nothing ->
-            text "Edit"
+    a [ href (Router.buildFromTarget (Router.EventEdit event.nick.event_id)) ] [ text "Edit" ]
 
 
 eventShowButton : Event -> Html Msg
 eventShowButton event =
-    case HM.selectAffordance (HM.ByType "ViewAction") event.affordances of
-        Just aff ->
-            button [ class "show", onClick (ShowEvent aff) ] [ text "Show" ]
-
-        Nothing ->
-            text "Edit"
+    a [ href (Router.buildFromTarget (Router.EventShow event.nick.event_id)) ] [ text "Show" ]
 
 
 fetch : Auth.Cred -> Cmd Msg

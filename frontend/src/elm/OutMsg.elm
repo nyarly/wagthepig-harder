@@ -31,10 +31,11 @@ type MainMsg
     | NewCred Auth.Cred Router.Target
 
 
-type PageMsg
+type
+    PageMsg
+    -- time being, I'm leaving this as a cautionary tale:
+    -- "change page" -> a link. a [ href Router.buildFromTarget ... ]
     = CreateEvent HM.Affordance
-    | EditEvent Auth.Cred HM.Affordance
-    | ShowEvent Auth.Cred HM.Affordance
 
 
 mapBoth : (chModel -> pModel) -> (chMsg -> pMsg) -> ( chModel, chMsg, Msg ) -> ( pModel, pMsg, Msg )
