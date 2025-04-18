@@ -8,7 +8,7 @@ import Html.Attributes.Extra as Extra exposing (attributeIf)
 import Html.Events exposing (onCheck, onInput)
 import Router
 import Svg exposing (svg, use)
-import Svg.Attributes as SAttr
+import Svg.Attributes as SAttr exposing (viewBox)
 
 
 inputPair : List (Attribute msg) -> String -> String -> (String -> msg) -> Html msg
@@ -61,7 +61,7 @@ disabledMaybe maybe =
 
 svgIcon : String -> Html msg
 svgIcon name =
-    svg [ SAttr.class ("icon " ++ name) ]
+    svg [ SAttr.class ("icon " ++ name), viewBox "0 0 32 32" ]
         [ use [ SAttr.xlinkHref ("/assets/icons.svg#" ++ name) ] [] ]
 
 

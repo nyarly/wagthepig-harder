@@ -6,7 +6,7 @@ import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
 import Game.View as G
 import Html exposing (Html, a, button, dd, dl, dt, span, table, td, text, th, thead, tr)
-import Html.Attributes exposing (href)
+import Html.Attributes exposing (class, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
@@ -304,7 +304,7 @@ makeGameRow event_id game =
               button [ onClick (UpdateGameTeaching (not current) event_id game.nick) ] [ span [] [ text "Can Teach" ], checkbox current ]
             ]
         , td []
-            [ a [ href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
+            [ a [ class "button", href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
             ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.notes)) ]
         ]
