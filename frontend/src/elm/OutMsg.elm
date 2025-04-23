@@ -28,6 +28,7 @@ type Msg
 
 type MainMsg
     = Nav Router.Target
+    | UpdatePage Router.Target
     | NewCred Auth.Cred Router.Target
 
 

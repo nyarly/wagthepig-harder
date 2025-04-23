@@ -93,8 +93,8 @@ view target models toMsg =
             Profile.view models.profile
                 |> wrapMsg ProfileMsg
 
-        Router.Events ->
-            Events.view models.events
+        Router.Events sort ->
+            Events.view models.events sort
                 |> wrapMsg EventsMsg
 
         Router.EventEdit _ ->
@@ -151,8 +151,8 @@ pageNav target creds models =
         Router.Profile ->
             bidiupdate (ProfileMsg (Profile.Entered creds Profile.Creds)) models
 
-        Router.Events ->
-            bidiupdate (EventsMsg (Events.Entered creds)) models
+        Router.Events sort ->
+            bidiupdate (EventsMsg (Events.Entered creds sort)) models
 
         Router.Register ->
             bidiupdate (RegisterMsg Register.Entered) models

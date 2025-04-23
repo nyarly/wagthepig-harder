@@ -3,7 +3,6 @@ module Landing exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Router
-import ViewUtil exposing (viewLink)
 
 
 type alias Model =
@@ -22,3 +21,8 @@ view _ =
         , viewLink "Log In" Router.Login
         ]
     ]
+
+
+viewLink : String -> Router.Target -> Html msg
+viewLink txt path =
+    a [ href (Router.buildFromTarget path) ] [ text txt ]

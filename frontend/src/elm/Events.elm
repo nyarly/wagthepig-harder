@@ -2,8 +2,8 @@ module Events exposing (Model, Msg(..), bidiupdate, init, view)
 
 import Auth
 import Event
-import Html exposing (Html, a, button, h1, span, table, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan, href)
+import Html exposing (Html, a, button, h1, table, td, text, th, thead, tr)
+import Html.Attributes exposing (colspan, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
@@ -11,14 +11,17 @@ import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
 import OutMsg
-import Router
-import TableSort
+import Router exposing (EventSortBy(..))
+import TableSort exposing (SortOrder(..))
 import Time
+
+
+type alias TableSorting =
+    TableSort.Sorting EventSortBy
 
 
 type alias Model =
     { creds : Auth.Cred
-    , sorting : TableSort.Sorting SortBy
     , resource : Resource
     }
 
@@ -48,10 +51,9 @@ type alias EventId =
     Int
 
 
-type SortBy
-    = Name
-    | Date
-    | Location
+sortDefault : Maybe ( EventSortBy, SortOrder ) -> ( EventSortBy, SortOrder )
+sortDefault =
+    Maybe.withDefault ( Date, Descending )
 
 
 decoder : D.Decoder Resource
@@ -79,29 +81,31 @@ nickDecoder =
 
 
 type Msg
-    = Entered Auth.Cred
+    = Entered Auth.Cred (Maybe TableSorting)
     | GotEvents Resource
     | ErrGetEvents Http.Error
     | CreateNewEvent Affordance
-    | ChangeSort SortBy
+    | ChangeSort TableSorting
 
 
 init : Model
 init =
     Model
         Auth.unauthenticated
-        ( Date, TableSort.Descending )
         (Resource Nothing [] [])
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =
     case msg of
-        Entered creds ->
+        Entered creds _ ->
             ( { model | creds = creds }, fetch creds, OutMsg.None )
 
         GotEvents new ->
             ( { model | resource = new }, Cmd.none, OutMsg.None )
+
+        ChangeSort newsort ->
+            ( model, Cmd.none, OutMsg.Main << OutMsg.UpdatePage << Router.Events << Just <| newsort )
 
         ErrGetEvents _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -110,11 +114,8 @@ bidiupdate msg model =
         CreateNewEvent aff ->
             ( model, Cmd.none, OutMsg.Page << OutMsg.CreateEvent <| aff )
 
-        ChangeSort by ->
-            ( { model | sorting = TableSort.changeSort by model.sorting }, Cmd.none, OutMsg.None )
 
-
-sortWith : SortBy -> Event -> Event -> Order
+sortWith : EventSortBy -> Event -> Event -> Order
 sortWith by l r =
     case by of
         Name ->
@@ -131,16 +132,17 @@ sortWith by l r =
             compare (millis l) (millis r)
 
 
-sortEvents : TableSort.Sorting SortBy -> List Event -> List Event
-sortEvents sorting events =
-    TableSort.sort sortWith sorting events
-
-
-view : Model -> List (Html Msg)
-view model =
+view : Model -> Maybe TableSorting -> List (Html Msg)
+view model maybeSort =
     let
+        sorting =
+            sortDefault (Debug.log "event-sort" maybeSort)
+
         sortingHeader =
-            TableSort.sortingHeader ChangeSort model
+            TableSort.sortingHeader ChangeSort sorting
+
+        sortEvents events =
+            TableSort.sort sortWith sorting events
     in
     [ h1 [] [ text "Events" ]
     , createEventButton model.resource
@@ -151,7 +153,7 @@ view model =
             , sortingHeader "Where" Location
             , th [ colspan 3 ] []
             ]
-        , Keyed.node "tbody" [] (List.map makeRow (sortEvents model.sorting model.resource.events))
+        , Keyed.node "tbody" [] (List.map makeRow (sortEvents model.resource.events))
         ]
     ]
 

@@ -1,12 +1,11 @@
-module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, svgIcon, viewLink)
+module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, svgIcon)
 
 -- more like "EwwwwUtil" amirite?
 
-import Html exposing (Attribute, Html, a, button, div, input, label, text)
-import Html.Attributes exposing (checked, class, disabled, for, href, id, type_, value)
+import Html exposing (Attribute, Html, button, div, input, label, text)
+import Html.Attributes exposing (checked, class, disabled, for, id, type_, value)
 import Html.Attributes.Extra as Extra exposing (attributeIf)
 import Html.Events exposing (onCheck, onInput)
-import Router
 import Svg exposing (svg, use)
 import Svg.Attributes as SAttr exposing (viewBox)
 
@@ -63,8 +62,3 @@ svgIcon : String -> Html msg
 svgIcon name =
     svg [ SAttr.class ("icon " ++ name), viewBox "0 0 32 32" ]
         [ use [ SAttr.xlinkHref ("/assets/icons.svg#" ++ name) ] [] ]
-
-
-viewLink : String -> Router.Target -> Html msg
-viewLink txt path =
-    a [ href (Router.buildFromTarget path) ] [ text txt ]

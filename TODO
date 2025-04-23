@@ -14,10 +14,6 @@ F/E
   * Other players
   * extra players
 
-* View state
-  * Table sorts (and eventually perspectives)
-  * Query in FE path? Fragment?
-
 * Error handling - ideas
   * Toasts - plugin
   * Highlight/jump to issue
@@ -25,11 +21,19 @@ F/E
   * Retries
   * Handling - e.g. creds rejected - drop creds (and toast)
 
+* Auth failure handling (big enough merits own bullet)
+  * 401 -> drop auth,
+  * present login
+  * if successful, retry previous "thing"
+  * at least: return to previous page.
+  * distinguish expired vs. rejected credentials
+
 * Fork and strip for future projects
   * Rename semweb_api - "mattak" (b/c axum-mattak)
 
 == Future work
 
+* General view "perspectives" - including multiuse queries
 * Pre compress frontend assets in prod deploy?
 * Pact for tests?
 * Halogen/Purescript FE?
