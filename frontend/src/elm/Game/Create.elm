@@ -24,6 +24,8 @@ type alias GameId =
 type alias Model =
     { creds : Auth.Cred
     , etag : Up.Etag
+
+    -- XXX + event sorting
     , event_id : EventId
     , bggSearchResults : List BGGGame
     , resource : V.Game -- XXX Maybe?
@@ -58,7 +60,7 @@ init =
 
 view : Model -> List (Html Msg)
 view model =
-    [ a [ href (Router.buildFromTarget (Router.EventShow model.event_id)) ] [ text "Back to Event" ]
+    [ a [ href (Router.buildFromTarget (Router.EventShow model.event_id Nothing)) ] [ text "Back to Event" ]
     , form [ onSubmit Submit ]
         (List.map (Html.map GameMsg) (V.view False model)
             ++ [ div [ class "actions" ] [ button [] [ text "Submit" ] ]
@@ -85,7 +87,7 @@ bidiupdate msg model =
             ( model, putGame model.creds model, OutMsg.None )
 
         CreatedGame ->
-            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id)) )
+            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
 
         GotGame etag g outmsg ->
             ( { model | etag = etag, resource = g }, Cmd.none, outmsg )

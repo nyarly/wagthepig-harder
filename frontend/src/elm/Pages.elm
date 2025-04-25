@@ -101,8 +101,8 @@ view target models toMsg =
             EventEdit.view models.event
                 |> wrapMsg EventEditMsg
 
-        Router.EventShow _ ->
-            EventShow.view models.games
+        Router.EventShow _ sorting ->
+            EventShow.view models.games sorting
                 |> wrapMsg EventShowMsg
 
         Router.CreateEvent ->
@@ -157,7 +157,7 @@ pageNav target creds models =
         Router.Register ->
             bidiupdate (RegisterMsg Register.Entered) models
 
-        Router.EventShow id ->
+        Router.EventShow id _ ->
             bidiupdate (EventShowMsg (EventShow.Entered creds (EventShow.Nickname id))) models
 
         Router.CreateEvent ->

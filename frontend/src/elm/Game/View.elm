@@ -1,13 +1,25 @@
-module Game.View exposing (..)
+module Game.View exposing
+    ( Game
+    , GameAndSearch
+    , Msg(..)
+    , Nick
+    , bggLink
+    , bidiupdate
+    , decoder
+    , encoder
+    , init
+    , nickDecode
+    , view
+    )
 
 import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGItem, requestBGGSearch)
-import Html exposing (Html, button, img, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (disabled, name, src, type_)
+import Html exposing (Html, a, button, img, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
 import Hypermedia exposing (Method(..), OperationSelector(..))
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (optional, required)
+import Json.Decode.Pipeline exposing (optional)
 import Json.Encode as E
 import Maybe exposing (withDefault)
 import OutMsg
@@ -58,7 +70,6 @@ type alias Game =
     { name : Maybe String
     , minPlayers : Maybe Int
     , maxPlayers : Maybe Int
-    , bggLink : Maybe String
     , durationSecs : Maybe Int
     , bggID : Maybe String
     , pitch : Maybe String
@@ -90,7 +101,6 @@ init =
         Nothing
         Nothing
         Nothing
-        Nothing
 
 
 decoder : D.Decoder Game
@@ -99,7 +109,6 @@ decoder =
         |> decodeMaybe "name" D.string
         |> decodeMaybe "minPlayers" D.int
         |> decodeMaybe "maxPlayers" D.int
-        |> decodeMaybe "bggLink" D.string
         |> decodeMaybe "durationSecs" D.int
         |> decodeMaybe "bggId" D.string
         |> decodeMaybe "pitch" D.string
@@ -126,9 +135,8 @@ encoder g =
         [ ( "name", encodeMaybe E.string g.name )
         , ( "minPlayers", encodeMaybe E.int g.minPlayers )
         , ( "maxPlayers", encodeMaybe E.int g.maxPlayers )
-        , ( "bggLink", encodeMaybe E.string g.bggLink )
         , ( "durationSecs", encodeMaybe E.int g.durationSecs )
-        , ( "bggID", encodeMaybe E.string g.bggID )
+        , ( "bggId", encodeMaybe E.string g.bggID )
         , ( "pitch", encodeMaybe E.string g.pitch )
         , ( "interested", encodeMaybe E.bool g.interested )
         , ( "canTeach", encodeMaybe E.bool g.canTeach )
@@ -150,7 +158,6 @@ type Msg
     = ChangeName String
     | ChangeMinPlayers Int
     | ChangeMaxPlayers Int
-    | ChangeBggLink String
     | ChangeDurationSecs Int
     | ChangeBggID String
     | ChangePitch String
@@ -161,6 +168,10 @@ type Msg
     | SearchName
     | BGGSearchResult (Result BGGAPI.Error (List BGGGame))
     | BGGThingResult (Result BGGAPI.Error BGGThing)
+
+
+
+-- XXX this should be editView, and there should also be showView
 
 
 view : Bool -> GameAndSearch gas -> List (Html Msg)
@@ -187,13 +198,24 @@ view showInterest model =
     , Eww.inputPair [] "MinPlayers" (String.fromInt (dnum game.minPlayers)) (numMsg ChangeMinPlayers)
     , Eww.inputPair [] "MaxPlayers" (String.fromInt (dnum game.maxPlayers)) (numMsg ChangeMaxPlayers)
     , Eww.inputPair [] "DurationSecs" (String.fromInt (dnum game.durationSecs)) (numMsg ChangeDurationSecs)
-    , Eww.inputPair [] "BggLink" (dstr game.bggLink) ChangeBggLink
     , Eww.inputPair [] "BggID" (dstr game.bggID) ChangeBggID
     , Eww.inputPair [] "Pitch" (dstr game.pitch) ChangePitch
     , interestedInput showInterest game
     , Eww.checkbox [] "CanTeach" (withDefault False game.canTeach) ChangeCanTeach
     , Eww.inputPair [] "Notes" (dstr game.notes) ChangeNotes
     ]
+
+
+bggLink : { game | name : Maybe String, bggID : Maybe String } -> Html msg
+bggLink { name, bggID } =
+    let
+        nameHTML =
+            text (Maybe.withDefault "(name missing)" name)
+
+        makeLink id =
+            a [ href ("https://boardgamegeek.com/boardgame/" ++ id) ] [ nameHTML ]
+    in
+    Maybe.withDefault nameHTML (Maybe.map makeLink bggID)
 
 
 searchResults : List BGGGame -> Html Msg
@@ -257,9 +279,6 @@ gameUpdate msg game =
 
         ChangeMaxPlayers v ->
             ( { game | maxPlayers = Just v }, Cmd.none )
-
-        ChangeBggLink l ->
-            ( { game | bggLink = Just l }, Cmd.none )
 
         ChangeDurationSecs l ->
             ( { game | durationSecs = Just l }, Cmd.none )
@@ -354,9 +373,6 @@ bidiupdate msg model =
             gameDispatch
 
         ChangeMaxPlayers _ ->
-            gameDispatch
-
-        ChangeBggLink _ ->
             gameDispatch
 
         ChangeDurationSecs _ ->

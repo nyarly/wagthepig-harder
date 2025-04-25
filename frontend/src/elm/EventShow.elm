@@ -4,8 +4,8 @@ import Auth
 import Dict
 import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
-import Game.View as G
-import Html exposing (Html, a, button, dd, dl, dt, span, table, td, text, th, thead, tr)
+import Game.View as G exposing (bggLink)
+import Html exposing (Html, a, button, dd, dl, dt, h3, li, span, table, td, text, th, thead, tr, ul)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
@@ -13,10 +13,11 @@ import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (custom, optional, required)
+import Json.Decode.Pipeline exposing (custom, hardcoded, optional, required)
 import OutMsg
 import ResourceUpdate as Up
-import Router
+import Router exposing (GameSortBy(..))
+import TableSort exposing (SortOrder(..), sortingHeader)
 import Time
 import ViewUtil as Ew
 
@@ -44,20 +45,62 @@ type alias GameList =
     List Game
 
 
+type alias GameSorting =
+    TableSort.Sorting GameSortBy
+
+
 type alias Game =
     { id : Affordance
+    , users : Affordance
     , nick : G.Nick
     , name : Maybe String
     , minPlayers : Maybe Int
     , maxPlayers : Maybe Int
-    , bggLink : Maybe String
     , durationSecs : Maybe Int
     , bggID : Maybe String
     , pitch : Maybe String
     , interested : Maybe Bool
     , canTeach : Maybe Bool
     , notes : Maybe Bool
+    , whoElse : OtherPlayers
     }
+
+
+type OtherPlayers
+    = Empty
+    | Open (List Player)
+    | Closed (List Player)
+
+
+otherPlayersDecoder : D.Decoder OtherPlayers
+otherPlayersDecoder =
+    D.succeed Open
+        |> required "users" (D.list playerDecoder)
+
+
+type alias Player =
+    { name : Maybe String
+    , bgg_username : Maybe String
+    , email : String
+    }
+
+
+playerDecoder : D.Decoder Player
+playerDecoder =
+    D.succeed Player
+        |> decodeMaybe "name" D.string
+        |> decodeMaybe "bgg_username" D.string
+        |> required "email" D.string
+
+
+closeOtherPlayers : OtherPlayers -> OtherPlayers
+closeOtherPlayers ops =
+    case ops of
+        Open list ->
+            Closed list
+
+        _ ->
+            ops
 
 
 gameNickDecoder : D.Decoder G.Nick
@@ -71,17 +114,18 @@ gameDecoder : D.Decoder Game
 gameDecoder =
     D.succeed Game
         |> custom (D.map (HM.link GET) (D.field "id" D.string))
+        |> custom (D.map (HM.link GET) (D.at [ "users", "id" ] D.string))
         |> required "nick" gameNickDecoder
         |> decodeMaybe "name" D.string
         |> decodeMaybe "minPlayers" D.int
         |> decodeMaybe "maxPlayers" D.int
-        |> decodeMaybe "bggLink" D.string
         |> decodeMaybe "durationSecs" D.int
         |> decodeMaybe "bggId" D.string
         |> decodeMaybe "pitch" D.string
         |> decodeMaybe "interested" D.bool
         |> decodeMaybe "canTeach" D.bool
         |> decodeMaybe "notes" D.bool
+        |> hardcoded Empty
 
 
 decodeMaybe : String -> D.Decoder a -> D.Decoder (Maybe a -> b) -> D.Decoder b
@@ -136,15 +180,20 @@ type Bookmark
 
 type Msg
     = Entered Auth.Cred Bookmark
+    | ChangeSort GameSorting
     | GotEvent Up.Etag Resource OutMsg.Msg
     | GotGameList GameList
-    | ErrGetEvent HM.Error
-    | ErrGameList HM.Error
+    | GetOtherPlayers G.Nick Affordance
+    | GotOtherPlayers G.Nick OtherPlayers
+    | CloseOtherPlayers G.Nick
     | UpdateGameInterest Bool Int G.Nick
     | UpdatedGameInterest Bool G.Nick
     | UpdateGameTeaching Bool Int G.Nick
     | UpdatedGameTeaching Bool G.Nick
     | UpdateError HM.Error
+    | ErrOtherPlayers HM.Error
+    | ErrGetEvent HM.Error
+    | ErrGameList HM.Error
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -160,6 +209,14 @@ bidiupdate msg model =
 
                 None ->
                     ( { model | creds = creds }, Cmd.none, OutMsg.None )
+
+        ChangeSort newsort ->
+            case model.resource of
+                Just event ->
+                    ( model, Cmd.none, OutMsg.Main << OutMsg.UpdatePage <| Router.EventShow event.nick (Just newsort) )
+
+                Nothing ->
+                    ( model, Cmd.none, OutMsg.None )
 
         GotEvent etag ev outmsg ->
             ( { model | etag = etag, resource = Just ev }, fetchGamesList model.creds ev.gamesTemplate, outmsg )
@@ -200,6 +257,40 @@ bidiupdate msg model =
         UpdateError _ ->
             ( model, Cmd.none, OutMsg.None )
 
+        CloseOtherPlayers nick ->
+            let
+                closeGame game =
+                    { game | whoElse = closeOtherPlayers game.whoElse }
+            in
+            ( { model | games = gameItemUpdate nick closeGame model.games }, Cmd.none, OutMsg.None )
+
+        GetOtherPlayers nick aff ->
+            let
+                closeGame game =
+                    { game | whoElse = closeOtherPlayers game.whoElse }
+
+                closeAll games =
+                    Maybe.map (List.map closeGame) games
+            in
+            ( { model | games = closeAll model.games }, fetchOtherPlayers model.creds nick aff, OutMsg.None )
+
+        GotOtherPlayers nick list ->
+            ( { model
+                | games =
+                    gameItemUpdate nick
+                        (\g ->
+                            Debug.log "set who-else"
+                                { g | whoElse = list }
+                        )
+                        model.games
+              }
+            , Cmd.none
+            , OutMsg.None
+            )
+
+        ErrOtherPlayers _ ->
+            ( model, Cmd.none, OutMsg.None )
+
 
 gameItemUpdate : G.Nick -> (Game -> Game) -> Maybe GameList -> Maybe GameList
 gameItemUpdate nick doUpdate games =
@@ -216,10 +307,10 @@ gameItemUpdate nick doUpdate games =
         games
 
 
-view : Model -> List (Html Msg)
-view model =
+view : Model -> Maybe GameSorting -> List (Html Msg)
+view model maybeSort =
     eventView model
-        ++ gamesView model
+        ++ gamesView model maybeSort
 
 
 eventView : Model -> List (Html Msg)
@@ -233,38 +324,39 @@ eventView model =
                     ++ defPair "Time" (Event.formatTime ev)
                     ++ defPair "Location" ev.location
                 )
-            , a [ href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
+            , a [ class "button", href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
             ]
 
         Nothing ->
             [ text "no event loaded yet" ]
 
 
-defPair : String -> String -> List (Html msg)
-defPair term def =
-    [ dt [] [ text term ]
-    , dd [] [ text def ]
-    ]
+gamesView : Model -> Maybe GameSorting -> List (Html Msg)
+gamesView model maybeSort =
+    let
+        sorting =
+            sortDefault (Debug.log "game-sort" maybeSort)
 
+        sortingHeader =
+            TableSort.sortingHeader ChangeSort sorting
 
-gamesView : Model -> List (Html Msg)
-gamesView model =
+        sort l =
+            TableSort.sort sortWith sorting l
+    in
     case ( model.resource, model.games ) of
         ( Just ev, Just list ) ->
             [ table []
                 [ thead []
-                    [ th [] [ text "name" ]
-                    , th [] [ text "minPlayers" ]
-                    , th [] [ text "maxPlayers" ]
-                    , th [] [ text "bggLink" ]
-                    , th [] [ text "durationSecs" ]
-                    , th [] [ text "bggID" ]
-                    , th [] [ text "pitch" ]
-                    , th [] [ text "my interest" ]
-                    , th [] [ text "tools" ]
-                    , th [] [ text "notes" ]
+                    [ sortingHeader "Name" GameName
+                    , sortingHeader "Min Players" MinPlayers
+                    , sortingHeader "Max Players" MaxPlayers
+                    , sortingHeader "Duration" Duration
+                    , th [] [ text "Pitch" ]
+                    , sortingHeader "My Interest" Interest
+                    , th [] [ text "Tools" ]
+                    , th [] [ text "My Notes" ]
                     ]
-                , Keyed.node "tbody" [] (List.map (makeGameRow ev.nick) list)
+                , Keyed.node "tbody" [] (List.map (makeGameRow ev.nick) (sort list))
                 ]
             ]
 
@@ -284,31 +376,139 @@ makeGameRow event_id game =
     in
     ( Maybe.withDefault "noid" game.bggID
     , tr []
-        [ td [] [ text (Maybe.withDefault "(missing)" game.name) ]
+        [ td [] [ bggLink game ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.minPlayers)) ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.maxPlayers)) ]
-        , td [] [ text (Maybe.withDefault "(missing)" game.bggLink) ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
-        , td [] [ text (Maybe.withDefault "(missing)" game.bggID) ]
-        , td [] [ text (Maybe.withDefault "(missing)" game.pitch) ]
+        , td [] [ text (Maybe.withDefault "" game.pitch) ]
         , td []
             [ let
                 current =
                     Maybe.withDefault True game.interested
               in
-              button [ onClick (UpdateGameInterest (not current) event_id game.nick) ] [ span [] [ text "Interested" ], checkbox current ]
+              button [ class "interest", onClick (UpdateGameInterest (not current) event_id game.nick) ] [ span [] [ text "Interested" ], checkbox current ]
             , let
                 current =
                     Maybe.withDefault True game.canTeach
               in
-              button [ onClick (UpdateGameTeaching (not current) event_id game.nick) ] [ span [] [ text "Can Teach" ], checkbox current ]
+              button [ class "canteach", onClick (UpdateGameTeaching (not current) event_id game.nick) ] [ span [] [ text "Can Teach" ], checkbox current ]
             ]
         , td []
-            [ a [ class "button", href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
+            [ a [ class "button edit", href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
+            , button [ class "whoelse", onClick (GetOtherPlayers game.nick game.users) ] [ span [] [ text "Who Else?" ] ]
             ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map boolStr game.notes)) ]
+        , td [] [ text (Maybe.withDefault "" (Maybe.map boolStr game.notes)) ]
+        , whoElseTD game
         ]
     )
+
+
+whoElseTD : Game -> Html Msg
+whoElseTD { whoElse, nick } =
+    let
+        playerName player =
+            case player.name of
+                Just name ->
+                    name
+
+                Nothing ->
+                    case player.bgg_username of
+                        Just bname ->
+                            bname
+
+                        Nothing ->
+                            player.email
+    in
+    case whoElse of
+        Open list ->
+            td [ class "otherplayers" ]
+                [ h3 []
+                    [ text "Other Players" ]
+                , ul
+                    []
+                    (List.map
+                        (\p -> li [] [ text (playerName p) ])
+                        list
+                    )
+                , button [ class "close close-whoelse", onClick (CloseOtherPlayers nick) ] [ text "close" ]
+                ]
+
+        _ ->
+            td [ class "empty otherplayers" ] []
+
+
+defPair : String -> String -> List (Html msg)
+defPair term def =
+    [ dt [] [ text term ]
+    , dd [] [ text def ]
+    ]
+
+
+sortMaybes : (a -> b -> Order) -> Maybe a -> Maybe b -> Order
+sortMaybes sortJust ml mr =
+    case ( ml, mr ) of
+        ( Just l, Just r ) ->
+            sortJust l r
+
+        ( Just _, Nothing ) ->
+            LT
+
+        ( Nothing, Just _ ) ->
+            GT
+
+        ( Nothing, Nothing ) ->
+            EQ
+
+
+compareMaybeBools : Maybe Bool -> Maybe Bool -> Order
+compareMaybeBools =
+    let
+        compareBools l r =
+            case ( l, r ) of
+                ( True, False ) ->
+                    GT
+
+                ( False, True ) ->
+                    LT
+
+                ( _, _ ) ->
+                    EQ
+    in
+    sortMaybes compareBools
+
+
+compareMaybes : Maybe comparable -> Maybe comparable -> Order
+compareMaybes =
+    sortMaybes compare
+
+
+sortWith : GameSortBy -> Game -> Game -> Order
+sortWith by l r =
+    case by of
+        GameName ->
+            compareMaybes l.name r.name
+
+        MinPlayers ->
+            compareMaybes l.minPlayers r.minPlayers
+
+        MaxPlayers ->
+            compareMaybes l.maxPlayers r.maxPlayers
+
+        Duration ->
+            compareMaybes l.durationSecs r.durationSecs
+
+        Interest ->
+            case compareMaybeBools l.interested r.interested of
+                EQ ->
+                    compareMaybeBools l.canTeach r.canTeach
+
+                order ->
+                    order
+
+
+sortDefault : Maybe ( GameSortBy, SortOrder ) -> ( GameSortBy, SortOrder )
+sortDefault =
+    Maybe.withDefault ( GameName, Descending )
 
 
 updateGame :
@@ -365,23 +565,35 @@ boolStr b =
         "no"
 
 
+handleResponse : { a | onResult : value -> Msg, onErr : error -> Msg } -> Result error value -> Msg
+handleResponse { onResult, onErr } res =
+    case res of
+        Ok list ->
+            onResult list
+
+        Err err ->
+            onErr err
+
+
+fetchOtherPlayers : Auth.Cred -> G.Nick -> Affordance -> Cmd Msg
+fetchOtherPlayers creds nick aff =
+    let
+        handle =
+            handleResponse { onResult = GotOtherPlayers nick, onErr = ErrOtherPlayers }
+    in
+    HM.chainFrom aff creds [] [] Http.emptyBody (HM.decodeBody otherPlayersDecoder) handle
+
+
 fetchGamesList : Auth.Cred -> Affordance -> Cmd Msg
 fetchGamesList creds tmpl =
     let
         credvars =
             Dict.fromList [ ( "user_id", Auth.accountID creds ) ]
+
+        handle =
+            handleResponse { onResult = GotGameList, onErr = ErrGameList }
     in
-    HM.chainFrom (HM.fill credvars tmpl) creds [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handleGameListResult
-
-
-handleGameListResult : Result Http.Error GameList -> Msg
-handleGameListResult res =
-    case res of
-        Ok list ->
-            GotGameList list
-
-        Err err ->
-            ErrGameList err
+    HM.chainFrom (HM.fill credvars tmpl) creds [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handle
 
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
@@ -392,8 +604,8 @@ fetchByNick creds id =
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
     let
-        routeByHasNick =
-            Router.EventShow << .nick
+        routeByHasNick m =
+            Router.EventShow m.nick Nothing
     in
     Up.fetchFromUrl decoder (makeMsg creds) routeByHasNick creds url
 

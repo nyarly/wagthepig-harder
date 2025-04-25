@@ -5,6 +5,7 @@ use chrono::{NaiveDateTime, TimeZone as _, Utc};
 use futures::TryFutureExt as _;
 use sqlx::{Executor, Postgres};
 use serde::{Serialize, Deserialize};
+use tracing::debug;
 
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -456,6 +457,8 @@ impl<U, I> Game<NoId, EventId, U, I> {
     pub fn add_new<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
     -> impl Future<Output = Result<GameId, Error>> + 'a {
         let data = &self.data;
+        debug!("add_new with data: {:?}", data);
+
         sqlx::query_scalar!(
             r#"insert into games
                 ("name", "min_players", "max_players", "bgg_link",

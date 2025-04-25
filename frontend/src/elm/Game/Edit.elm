@@ -92,7 +92,7 @@ encoder lr =
 
 view : Model -> List (Html Msg)
 view model =
-    [ a [ href (Router.buildFromTarget (Router.EventShow model.event_id)) ] [ text "Back to Event" ]
+    [ a [ href (Router.buildFromTarget (Router.EventShow model.event_id Nothing)) ] [ text "Back to Event" ]
     , form [ onSubmit Submit ]
         (case model.resource of
             NotLoaded ->
@@ -133,7 +133,7 @@ bidiupdate msg model =
                     ( model, putGame model.creds model.etag res, OutMsg.None )
 
         CreatedGame ->
-            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id)) )
+            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
 
         GotGame etag g outmsg ->
             ( { model | etag = etag, resource = Loaded g }, Cmd.none, outmsg )

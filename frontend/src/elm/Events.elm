@@ -118,7 +118,7 @@ bidiupdate msg model =
 sortWith : EventSortBy -> Event -> Event -> Order
 sortWith by l r =
     case by of
-        Name ->
+        EventName ->
             compare l.name r.name
 
         Location ->
@@ -148,7 +148,7 @@ view model maybeSort =
     , createEventButton model.resource
     , table []
         [ thead []
-            [ sortingHeader "Name" Name
+            [ sortingHeader "Name" EventName
             , sortingHeader "Date" Date
             , sortingHeader "Where" Location
             , th [ colspan 3 ] []
@@ -188,7 +188,7 @@ eventEditButton event =
 
 eventShowButton : Event -> Html Msg
 eventShowButton event =
-    a [ href (Router.buildFromTarget (Router.EventShow event.nick.event_id)) ] [ text "Show" ]
+    a [ href (Router.buildFromTarget (Router.EventShow event.nick.event_id Nothing)) ] [ text "Show" ]
 
 
 fetch : Auth.Cred -> Cmd Msg

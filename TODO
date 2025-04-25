@@ -3,13 +3,11 @@
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
 
+* Gross styling pass
+
 WTP parity:
 
 F/E
-* Event view (game list)
-  * Table is sorted
-  * Buttons:
-    * Who else? (is interested in this game)
 * What should we play?
   * Other players
   * extra players

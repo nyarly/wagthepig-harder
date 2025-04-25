@@ -1,4 +1,4 @@
-module Router exposing (EventSortBy(..), Target(..), buildFromTarget, pageName, routeToTarget)
+module Router exposing (EventSortBy(..), GameSortBy(..), Target(..), buildFromTarget, pageName, routeToTarget)
 
 import Auth exposing (Cred)
 import Dict
@@ -15,7 +15,7 @@ type Target
     | Events (Maybe (Sorting EventSortBy))
     | CreateEvent
     | EventEdit Int
-    | EventShow Int
+    | EventShow Int (Maybe (Sorting GameSortBy))
     | CreateGame Int
     | EditGame Int Int
     | CredentialedArrival Target Cred
@@ -24,7 +24,7 @@ type Target
 
 
 type EventSortBy
-    = Name
+    = EventName
     | Date
     | Location
 
@@ -32,7 +32,7 @@ type EventSortBy
 eventSortToString : EventSortBy -> String
 eventSortToString sort =
     case sort of
-        Name ->
+        EventName ->
             "name"
 
         Date ->
@@ -44,7 +44,49 @@ eventSortToString sort =
 
 eventSortDict : Dict.Dict String EventSortBy
 eventSortDict =
-    Dict.fromList [ ( "name", Name ), ( "date", Date ), ( "loc", Location ) ]
+    Dict.fromList
+        [ ( "name", EventName )
+        , ( "date", Date )
+        , ( "loc", Location )
+        ]
+
+
+type GameSortBy
+    = GameName
+    | MinPlayers
+    | MaxPlayers
+    | Duration
+    | Interest
+
+
+gameSortToString : GameSortBy -> String
+gameSortToString sort =
+    case sort of
+        GameName ->
+            "name"
+
+        MinPlayers ->
+            "minplayer"
+
+        MaxPlayers ->
+            "maxplayer"
+
+        Duration ->
+            "dur"
+
+        Interest ->
+            "interest"
+
+
+gameSortDict : Dict.Dict String GameSortBy
+gameSortDict =
+    Dict.fromList
+        [ ( "name", GameName )
+        , ( "minplayer", MinPlayers )
+        , ( "maxplayer", MaxPlayers )
+        , ( "dur", Duration )
+        , ( "interest", Interest )
+        ]
 
 
 
@@ -81,8 +123,8 @@ buildFromTarget target =
         EventEdit name ->
             absolute [ "event", String.fromInt name ] []
 
-        EventShow id ->
-            absolute [ "games", String.fromInt id ] []
+        EventShow id sorting ->
+            absolute [ "games", String.fromInt id ] (TableSort.builder gameSortToString sorting)
 
         CreateGame event_id ->
             absolute [ "event", String.fromInt event_id, "create_game" ] []
@@ -125,7 +167,7 @@ pageName target =
         EventEdit _ ->
             "event"
 
-        EventShow _ ->
+        EventShow _ _ ->
             "games"
 
         CreateGame _ ->
@@ -155,7 +197,7 @@ router =
         , map Register (s "register")
         , map CreateGame (s "event" </> int </> s "create_game")
         , map EventEdit (s "event" </> int)
-        , map EventShow (s "games" </> int)
+        , map EventShow (s "games" </> int <?> TableSort.parser gameSortDict)
         , map EditGame (s "events" </> int </> s "game" </> int </> s "edit")
         , map registrationArrival (s "handle_registration" </> string </> Auth.fragmentParser)
         , map CompleteRegistration (s "complete_registration" </> string)
