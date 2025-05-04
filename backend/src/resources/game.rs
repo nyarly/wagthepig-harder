@@ -43,7 +43,7 @@ impl GameUpdateRequest {
                 created_at: NaiveDateTime::default(),
                 updated_at: NaiveDateTime::default(),
             },
-            interest: Omit{}
+            extra: Omit{}
         }
     }
 
@@ -79,6 +79,7 @@ impl EventGameListResponse {
                 "api:gamesListByEventIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Add) ]
             )?,
+
             make_recommendation: Link {
                 id: RouteMap::Recommend.prefixed(nested_at).fill(RecommendLocate{ event_id })?,
                 operation: vec![
@@ -146,9 +147,9 @@ impl GameResponse {
             duration_secs: value.data.duration_secs,
             bgg_id: value.data.bgg_id,
             pitch: value.data.pitch,
-            interested: value.interest.interested,
-            can_teach: value.interest.can_teach,
-            notes: value.interest.notes,
+            interested: value.extra.interested,
+            can_teach: value.extra.can_teach,
+            notes: value.extra.notes,
         })
     }
 }

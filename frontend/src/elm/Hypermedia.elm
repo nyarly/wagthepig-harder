@@ -16,10 +16,12 @@ module Hypermedia exposing
     , chain
     , chainFrom
     , decodeBody
+    , decodeMaybe
     , delete
     , doByName
     , emptyBody
     , emptyResponse
+    , encodeMaybe
     , fill
     , fillIn
     , get
@@ -37,6 +39,8 @@ import Auth
 import Dict exposing (Dict)
 import Http exposing (Resolver)
 import Json.Decode as D exposing (Decoder, decodeString)
+import Json.Decode.Pipeline as DP
+import Json.Encode as E
 import Task exposing (Task, andThen)
 import Url.Interpolate
 
@@ -233,6 +237,33 @@ browse at sel response =
                 selectAffordance sel l
                     |> Result.fromMaybe ("no matching affordance: " ++ selToString sel)
             )
+
+
+
+{-
+   Utility function for decoding optional fields into Maybes
+-}
+
+
+decodeMaybe : String -> D.Decoder a -> D.Decoder (Maybe a -> b) -> D.Decoder b
+decodeMaybe name dec =
+    DP.optional name (D.map Just dec) Nothing
+
+
+
+{-
+   Utility function for encoding Maybes into optional fields
+-}
+
+
+encodeMaybe : (a -> E.Value) -> Maybe a -> E.Value
+encodeMaybe enc ma =
+    case ma of
+        Just a ->
+            enc a
+
+        Nothing ->
+            E.null
 
 
 

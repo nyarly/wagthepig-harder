@@ -12,14 +12,13 @@ module Game.View exposing
     , view
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGItem, requestBGGSearch)
+import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch)
 import Html exposing (Html, a, button, img, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
-import Hypermedia exposing (Method(..), OperationSelector(..))
+import Hypermedia exposing (Method(..), OperationSelector(..), decodeMaybe, encodeMaybe)
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (optional)
 import Json.Encode as E
 import Maybe exposing (withDefault)
 import OutMsg
@@ -124,11 +123,6 @@ nickDecode =
         (D.field "user_id" D.string)
 
 
-decodeMaybe : String -> D.Decoder a -> D.Decoder (Maybe a -> b) -> D.Decoder b
-decodeMaybe name dec =
-    optional name (D.map Just dec) Nothing
-
-
 encoder : Game -> E.Value
 encoder g =
     E.object
@@ -142,16 +136,6 @@ encoder g =
         , ( "canTeach", encodeMaybe E.bool g.canTeach )
         , ( "notes", encodeMaybe E.string g.notes )
         ]
-
-
-encodeMaybe : (a -> E.Value) -> Maybe a -> E.Value
-encodeMaybe enc ma =
-    case ma of
-        Just a ->
-            enc a
-
-        Nothing ->
-            E.null
 
 
 type Msg
@@ -301,7 +285,7 @@ gameUpdate msg game =
         Pick thing ->
             ( { game
                 | name = Just thing.name
-                , bggID = Just (String.fromInt thing.bggId)
+                , bggID = Just thing.bggId
                 , minPlayers = Just thing.minPlayers
                 , maxPlayers = Just thing.maxPlayers
                 , durationSecs = Just (thing.durationMinutes * 60)
@@ -416,15 +400,15 @@ bidiupdate msg model =
 shotgunGames : List BGGGame -> Cmd Msg
 shotgunGames list =
     let
-        fetchFromSearch game =
-            case game of
+        getID sres =
+            case sres of
                 SearchResult res ->
-                    requestBGGItem BGGThingResult res.id
+                    Just res.id
 
                 _ ->
-                    Cmd.none
+                    Nothing
     in
-    Cmd.batch (List.map fetchFromSearch list)
+    BGGAPI.shotgunGames getID (\_ -> BGGThingResult) list
 
 
 enrichGame : List BGGGame -> BGGThing -> List BGGGame

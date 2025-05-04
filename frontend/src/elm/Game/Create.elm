@@ -43,7 +43,6 @@ type Msg
     = Entered Auth.Cred EventId
     | Submit
     | CreatedGame
-    | GotGame Up.Etag V.Game OutMsg.Msg
     | ErrGetGame HM.Error
     | GameMsg V.Msg
 
@@ -88,9 +87,6 @@ bidiupdate msg model =
 
         CreatedGame ->
             ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
-
-        GotGame etag g outmsg ->
-            ( { model | etag = etag, resource = g }, Cmd.none, outmsg )
 
         ErrGetGame _ ->
             ( model, Cmd.none, OutMsg.None )

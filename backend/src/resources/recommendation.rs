@@ -1,10 +1,10 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
-use semweb_api::{condreq, hypermedia::{op, ActionType, ResourceFields}};
+use semweb_api::{condreq, hypermedia::{op, ActionType, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use iri_string::types::IriReferenceString;
 
-use crate::{db::{self, EventId, GameId, Omit, UserId}, routing::{RecommendLocate, RouteMap, UserLocate}, AppState, Error};
+use crate::{db::{self, EventId, GameId, RecommendData, UserId}, routing::{GameUsersLocate, RecommendLocate, RouteMap, UserLocate}, AppState, Error};
 
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase")]
@@ -32,7 +32,7 @@ pub(crate) struct RecommendListResponse {
 }
 
 impl RecommendListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::Game<GameId, EventId, UserId, Omit>>) -> Result<Self, Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, list: Vec<db::Game<GameId, EventId, UserId, RecommendData>>) -> Result<Self, Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Recommend.prefixed(nested_at),
@@ -53,6 +53,7 @@ impl RecommendListResponse {
 pub(crate) struct RecommendResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<RecommendLocate>,
+    pub users: Link,
 
     pub name: Option<String>,
     pub min_players: Option<i32>,
@@ -60,23 +61,33 @@ pub(crate) struct RecommendResponse {
     pub bgg_link: Option<String>,
     pub duration_secs: Option<i32>,
     pub bgg_id: Option<String>,
+    pub interest_level: i64,
+    pub teachers: i64
 }
 
 impl RecommendResponse {
-    pub fn from_query<U>(nested_at: &str, value: db::Game<GameId, EventId, U, Omit>) -> Result<Self, Error> {
+    pub fn from_query<U>(nested_at: &str, value: db::Game<GameId, EventId, U, RecommendData>) -> Result<Self, Error> {
         Ok(Self{
+            // XXX This is weird; not sure the recommend items need to have a link...
             resource_fields: ResourceFields::new(
                 &RouteMap::Recommend.prefixed(nested_at),
                 RecommendLocate{ event_id: value.event_id },
                 "api:gameByIdTemplate",
                 vec![ op(ActionType::View), op(ActionType::Update) ]
             )?,
+            users: Link {
+                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?,
+                operation: vec![ op(ActionType::View) ]
+            },
+
             name: value.data.name,
             min_players: value.data.min_players,
             max_players: value.data.max_players,
             bgg_link: value.data.bgg_link,
             duration_secs: value.data.duration_secs,
             bgg_id: value.data.bgg_id,
+            interest_level: value.extra.interest_level,
+            teachers: value.extra.teachers
         })
     }
 }

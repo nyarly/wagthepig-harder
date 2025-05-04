@@ -1,4 +1,14 @@
-module TableSort exposing (..)
+module TableSort exposing
+    ( SortOrder(..)
+    , Sorting
+    , builder
+    , compareMaybeBools
+    , compareMaybes
+    , parser
+    , sort
+    , sortMaybes
+    , sortingHeader
+    )
 
 import Dict
 import Html exposing (Html, text, th)
@@ -120,3 +130,41 @@ sortIcon by ( s, order ) =
 sortingHeader : (Sorting d -> msg) -> Sorting d -> String -> d -> Html msg
 sortingHeader ev sorting name by =
     th [ onClick (ev (changeSort by sorting)), sortClass by sorting ] [ text name, sortIcon by sorting ]
+
+
+sortMaybes : (a -> b -> Order) -> Maybe a -> Maybe b -> Order
+sortMaybes sortJust ml mr =
+    case ( ml, mr ) of
+        ( Just l, Just r ) ->
+            sortJust l r
+
+        ( Just _, Nothing ) ->
+            LT
+
+        ( Nothing, Just _ ) ->
+            GT
+
+        ( Nothing, Nothing ) ->
+            EQ
+
+
+compareMaybeBools : Maybe Bool -> Maybe Bool -> Order
+compareMaybeBools =
+    let
+        compareBools l r =
+            case ( l, r ) of
+                ( True, False ) ->
+                    GT
+
+                ( False, True ) ->
+                    LT
+
+                ( _, _ ) ->
+                    EQ
+    in
+    sortMaybes compareBools
+
+
+compareMaybes : Maybe comparable -> Maybe comparable -> Order
+compareMaybes =
+    sortMaybes compare

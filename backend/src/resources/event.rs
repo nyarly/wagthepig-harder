@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, hypermedia::{op, ActionType, IriTemplate, ResourceFields}};
+use semweb_api::{condreq, hypermedia::{op, ActionType, IriTemplate, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use tracing::debug;
 
 use crate::{
     db::{Event, EventId, NoId},
-    routing::{EmptyLocate, EventLocate},
+    routing::{EmptyLocate, EventLocate, EventUsersLocate},
     AppState, Error, RouteMap
 };
 
@@ -63,6 +63,7 @@ pub(crate) struct EventResponse {
     #[serde(flatten)]
     pub resource_fields: ResourceFields<EventLocate>,
     pub games: IriTemplate,
+    pub users: Link,
 
     pub name: Option<String>,
     pub time: Option<NaiveDateTime>,
@@ -87,6 +88,10 @@ impl EventResponse {
                 id: "api:userEventGames".try_into()?,
                 template: usergames_tmpl,
                 operation: vec![ op(ActionType::Find), op(ActionType::Add) ]
+            },
+            users: Link {
+                id: RouteMap::EventUsers.prefixed(nested_at).fill(EventUsersLocate{ event_id: value.id })?,
+                operation: vec![ op(ActionType::View) ]
             },
 
             name: value.name,

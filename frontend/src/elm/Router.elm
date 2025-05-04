@@ -1,4 +1,4 @@
-module Router exposing (EventSortBy(..), GameSortBy(..), Target(..), buildFromTarget, pageName, routeToTarget)
+module Router exposing (EventSortBy(..), GameSortBy(..), ReccoSortBy(..), Target(..), buildFromTarget, pageName, routeToTarget)
 
 import Auth exposing (Cred)
 import Dict
@@ -16,6 +16,7 @@ type Target
     | CreateEvent
     | EventEdit Int
     | EventShow Int (Maybe (Sorting GameSortBy))
+    | WhatShouldWePlay Int (Maybe (Sorting ReccoSortBy))
     | CreateGame Int
     | EditGame Int Int
     | CredentialedArrival Target Cred
@@ -89,6 +90,44 @@ gameSortDict =
         ]
 
 
+type ReccoSortBy
+    = ReccoName
+    | Players
+    | Length
+    | PresentInterested
+    | PresentTeachers
+
+
+reccoSortToString : ReccoSortBy -> String
+reccoSortToString sort =
+    case sort of
+        ReccoName ->
+            "name"
+
+        Players ->
+            "player"
+
+        Length ->
+            "length"
+
+        PresentInterested ->
+            "interest"
+
+        PresentTeachers ->
+            "teachers"
+
+
+reccoSortDict : Dict.Dict String ReccoSortBy
+reccoSortDict =
+    Dict.fromList
+        [ ( "name", ReccoName )
+        , ( "player", Players )
+        , ( "length", Length )
+        , ( "interest", PresentInterested )
+        , ( "teachers", PresentTeachers )
+        ]
+
+
 
 {- convert a path to a page route -}
 
@@ -141,6 +180,9 @@ buildFromTarget target =
         CompleteRegistration email ->
             absolute [ "complete_registration", email ] []
 
+        WhatShouldWePlay event_id sorting ->
+            absolute [ "whatshouldweplay", String.fromInt event_id ] (TableSort.builder reccoSortToString sorting)
+
 
 
 {- used to mark a CSS class for the page -}
@@ -185,6 +227,9 @@ pageName target =
         CompleteRegistration _ ->
             "registration"
 
+        WhatShouldWePlay _ _ ->
+            "whatshouldweplay"
+
 
 router : Parser (Target -> c) c
 router =
@@ -198,6 +243,7 @@ router =
         , map CreateGame (s "event" </> int </> s "create_game")
         , map EventEdit (s "event" </> int)
         , map EventShow (s "games" </> int <?> TableSort.parser gameSortDict)
+        , map WhatShouldWePlay (s "whatshouldweplay" </> int <?> TableSort.parser reccoSortDict)
         , map EditGame (s "events" </> int </> s "game" </> int </> s "edit")
         , map registrationArrival (s "handle_registration" </> string </> Auth.fragmentParser)
         , map CompleteRegistration (s "complete_registration" </> string)

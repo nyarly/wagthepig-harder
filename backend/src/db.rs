@@ -73,6 +73,7 @@ pub enum Error {
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        debug!("DB Error: {:?}", self);
         use axum::http::StatusCode;
 
         (match self {
@@ -179,7 +180,7 @@ impl User<UserId> {
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         sqlx::query_as!(
             Self,
-            r#"select users.*
+            r#"select distinct users.*
             from users
             join interests on interests.user_id = users.id
             join games on interests.game_id = games.id
@@ -366,7 +367,7 @@ pub(crate) struct Game<PK, FE, FU, I> {
     pub data: GameData,
 
     #[sqlx(flatten)]
-    pub interest: I
+    pub extra: I
 }
 
 
@@ -393,6 +394,13 @@ pub(crate) struct InterestData {
     pub notes: Option<String>,
 }
 
+#[derive(sqlx::FromRow, Debug, Default, Clone)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct RecommendData {
+    pub interest_level: i64,
+    pub teachers: i64
+}
+
 impl Default for Game<NoId, NoId, NoId, Omit> {
     fn default() -> Self {
         Self {
@@ -400,7 +408,7 @@ impl Default for Game<NoId, NoId, NoId, Omit> {
             event_id: Default::default(),
             suggestor_id: Default::default(),
             data: Default::default(),
-            interest: Default::default()
+            extra: Default::default()
         }
     }
 }
@@ -412,7 +420,19 @@ impl Default for Game<NoId, NoId, NoId, InterestData> {
             event_id: Default::default(),
             suggestor_id: Default::default(),
             data: Default::default(),
-            interest: Default::default()
+            extra: Default::default()
+        }
+    }
+}
+
+impl Default for Game<NoId, NoId, NoId, RecommendData> {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            event_id: Default::default(),
+            suggestor_id: Default::default(),
+            data: Default::default(),
+            extra: Default::default()
         }
     }
 }
@@ -424,7 +444,7 @@ impl<From, E: Copy, U: Copy, I: Clone> Game<From, E, U, I> {
             event_id: self.event_id,
             suggestor_id: self.suggestor_id,
             data: self.data,
-            interest: self.interest
+            extra: self.extra
         }
     }
 }
@@ -436,7 +456,7 @@ impl<G: Copy, From, U: Copy, I: Clone> Game<G, From, U, I> {
             id: self.id,
             suggestor_id: self.suggestor_id,
             data: self.data,
-            interest: self.interest
+            extra: self.extra
         }
     }
 }
@@ -448,7 +468,7 @@ impl<G: Copy, E: Copy, U: Copy, From> Game<G, E, U, From> {
             event_id: self.event_id,
             suggestor_id: self.suggestor_id,
             data: self.data,
-            interest
+            extra: interest
         }
     }
 }
@@ -480,9 +500,9 @@ impl Game<GameId, NoId, NoId, Omit> {
         let data = &self.data;
         sqlx::query_as(
             r#"update games
-            set ( "name", "bgg_id", "bgg_link", "min_players", "max_players", "duration_secs")
-                = ( $1, $2, $3, $4, $5, $6 )
-            where id = $7
+            set ( "name", "bgg_id", "bgg_link", "min_players", "max_players", "duration_secs", "pitch")
+                = ( $1, $2, $3, $4, $5, $6, $7 )
+            where id = $8
                 returning *"#)
             .bind(data.name.clone())
             .bind(data.bgg_id.clone())
@@ -490,17 +510,19 @@ impl Game<GameId, NoId, NoId, Omit> {
             .bind(data.min_players)
             .bind(data.max_players)
             .bind(data.duration_secs)
+            .bind(data.pitch.clone())
             .bind(self.id.id())
             .fetch_one(db)
             .map_err(Error::from)
     }
 }
 
-impl Game<GameId, EventId, UserId, Omit> {
+impl Game<GameId, EventId, UserId, RecommendData> {
     pub fn get_recommendation<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, user_ids: Vec<UserId>, extra_players: u8)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         let must_play = (user_ids.len() + (extra_players as usize)) as i32;
         let user_slice = user_ids.into_iter().map(|uid| uid.id()).collect::<Vec<_>>();
+        debug!("get_recco data: event_id: {}, must_play: {}, users: {:?}", event_id.id(), must_play, user_slice);
         sqlx::query_as(r#"
             select
                 games.*,
@@ -564,7 +586,7 @@ impl Game<GameId, EventId, UserId, InterestData> {
 impl<E, U> Game<GameId, E, U, InterestData> {
     pub fn update_interests<'a>(&self, db: impl Executor<'a, Database = Postgres> + 'a, user_id: String)
     -> impl Future<Output = Result<(), Error>> + 'a {
-        let interest = &self.interest;
+        let interest = &self.extra;
         (if Some(true) == interest.interested {
             sqlx::query!(
             r#"insert into interests

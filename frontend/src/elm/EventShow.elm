@@ -1,23 +1,25 @@
 module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, view)
 
 import Auth
+import BGGAPI
 import Dict
 import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
 import Game.View as G exposing (bggLink)
-import Html exposing (Html, a, button, dd, dl, dt, h3, li, span, table, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (class, href)
+import Html exposing (Html, a, button, dd, dl, dt, h3, img, li, span, table, td, text, th, thead, tr, ul)
+import Html.Attributes exposing (class, href, src)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http
-import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
+import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), decodeMaybe)
 import Iso8601
 import Json.Decode as D
-import Json.Decode.Pipeline exposing (custom, hardcoded, optional, required)
+import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import OutMsg
-import ResourceUpdate as Up
+import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
+import ResourceUpdate as Up exposing (taggedResultDispatch)
 import Router exposing (GameSortBy(..))
-import TableSort exposing (SortOrder(..), sortingHeader)
+import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
 import Time
 import ViewUtil as Ew
 
@@ -63,44 +65,8 @@ type alias Game =
     , canTeach : Maybe Bool
     , notes : Maybe Bool
     , whoElse : OtherPlayers
+    , thumbnail : Maybe String
     }
-
-
-type OtherPlayers
-    = Empty
-    | Open (List Player)
-    | Closed (List Player)
-
-
-otherPlayersDecoder : D.Decoder OtherPlayers
-otherPlayersDecoder =
-    D.succeed Open
-        |> required "users" (D.list playerDecoder)
-
-
-type alias Player =
-    { name : Maybe String
-    , bgg_username : Maybe String
-    , email : String
-    }
-
-
-playerDecoder : D.Decoder Player
-playerDecoder =
-    D.succeed Player
-        |> decodeMaybe "name" D.string
-        |> decodeMaybe "bgg_username" D.string
-        |> required "email" D.string
-
-
-closeOtherPlayers : OtherPlayers -> OtherPlayers
-closeOtherPlayers ops =
-    case ops of
-        Open list ->
-            Closed list
-
-        _ ->
-            ops
 
 
 gameNickDecoder : D.Decoder G.Nick
@@ -126,11 +92,7 @@ gameDecoder =
         |> decodeMaybe "canTeach" D.bool
         |> decodeMaybe "notes" D.bool
         |> hardcoded Empty
-
-
-decodeMaybe : String -> D.Decoder a -> D.Decoder (Maybe a -> b) -> D.Decoder b
-decodeMaybe name dec =
-    optional name (D.map Just dec) Nothing
+        |> hardcoded Nothing
 
 
 init : Model
@@ -185,6 +147,7 @@ type Msg
     | GotGameList GameList
     | GetOtherPlayers G.Nick Affordance
     | GotOtherPlayers G.Nick OtherPlayers
+    | GotBGGData G.Nick BGGAPI.BGGThing
     | CloseOtherPlayers G.Nick
     | UpdateGameInterest Bool Int G.Nick
     | UpdatedGameInterest Bool G.Nick
@@ -194,6 +157,7 @@ type Msg
     | ErrOtherPlayers HM.Error
     | ErrGetEvent HM.Error
     | ErrGameList HM.Error
+    | ErrGetBGGData BGGAPI.Error
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -222,7 +186,7 @@ bidiupdate msg model =
             ( { model | etag = etag, resource = Just ev }, fetchGamesList model.creds ev.gamesTemplate, outmsg )
 
         GotGameList list ->
-            ( { model | games = Just list }, Cmd.none, OutMsg.None )
+            ( { model | games = Just list }, fetchBGGData list, OutMsg.None )
 
         ErrGetEvent _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -277,18 +241,25 @@ bidiupdate msg model =
         GotOtherPlayers nick list ->
             ( { model
                 | games =
-                    gameItemUpdate nick
-                        (\g ->
-                            Debug.log "set who-else"
-                                { g | whoElse = list }
-                        )
-                        model.games
+                    gameItemUpdate nick (\g -> { g | whoElse = list }) model.games
+              }
+            , Cmd.none
+            , OutMsg.None
+            )
+
+        GotBGGData gameId bggData ->
+            ( { model
+                | games =
+                    gameItemUpdate gameId (\g -> { g | thumbnail = Just bggData.thumbnail }) model.games
               }
             , Cmd.none
             , OutMsg.None
             )
 
         ErrOtherPlayers _ ->
+            ( model, Cmd.none, OutMsg.None )
+
+        ErrGetBGGData _ ->
             ( model, Cmd.none, OutMsg.None )
 
 
@@ -324,7 +295,9 @@ eventView model =
                     ++ defPair "Time" (Event.formatTime ev)
                     ++ defPair "Location" ev.location
                 )
+            , a [ class "button", href (Router.buildFromTarget (Router.EventEdit ev.nick)) ] [ text "Edit Event" ]
             , a [ class "button", href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
+            , a [ class "button", href (Router.buildFromTarget (Router.WhatShouldWePlay ev.nick Nothing)) ] [ text "What Should We Play?!" ]
             ]
 
         Nothing ->
@@ -347,7 +320,8 @@ gamesView model maybeSort =
         ( Just ev, Just list ) ->
             [ table []
                 [ thead []
-                    [ sortingHeader "Name" GameName
+                    [ th [] []
+                    , sortingHeader "Name" GameName
                     , sortingHeader "Min Players" MinPlayers
                     , sortingHeader "Max Players" MaxPlayers
                     , sortingHeader "Duration" Duration
@@ -376,7 +350,15 @@ makeGameRow event_id game =
     in
     ( Maybe.withDefault "noid" game.bggID
     , tr []
-        [ td [] [ bggLink game ]
+        [ td []
+            (case game.thumbnail of
+                Just th ->
+                    [ img [ src th ] [] ]
+
+                Nothing ->
+                    []
+            )
+        , td [] [ bggLink game ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.minPlayers)) ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.maxPlayers)) ]
         , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
@@ -405,25 +387,11 @@ makeGameRow event_id game =
 
 whoElseTD : Game -> Html Msg
 whoElseTD { whoElse, nick } =
-    let
-        playerName player =
-            case player.name of
-                Just name ->
-                    name
-
-                Nothing ->
-                    case player.bgg_username of
-                        Just bname ->
-                            bname
-
-                        Nothing ->
-                            player.email
-    in
     case whoElse of
         Open list ->
-            td [ class "otherplayers" ]
+            td [ class "whoelse" ]
                 [ h3 []
-                    [ text "Other Players" ]
+                    [ text "Interested Players" ]
                 , ul
                     []
                     (List.map
@@ -434,7 +402,7 @@ whoElseTD { whoElse, nick } =
                 ]
 
         _ ->
-            td [ class "empty otherplayers" ] []
+            td [ class "empty whoelse" ] []
 
 
 defPair : String -> String -> List (Html msg)
@@ -442,44 +410,6 @@ defPair term def =
     [ dt [] [ text term ]
     , dd [] [ text def ]
     ]
-
-
-sortMaybes : (a -> b -> Order) -> Maybe a -> Maybe b -> Order
-sortMaybes sortJust ml mr =
-    case ( ml, mr ) of
-        ( Just l, Just r ) ->
-            sortJust l r
-
-        ( Just _, Nothing ) ->
-            LT
-
-        ( Nothing, Just _ ) ->
-            GT
-
-        ( Nothing, Nothing ) ->
-            EQ
-
-
-compareMaybeBools : Maybe Bool -> Maybe Bool -> Order
-compareMaybeBools =
-    let
-        compareBools l r =
-            case ( l, r ) of
-                ( True, False ) ->
-                    GT
-
-                ( False, True ) ->
-                    LT
-
-                ( _, _ ) ->
-                    EQ
-    in
-    sortMaybes compareBools
-
-
-compareMaybes : Maybe comparable -> Maybe comparable -> Order
-compareMaybes =
-    sortMaybes compare
 
 
 sortWith : GameSortBy -> Game -> Game -> Order
@@ -594,6 +524,11 @@ fetchGamesList creds tmpl =
             handleResponse { onResult = GotGameList, onErr = ErrGameList }
     in
     HM.chainFrom (HM.fill credvars tmpl) creds [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handle
+
+
+fetchBGGData : List Game -> Cmd Msg
+fetchBGGData gameList =
+    BGGAPI.shotgunGames .bggID (taggedResultDispatch (\_ -> ErrGetBGGData) (\game -> GotBGGData game.nick)) gameList
 
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg

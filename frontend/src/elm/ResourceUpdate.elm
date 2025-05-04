@@ -1,13 +1,19 @@
 module ResourceUpdate exposing
     ( Etag
-    , FetchPlan(..)
     , MakeMsg
     , Representation(..)
+    , apiRoot
     , browseToSend
-    , doRoundTrip
+    , create
+    , delete
     , fetchByNick
     , fetchFromUrl
     , put
+    , resultDispatch
+    , retrieve
+    , roundTrip
+    , taggedResultDispatch
+    , update
     )
 
 import Auth
@@ -78,7 +84,6 @@ import Task
    makeMsg like....
    makeMsg cred rep =
      case rep of
-       Up.None -> Entered cred None
        Up.Loc aff -> Entered cred (Url aff)
        Up.Res res out -> GotThing res out
        Up.Error err -> ErrGetThing err
@@ -112,13 +117,17 @@ type alias MakeMsg e r msg =
     Representation e r -> msg
 
 
+type alias ResToMsg e r msg =
+    Result e r -> msg
+
+
 type alias BrowsePath =
     Dict.Dict String String -> List AffordanceExtractor
 
 
-type FetchPlan
-    = Browse BrowsePath
-    | Template Affordance
+
+-- XXX replace uses with transmit
+-- consider mismatched encode/decode
 
 
 browseToSend : (r -> E.Value) -> D.Decoder r -> MakeMsg HM.Error r msg -> (n -> Dict.Dict String String) -> BrowsePath -> n -> Auth.Cred -> r -> Cmd msg
@@ -126,13 +135,137 @@ browseToSend encode decoder makeMsg nickToVars browsePath nick creds resource =
     HM.chain creds (browsePath (nickToVars nick)) [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
 
 
+apiRoot : Affordance
+apiRoot =
+    HM.link HM.GET "/api"
 
--- XXX "has an affordance called 'update'" hits weird
--- XXX even moreso, should we consider a generic Model with etag, affordances, and (generic) resource
+
+resultDispatch : (error -> a) -> (value -> a) -> Result error value -> a
+resultDispatch fromErr fromOk =
+    taggedResultDispatch (\_ -> fromErr) (\_ -> fromOk) ()
 
 
-type alias Updateable r =
-    { r | update : Maybe Affordance }
+taggedResultDispatch : (req -> error -> msg) -> (req -> value -> msg) -> req -> Result error value -> msg
+taggedResultDispatch fromErr fromOk req res =
+    case res of
+        Ok v ->
+            fromOk req v
+
+        Err x ->
+            fromErr req x
+
+
+
+{-
+   When you are sending data to the backend and only care if it was successfully received
+-}
+
+
+type alias Create s msg =
+    { resource : s
+    , etag : Maybe Etag
+    , encode : s -> E.Value
+    , resMsg : ResToMsg HM.Error () msg
+    , startAt : Affordance
+    , browsePlan : List AffordanceExtractor
+    , creds : Auth.Cred
+    }
+
+
+create : Create s msg -> Cmd msg
+create { creds, resource, etag, encode, resMsg, startAt, browsePlan } =
+    let
+        etagH =
+            Maybe.withDefault [] (Maybe.map etagHeader etag)
+
+        trip =
+            HM.browseFrom startAt creds browsePlan etagH (resource |> encode >> Http.jsonBody) emptyResponse
+    in
+    Task.attempt resMsg trip
+
+
+
+{- When you are requesting data from the server without a payload -}
+
+
+type alias Retrieve r msg =
+    { decoder : D.Decoder r
+    , resMsg : ResToMsg HM.Error ( Etag, r ) msg
+    , startAt : Affordance
+    , browsePlan : List AffordanceExtractor
+    , creds : Auth.Cred
+    }
+
+
+retrieve : Retrieve r msg -> Cmd msg
+retrieve { creds, decoder, resMsg, startAt, browsePlan } =
+    let
+        trip =
+            HM.browseFrom startAt creds browsePlan [] Http.emptyBody (modelRes decoder)
+
+        -- HM.chain creds browsePlan [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+    in
+    Task.attempt resMsg trip
+
+
+
+{- When you are sending data to the server and expecting data in response -}
+
+
+type alias Update s r msg =
+    { resource : s
+    , etag : Maybe Etag
+    , encode : s -> E.Value
+    , decoder : D.Decoder r
+    , resMsg : ResToMsg HM.Error ( Etag, r ) msg
+    , startAt : Affordance
+    , browsePlan : List AffordanceExtractor
+    , creds : Auth.Cred
+    }
+
+
+update : Update s r msg -> Cmd msg
+update { creds, resource, etag, encode, decoder, resMsg, startAt, browsePlan } =
+    let
+        etagH =
+            Maybe.withDefault [] (Maybe.map etagHeader etag)
+
+        trip =
+            HM.browseFrom startAt creds browsePlan etagH (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                |> Task.andThen followHop
+
+        followHop rep =
+            case rep of
+                Hop url ->
+                    HM.browseFrom (HM.link HM.GET url) creds [] [] Http.emptyBody (landPutResponse decoder)
+
+                Got e res ->
+                    Task.succeed ( e, res )
+
+        -- HM.chain creds browsePlan [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+    in
+    Task.attempt resMsg trip
+
+
+
+{- When you're making an empty request of the server, and only care if it was successful -}
+
+
+type alias Delete msg =
+    { resMsg : ResToMsg HM.Error () msg
+    , startAt : Affordance
+    , browsePlan : List AffordanceExtractor
+    , creds : Auth.Cred
+    }
+
+
+delete : Delete msg -> Cmd msg
+delete { creds, resMsg, startAt, browsePlan } =
+    let
+        trip =
+            HM.browseFrom startAt creds browsePlan [] Http.emptyBody emptyResponse
+    in
+    Task.attempt resMsg trip
 
 
 type alias RoundTrip r msg =
@@ -145,8 +278,8 @@ type alias RoundTrip r msg =
     }
 
 
-doRoundTrip : RoundTrip rz msg -> Cmd msg
-doRoundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
+roundTrip : RoundTrip rz msg -> Cmd msg
+roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
     let
         doUpdate ( e, r ) =
             case updateRes r of
@@ -168,6 +301,16 @@ doRoundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
                     )
     in
     Task.attempt toMsg trip
+
+
+type alias Updateable r =
+    { r | update : Maybe Affordance }
+
+
+
+-- XXX "has an affordance called 'update'" hits weird
+-- XXX even moreso, should we consider a generic Model with etag, affordances, and (generic) resource
+-- XXX TODO change uses of `put` to `newput` and then remove and rename newput -> put
 
 
 put : (Updateable r -> E.Value) -> D.Decoder (Updateable r) -> MakeMsg HM.Error (Updateable r) msg -> Auth.Cred -> Etag -> Updateable r -> Cmd msg
@@ -248,6 +391,32 @@ putResponse decoder res =
 
                 Nothing ->
                     Err "Expected location of new resource"
+
+        other ->
+            Err ("Unexpected status sending resource: " ++ String.fromInt other)
+
+
+emptyResponse : Response -> Result String ()
+emptyResponse res =
+    case res.status of
+        200 ->
+            Ok ()
+
+        201 ->
+            Ok ()
+
+        other ->
+            Err ("Unexpected status sending resource: " ++ String.fromInt other)
+
+
+landPutResponse : D.Decoder r -> Response -> Result String ( Etag, r )
+landPutResponse decoder res =
+    case res.status of
+        200 ->
+            modelRes decoder res
+
+        201 ->
+            Err "Second 201; assuming a loop"
 
         other ->
             Err ("Unexpected status sending resource: " ++ String.fromInt other)

@@ -257,7 +257,7 @@ pub struct ResourceFields<L: Serialize + Clone> {
 
 impl<L: Serialize + Clone + Listable + Context> ResourceFields<L> {
     pub fn new(route: &routing::Entry, nick: L, api_name: &str, operation: Vec<Operation>) -> Result<Self, Error> {
-        let id = route.fill(nick.clone())?.into();
+        let id = route.fill(nick.clone())?;
         let template = route.template()?;
 
         Ok(Self{

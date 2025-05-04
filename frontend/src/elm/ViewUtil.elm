@@ -1,4 +1,4 @@
-module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, svgIcon)
+module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, onSelection, svgIcon)
 
 -- more like "EwwwwUtil" amirite?
 
@@ -6,6 +6,7 @@ import Html exposing (Attribute, Html, button, div, input, label, text)
 import Html.Attributes exposing (checked, class, disabled, for, id, type_, value)
 import Html.Attributes.Extra as Extra exposing (attributeIf)
 import Html.Events exposing (onCheck, onInput)
+import Json.Decode as D
 import Svg exposing (svg, use)
 import Svg.Attributes as SAttr exposing (viewBox)
 
@@ -62,3 +63,22 @@ svgIcon : String -> Html msg
 svgIcon name =
     svg [ SAttr.class ("icon " ++ name), viewBox "0 0 32 32" ]
         [ use [ SAttr.xlinkHref ("/assets/icons.svg#" ++ name) ] [] ]
+
+
+onSelection : (List String -> msg) -> Attribute msg
+onSelection msg =
+    Html.Events.on "change" (D.map msg targetSelectedOptions)
+
+
+targetSelectedOptions : D.Decoder (List String)
+targetSelectedOptions =
+    D.at [ "target", "selectedOptions" ] <|
+        D.map filteredOptions
+            (D.keyValuePairs <|
+                D.maybe (D.at [ "value" ] D.string)
+            )
+
+
+filteredOptions : List ( a, Maybe b ) -> List b
+filteredOptions list =
+    List.filterMap (\( _, mv ) -> mv) list

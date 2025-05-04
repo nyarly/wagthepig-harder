@@ -4,14 +4,13 @@
 * Disguise auth timing when no email
 
 * Gross styling pass
+* Tower governor bug?
+
+* B/E short TTL on API responses
 
 WTP parity:
 
 F/E
-* What should we play?
-  * Other players
-  * extra players
-
 * Error handling - ideas
   * Toasts - plugin
   * Highlight/jump to issue
@@ -31,6 +30,10 @@ F/E
 
 == Future work
 
+* At what level should we cache link walking? Browser should do some of it,
+  especially if we set short TTLs on API responses, and that'll be reliable and easy.
+  We _could_ do some in-app caching as we walk, and control that on a per-page level
+* Revamp ResourceUpdate and Hypermedia around record arguments (5 args is too many)
 * General view "perspectives" - including multiuse queries
 * Pre compress frontend assets in prod deploy?
 * Pact for tests?

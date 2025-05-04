@@ -14,6 +14,7 @@ import OutMsg
 import Profile
 import Register
 import Router exposing (Target(..))
+import WhatShouldWePlay
 
 
 type Msg
@@ -25,6 +26,7 @@ type Msg
     | GameCreateMsg Game.Create.Msg
     | GameEditMsg Game.Edit.Msg
     | EventShowMsg EventShow.Msg
+    | WhatShouldWePlayMsg WhatShouldWePlay.Msg
     | RegisterMsg Register.Msg
     | CompleteRegistrationMsg CompleteRegistration.Msg
 
@@ -46,6 +48,7 @@ type alias Models =
     , login : Login.Model
     , profile : Profile.Model
     , events : Events.Model
+    , reccos : WhatShouldWePlay.Model
     , event : EventEdit.Model
     , games : EventShow.Model
     , editGame : Game.Edit.Model
@@ -62,6 +65,7 @@ init =
         Login.init
         Profile.init
         Events.init
+        WhatShouldWePlay.init
         EventEdit.init
         EventShow.init
         Game.Edit.init
@@ -104,6 +108,10 @@ view target models toMsg =
         Router.EventShow _ sorting ->
             EventShow.view models.games sorting
                 |> wrapMsg EventShowMsg
+
+        Router.WhatShouldWePlay _ sorting ->
+            WhatShouldWePlay.view models.reccos sorting
+                |> wrapMsg WhatShouldWePlayMsg
 
         Router.CreateEvent ->
             EventEdit.view models.event
@@ -160,6 +168,9 @@ pageNav target creds models =
         Router.EventShow id _ ->
             bidiupdate (EventShowMsg (EventShow.Entered creds (EventShow.Nickname id))) models
 
+        Router.WhatShouldWePlay id _ ->
+            bidiupdate (WhatShouldWePlayMsg (WhatShouldWePlay.Entered creds (WhatShouldWePlay.Nick id))) models
+
         Router.CreateEvent ->
             bidiupdate (EventEditMsg (EventEdit.Entered creds EventEdit.None)) models
 
@@ -215,6 +226,11 @@ bidiupdate msg models =
         EventShowMsg submsg ->
             EventShow.bidiupdate submsg models.games
                 |> OutMsg.mapBoth (\pm -> { models | games = pm }) (Cmd.map EventShowMsg)
+                |> consumeOutmsg
+
+        WhatShouldWePlayMsg submsg ->
+            WhatShouldWePlay.bidiupdate submsg models.reccos
+                |> OutMsg.mapBoth (\pm -> { models | reccos = pm }) (Cmd.map WhatShouldWePlayMsg)
                 |> consumeOutmsg
 
         RegisterMsg submsg ->

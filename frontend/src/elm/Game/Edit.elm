@@ -1,4 +1,4 @@
-module Game.Edit exposing (..)
+module Game.Edit exposing (Model, Msg(..), bidiupdate, init, roundTrip, view)
 
 import Auth
 import BGGAPI exposing (BGGGame(..))
@@ -13,7 +13,7 @@ import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
 import OutMsg
-import ResourceUpdate as Up
+import ResourceUpdate as Up exposing (resultDispatch)
 import Router
 
 
@@ -46,13 +46,6 @@ type alias LoadedResource =
     , bggSearchResults : List BGGGame
     , resource : V.Game
     }
-
-
-type Bookmark
-    = None
-    | New Affordance
-    | Nickname V.Nick
-    | Url HM.Uri
 
 
 type Msg
@@ -155,19 +148,6 @@ updateMsg ex =
             ErrGetGame err
 
 
-createMsg : Up.Representation HM.Error r -> Msg
-createMsg ex =
-    case ex of
-        Up.Loc _ ->
-            CreatedGame
-
-        Up.Res _ _ _ ->
-            CreatedGame
-
-        Up.Error err ->
-            ErrGetGame err
-
-
 nickToVars : Auth.Cred -> Int -> V.Nick -> Dict.Dict String String
 nickToVars cred event_id nick =
     Dict.fromList
@@ -175,14 +155,6 @@ nickToVars cred event_id nick =
         , ( "user_id", Auth.accountID cred )
         , ( "game_id", String.fromInt nick.game_id )
         ]
-
-
-browseToCreate : HM.TemplateVars -> List (Response -> Result String Affordance)
-browseToCreate vars =
-    [ HM.browse [ "events" ] (ByType "ViewAction")
-    , HM.browse [ "eventById" ] (ByType "FindAction") |> HM.fillIn vars
-    , HM.browse [ "games" ] (ByType "AddAction") |> HM.fillIn vars
-    ]
 
 
 browseToFetch : HM.TemplateVars -> List (Response -> Result String Affordance)
@@ -196,7 +168,21 @@ browseToFetch vars =
 
 putGame : Auth.Cred -> Up.Etag -> LoadedResource -> Cmd Msg
 putGame creds etag res =
-    Up.put encoder decoder updateMsg creds etag res
+    -- Up.put encoder decoder updateMsg creds etag res
+    case res.update of
+        Just aff ->
+            Up.create
+                { resource = res
+                , etag = Just etag
+                , encode = encoder
+                , resMsg = resultDispatch ErrGetGame (\_ -> CreatedGame)
+                , startAt = aff
+                , browsePlan = []
+                , creds = creds
+                }
+
+        Nothing ->
+            Cmd.none
 
 
 fetchByNick : Auth.Cred -> Int -> V.Nick -> Cmd Msg
@@ -228,7 +214,7 @@ roundTrip makeMsg update cred event_id nick =
                 Nothing ->
                     Err (Http.BadStatus 429)
     in
-    Up.doRoundTrip
+    Up.roundTrip
         { encode = encoder
         , decoder = decoder
         , makeMsg = makeMsg

@@ -1,4 +1,11 @@
-module BGGAPI exposing (..)
+module BGGAPI exposing
+    ( BGGGame(..)
+    , BGGThing
+    , Error(..)
+    , requestBGGItem
+    , requestBGGSearch
+    , shotgunGames
+    )
 
 import Hex
 import Http
@@ -17,7 +24,7 @@ type BGGGame
 
 
 type alias BGGThing =
-    { bggId : Int
+    { bggId : String
     , name : String
     , description : String
     , minPlayers : Int
@@ -28,7 +35,7 @@ type alias BGGThing =
 
 
 type alias GameResult =
-    { id : Int
+    { id : String
     , name : String
     }
 
@@ -41,14 +48,14 @@ gameResultListDecoder =
 gameResultDecoder : Decoder BGGGame
 gameResultDecoder =
     map2 (\id name -> SearchResult (GameResult id name))
-        (intAttr "id")
+        (stringAttr "id")
         (path [ "name" ] (single (stringAttr "value")))
 
 
-requestBGGItem : (Result Error BGGThing -> msg) -> Int -> Cmd msg
+requestBGGItem : (Result Error BGGThing -> msg) -> String -> Cmd msg
 requestBGGItem msg id =
     Http.get
-        { url = "https://boardgamegeek.com/xmlapi2/thing?id=" ++ String.fromInt id
+        { url = "https://boardgamegeek.com/xmlapi2/thing?id=" ++ id
         , expect = Http.expectString (parseBggResult thingDecoder msg)
         }
 
@@ -83,7 +90,7 @@ parseBggResult decodes msg res =
 thingDecoder : Decoder BGGThing
 thingDecoder =
     succeed BGGThing
-        |> requiredPath [ "item" ] (single (intAttr "id"))
+        |> requiredPath [ "item" ] (single (stringAttr "id"))
         |> andMap primaryNameDecoder
         |> requiredPath [ "item", "description" ] (single (map decodeXmlEntities string))
         |> requiredPath [ "item", "minplayers" ] (single (intAttr "value"))
@@ -109,6 +116,20 @@ primaryNameDecoder =
                 )
             )
         )
+
+
+shotgunGames : (a -> Maybe String) -> (a -> Result Error BGGThing -> msg) -> List a -> Cmd msg
+shotgunGames getId mkMsg list =
+    let
+        fetchForItem game =
+            case getId (Debug.log "bgg-data-for" game) of
+                Just id ->
+                    requestBGGItem (mkMsg game) id
+
+                Nothing ->
+                    Cmd.none
+    in
+    Cmd.batch (List.map fetchForItem list)
 
 
 
@@ -167,22 +188,22 @@ decodeXmlEntities s =
 
 
 {-
-   decodeXmlEntities : String -> String
-   decodeXmlEntities s =
-       List.foldl (\( x, y ) z -> String.replace ("&" ++ y ++ ";") (String.fromChar x) z) s predefinedEntities
+      decodeXmlEntities : String -> String
+      decodeXmlEntities s =
+          List.foldl (\( x, y ) z -> String.replace ("&" ++ y ++ ";") (String.fromChar x) z) s predefinedEntities
+
+
+   predefinedEntities : List ( Char, String )
+   predefinedEntities =
+       -- https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references
+       [ ( '"', "quot" )
+       , ( '\'', "rsquo" )
+       , ( '\'', "apos" )
+       , ( '<', "lt" )
+       , ( '>', "gt" )
+       , ( '\n', "#10" )
+
+       -- & / &amp; must come last!
+       , ( '&', "amp" )
+       ]
 -}
-
-
-predefinedEntities : List ( Char, String )
-predefinedEntities =
-    -- https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references
-    [ ( '"', "quot" )
-    , ( '\'', "rsquo" )
-    , ( '\'', "apos" )
-    , ( '<', "lt" )
-    , ( '>', "gt" )
-    , ( '\n', "#10" )
-
-    -- & / &amp; must come last!
-    , ( '&', "amp" )
-    ]
