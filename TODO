@@ -8,6 +8,8 @@
 
 * B/E short TTL on API responses
 
+* B/E flag/env to indicate whether we can trust "forwarded" headers
+
 WTP parity:
 
 F/E
