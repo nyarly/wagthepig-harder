@@ -12,7 +12,7 @@ use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
 use sqlxmq::{JobRegistry, JobRunnerHandle};
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorLayer};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::{KeyExtractor, SmartIpKeyExtractor}, GovernorLayer};
 use tower_http::trace::TraceLayer;
 
 use tracing::{debug, info, warn};
@@ -127,7 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .nest("/api",
-            open_api_router()
+            root_api_router()
+                .merge(open_api_router())
                 .merge(secured_api_router(state.clone(), auth))
         );
 
@@ -204,6 +205,15 @@ where K: KeyExtractor + Sync + std::fmt::Debug,
     GovernorLayer { config: governor_conf }
 }
 
+
+fn root_api_router() -> Router<AppState> {
+    let path = |rm| route_config(rm).axum_route();
+    Router::new()
+        .route(&path(RouteMap::Root), get(sitemap))
+            .layer(governor_setup("api-root",  &mut GovernorConfigBuilder::default()))
+        // XXX key extractor that is either Authentication or SmartIp
+}
+
 fn open_api_router() -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
 
@@ -211,7 +221,6 @@ fn open_api_router() -> Router<AppState> {
 
     use RouteMap::*;
     Router::new()
-        .route(&path(Root), get(sitemap))
 
         .route(&path(Authenticate), post(authentication::authenticate))
 
@@ -219,6 +228,7 @@ fn open_api_router() -> Router<AppState> {
 
         .route(&path(PasswordReset), post(authentication::reset_password))
         .layer(governor_setup("anonymous", GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor{})
             .per_second(4)
             .burst_size(2)
         ))
