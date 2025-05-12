@@ -1,3 +1,5 @@
+* FE update to use newest ResourceUpdate functions
+* FE remove `Entered Url` options?
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Subcommand for cron to trigger DB cleanups (expired revokes)

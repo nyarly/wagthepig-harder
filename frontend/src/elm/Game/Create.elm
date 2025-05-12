@@ -9,7 +9,7 @@ import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import OutMsg
-import ResourceUpdate as Up
+import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 
 
@@ -92,25 +92,11 @@ bidiupdate msg model =
             ( model, Cmd.none, OutMsg.None )
 
 
-createMsg : Up.Representation HM.Error r -> Msg
-createMsg ex =
-    case ex of
-        Up.Loc _ ->
-            CreatedGame
-
-        Up.Res _ _ _ ->
-            CreatedGame
-
-        Up.Error err ->
-            ErrGetGame err
-
-
-nickToVars : Auth.Cred -> Int -> V.Nick -> Dict.Dict String String
-nickToVars cred event_id nick =
+nickToVars : Auth.Cred -> Int -> Dict.Dict String String
+nickToVars cred event_id =
     Dict.fromList
         [ ( "event_id", String.fromInt event_id )
         , ( "user_id", Auth.accountID cred )
-        , ( "game_id", String.fromInt nick.game_id )
         ]
 
 
@@ -124,4 +110,12 @@ browseToCreate vars =
 
 putGame : Auth.Cred -> Model -> Cmd Msg
 putGame creds model =
-    Up.browseToSend V.encoder V.decoder createMsg (nickToVars creds model.event_id) browseToCreate (V.Nick 0 "") creds model.resource
+    Up.create
+        { resource = model.resource
+        , etag = Just model.etag
+        , encode = V.encoder
+        , resMsg = resultDispatch ErrGetGame (\_ -> CreatedGame)
+        , startAt = apiRoot
+        , browsePlan = browseToCreate (nickToVars creds model.event_id)
+        , creds = creds
+        }

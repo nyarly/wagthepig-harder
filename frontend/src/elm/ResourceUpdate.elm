@@ -3,12 +3,9 @@ module ResourceUpdate exposing
     , MakeMsg
     , Representation(..)
     , apiRoot
-    , browseToSend
+      -- , browseToSend
     , create
     , delete
-    , fetchByNick
-    , fetchFromUrl
-    , put
     , resultDispatch
     , retrieve
     , roundTrip
@@ -23,7 +20,6 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Encode as E
 import OutMsg
-import Router
 import Task
 
 
@@ -63,22 +59,6 @@ import Task
    nickToVars : nick -> Dict.Dict String String
    browseToIt : HM.TemplateVars -> List (Response -> Result String Affordance)
 
-   -- then you can wrap ResourceUpdate.put, ResourceUpdate.fetchFromUrl and ResourceUpdate.fetchByNick
-   -- e.g.
-   putThing : Auth.Cred -> Model -> Cmd Msg
-   putThing creds model =
-     Up.put encodeEvent decoder (makeMsg creds) creds model.resource
-     -- put : ({r | update: Maybe Affordance} -> E.Value) -> D.Decoder {r|update: Maybe Affordance} -> MakeMsg {r|update: Maybe Affordance} msg -> Auth.Cred -> {r | update: Maybe Affordance} -> Cmd msg
-
-   fetchByNick : Auth.Cred -> Model -> String -> Cmd Msg
-   fetchByNick creds model id =
-     Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent model.resource.template creds id
-     -- fetchByNick : D.Decoder r -> MakeMsg r msg -> (n -> Dict.Dict String String)  -> (Dict.Dict String String -> List(AffordanceExtractor)) -> Maybe Affordance -> Auth.Cred -> n -> Cmd msg
-
-   fetchFromUrl : Auth.Cred -> Affordance -> Cmd Msg
-   fetchFromUrl creds url =
-     Up.fetchFromUrl decoder (makeMsg creds) (Router.EventEdit << .nick) creds url
-     -- fetchFromUrl : D.Decoder r -> MakeMsg r msg -> (r -> Router.Target) -> Auth.Cred -> Affordance -> Cmd msg
 -}
 {-
    makeMsg like....
@@ -119,20 +99,6 @@ type alias MakeMsg e r msg =
 
 type alias ResToMsg e r msg =
     Result e r -> msg
-
-
-type alias BrowsePath =
-    Dict.Dict String String -> List AffordanceExtractor
-
-
-
--- XXX replace uses with transmit
--- consider mismatched encode/decode
-
-
-browseToSend : (r -> E.Value) -> D.Decoder r -> MakeMsg HM.Error r msg -> (n -> Dict.Dict String String) -> BrowsePath -> n -> Auth.Cred -> r -> Cmd msg
-browseToSend encode decoder makeMsg nickToVars browsePath nick creds resource =
-    HM.chain creds (browsePath (nickToVars nick)) [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
 
 
 apiRoot : Affordance
@@ -241,8 +207,6 @@ update { creds, resource, etag, encode, decoder, resMsg, startAt, browsePlan } =
 
                 Got e res ->
                     Task.succeed ( e, res )
-
-        -- HM.chain creds browsePlan [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
     in
     Task.attempt resMsg trip
 
@@ -301,54 +265,6 @@ roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
                     )
     in
     Task.attempt toMsg trip
-
-
-type alias Updateable r =
-    { r | update : Maybe Affordance }
-
-
-
--- XXX "has an affordance called 'update'" hits weird
--- XXX even moreso, should we consider a generic Model with etag, affordances, and (generic) resource
--- XXX TODO change uses of `put` to `newput` and then remove and rename newput -> put
-
-
-put : (Updateable r -> E.Value) -> D.Decoder (Updateable r) -> MakeMsg HM.Error (Updateable r) msg -> Auth.Cred -> Etag -> Updateable r -> Cmd msg
-put encode decoder makeMsg cred etag resource =
-    case resource.update of
-        Just aff ->
-            HM.chainFrom aff cred [] (etagHeader etag) (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
-
-        _ ->
-            Cmd.none
-
-
-fetchByNick : D.Decoder r -> MakeMsg HM.Error r msg -> (n -> Dict.Dict String String) -> BrowsePath -> Auth.Cred -> n -> Cmd msg
-fetchByNick decoder makeMsg nickToVars browsePath creds nick =
-    let
-        handleNickGetResult =
-            handleGetResult (\_ -> OutMsg.None) makeMsg
-    in
-    HM.chain creds (browsePath (nickToVars nick)) [] HM.emptyBody (modelRes decoder) handleNickGetResult
-
-
-
--- XXX Consider having Representation.Loc wrap an opaque type and use that instead of HM.Uri
-
-
-fetchFromUrl : D.Decoder r -> MakeMsg HM.Error r msg -> (r -> Router.Target) -> Auth.Cred -> HM.Uri -> Cmd msg
-fetchFromUrl decoder makeMsg routeByHasNick creds access =
-    HM.chainFrom
-        (HM.link
-            HM.GET
-            access
-        )
-        creds
-        []
-        []
-        HM.emptyBody
-        (modelRes decoder)
-        (handleGetResult (OutMsg.Main << OutMsg.Nav << routeByHasNick) makeMsg)
 
 
 type HopOrResource r
@@ -422,25 +338,15 @@ landPutResponse decoder res =
             Err ("Unexpected status sending resource: " ++ String.fromInt other)
 
 
-handleResult : (r -> OutMsg.Msg) -> MakeMsg e r msg -> Result e (HopOrResource r) -> msg
-handleResult makeOut makeMsg res =
+handlePutResult : MakeMsg e r msg -> Result e (HopOrResource r) -> msg
+handlePutResult makeMsg res =
     makeMsg <|
         case res of
             Ok (Hop url) ->
                 Loc (HM.link GET url)
 
             Ok (Got etag rs) ->
-                Res etag rs (makeOut rs)
+                Res etag rs OutMsg.None
 
             Err err ->
                 Error err
-
-
-handlePutResult : MakeMsg e r msg -> Result e (HopOrResource r) -> msg
-handlePutResult makeMsg res =
-    handleResult (\_ -> OutMsg.None) makeMsg res
-
-
-handleGetResult : (r -> OutMsg.Msg) -> MakeMsg e r msg -> Result e ( Etag, r ) -> msg
-handleGetResult makeOut makeMsg rz =
-    handleResult makeOut makeMsg (Result.map gotFromTuple rz)

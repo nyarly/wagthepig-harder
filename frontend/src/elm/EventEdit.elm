@@ -11,8 +11,7 @@ import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import OutMsg
-import ResourceUpdate as Up
-import Router
+import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Task
 import Time
 import ViewUtil as Eww
@@ -184,33 +183,45 @@ getCurrentTime =
     Task.perform TimeNow Time.now
 
 
-makeMsg : Auth.Cred -> Up.Representation HM.Error Resource -> Msg
-makeMsg cred ex =
-    case ex of
-        Up.Loc aff ->
-            Entered cred (Url aff.uri)
-
-        Up.Res etag res out ->
-            GotEvent etag res out
-
-        Up.Error err ->
-            ErrGetEvent err
-
-
 putEvent : Auth.Cred -> Model -> Cmd Msg
 putEvent creds model =
-    Up.put encodeEvent decoder (makeMsg creds) creds model.etag model.resource
+    -- Up.put encodeEvent decoder (makeMsg creds) creds model.etag model.resource
+    case model.resource.update of
+        Just aff ->
+            Up.update
+                { resource = model.resource -- s
+                , etag = Just model.etag -- Maybe Etag
+                , encode = encodeEvent -- s -> E.Value
+                , decoder = decoder -- D.Decoder r
+                , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+                , startAt = aff
+                , browsePlan = [] -- List AffordanceExtractor
+                , creds = creds -- Auth.Cred
+                }
+
+        Nothing ->
+            Cmd.none
 
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent creds id
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , startAt = apiRoot
+        , browsePlan = browseToEvent (nickToVars id)
+        }
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
-    let
-        routeByHasNick =
-            Router.EventEdit << .nick
-    in
-    Up.fetchFromUrl decoder (makeMsg creds) routeByHasNick creds url
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+
+        -- XXX used to update path with stuff
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , startAt = HM.link HM.GET url
+        , browsePlan = []
+        }

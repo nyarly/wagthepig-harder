@@ -17,7 +17,7 @@ import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import OutMsg
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
-import ResourceUpdate as Up exposing (taggedResultDispatch)
+import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
 import Router exposing (GameSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
 import Time
@@ -533,26 +533,21 @@ fetchBGGData gameList =
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToEvent creds id
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , startAt = apiRoot
+        , browsePlan = browseToEvent (nickToVars id)
+        }
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
-    let
-        routeByHasNick m =
-            Router.EventShow m.nick Nothing
-    in
-    Up.fetchFromUrl decoder (makeMsg creds) routeByHasNick creds url
-
-
-makeMsg : Auth.Cred -> Up.Representation HM.Error Resource -> Msg
-makeMsg cred ex =
-    case ex of
-        Up.Loc aff ->
-            Entered cred (Url aff.uri)
-
-        Up.Res etag res out ->
-            GotEvent etag res out
-
-        Up.Error err ->
-            ErrGetEvent err
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , startAt = HM.link HM.GET url
+        , browsePlan = []
+        }

@@ -12,7 +12,7 @@ import Hypermedia as HM exposing (Affordance, OperationSelector(..), emptyRespon
 import Json.Decode as D
 import Json.Encode as E
 import OutMsg
-import ResourceUpdate as Up
+import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import String exposing (length)
 import ViewUtil as Eww
@@ -206,19 +206,6 @@ submitPasswordUpdate model =
         AuthResponse
 
 
-makeMsg : Auth.Cred -> Up.Representation Http.Error Profile -> Msg
-makeMsg cred rep =
-    case rep of
-        Up.Loc aff ->
-            Entered cred (Url aff)
-
-        Up.Res etag res out ->
-            GotProfile etag res out
-
-        Up.Error err ->
-            ErrProfileGet err
-
-
 nickToVars : String -> Dict.Dict String String
 nickToVars nick =
     Dict.fromList [ ( "user_id", nick ) ]
@@ -231,14 +218,43 @@ browseToProfile vars =
 
 putProfile : Auth.Cred -> Model -> Cmd Msg
 putProfile creds model =
-    Up.put encode decoder (makeMsg creds) creds model.etag model.profile
+    --Up.put encode decoder (makeMsg creds) creds model.etag model.profile
+    --put encode decoder makeMsg cred etag resource =
+    case model.profile.update of
+        Just aff ->
+            Up.update
+                { resource = model.profile -- s
+                , etag = Just model.etag -- Maybe Etag
+                , encode = encode -- s -> E.Value
+                , decoder = decoder -- D.Decoder r
+                , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+                , startAt = aff
+                , browsePlan = [] -- List AffordanceExtractor
+                , creds = creds -- Auth.Cred
+                }
+
+        Nothing ->
+            Cmd.none
 
 
 fetchByCreds : Auth.Cred -> Cmd Msg
 fetchByCreds creds =
-    Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile creds (Auth.accountID creds)
+    --Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile creds (Auth.accountID creds)
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+        , startAt = apiRoot
+        , browsePlan = browseToProfile (nickToVars (Auth.accountID creds))
+        }
 
 
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
-    Up.fetchFromUrl decoder (makeMsg creds) (\_ -> Router.Profile) creds url
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+        , startAt = HM.link HM.GET url
+        , browsePlan = []
+        }

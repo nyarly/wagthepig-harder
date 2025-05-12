@@ -13,7 +13,7 @@ import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
 import OutMsg
-import ResourceUpdate as Up exposing (resultDispatch)
+import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 
 
@@ -135,19 +135,6 @@ bidiupdate msg model =
             ( model, Cmd.none, OutMsg.None )
 
 
-updateMsg : Up.Representation HM.Error LoadedResource -> Msg
-updateMsg ex =
-    case ex of
-        Up.Loc aff ->
-            LoadLoc aff
-
-        Up.Res etag res out ->
-            GotGame etag res out
-
-        Up.Error err ->
-            ErrGetGame err
-
-
 nickToVars : Auth.Cred -> Int -> V.Nick -> Dict.Dict String String
 nickToVars cred event_id nick =
     Dict.fromList
@@ -186,17 +173,25 @@ putGame creds etag res =
 
 
 fetchByNick : Auth.Cred -> Int -> V.Nick -> Cmd Msg
-fetchByNick creds event_id =
-    Up.fetchByNick decoder updateMsg (nickToVars creds event_id) browseToFetch creds
+fetchByNick creds event_id nick =
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps OutMsg.None)
+        , startAt = apiRoot
+        , browsePlan = browseToFetch (nickToVars creds event_id nick)
+        }
 
 
 fetchFromUrl : Auth.Cred -> Int -> HM.Uri -> Cmd Msg
-fetchFromUrl creds event_id =
-    let
-        routeByNick r =
-            Router.EditGame event_id r.nick.game_id
-    in
-    Up.fetchFromUrl decoder updateMsg routeByNick creds
+fetchFromUrl creds _ url =
+    Up.retrieve
+        { creds = creds
+        , decoder = decoder
+        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps OutMsg.None)
+        , startAt = HM.link HM.GET url
+        , browsePlan = []
+        }
 
 
 roundTrip : Up.MakeMsg Http.Error LoadedResource msg -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
