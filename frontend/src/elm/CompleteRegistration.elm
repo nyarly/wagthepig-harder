@@ -1,4 +1,4 @@
-module CompleteRegistration exposing (Model, Msg(..), bidiupdate, init, view)
+module CompleteRegistration exposing (Model, Msg(..), bidiupdate, init, updaters, view)
 
 import Auth
 import Dict
@@ -12,6 +12,7 @@ import Hypermedia as HM exposing (OperationSelector(..))
 import Json.Encode as E
 import OutMsg
 import Router exposing (Target(..))
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
 
@@ -65,6 +66,40 @@ view model =
         , Eww.maybeSubmit passwordsMatch "Update Password"
         ]
     ]
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, requestNav } msg =
+    case msg of
+        Entered cred email ->
+            [ localUpdate (\m -> ( { m | creds = cred, email = email }, Cmd.none )) ]
+
+        ChangePassword newpassword ->
+            [ localUpdate (\m -> ( { m | password = newpassword }, Cmd.none )) ]
+
+        ChangePasswordAgain newpassword ->
+            [ localUpdate (\m -> ( { m | passwordAgain = newpassword }, Cmd.none )) ]
+
+        UpdateAttempted ->
+            [ localUpdate (\m -> ( { m | fromServer = None }, updatePassword m.creds m.email m.password )) ]
+
+        AuthResponse res ->
+            case res of
+                Ok () ->
+                    -- n.b. we could do the login ourselves, but I want to avoid a folk "magic-link" pattern here
+                    [ localUpdate (\m -> ( { m | fromServer = Success }, Cmd.none ))
+                    , requestNav Router.Login
+                    ]
+
+                Err err ->
+                    [ localUpdate (\m -> ( { m | fromServer = Failed err }, Cmd.none )) ]
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )

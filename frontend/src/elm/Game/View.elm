@@ -9,10 +9,11 @@ module Game.View exposing
     , encoder
     , init
     , nickDecode
+    , updaters
     , view
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch)
+import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch, shotgunGames)
 import Html exposing (Html, a, button, img, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
@@ -22,6 +23,7 @@ import Json.Decode as D
 import Json.Encode as E
 import Maybe exposing (withDefault)
 import OutMsg
+import Updaters exposing (UpdateList, Updater, childUpdate)
 import ViewUtil as Eww
 
 
@@ -252,6 +254,55 @@ interestedInput showInterest g =
         HtmlExtra.nothing
 
 
+gameUpdaters : (Updater Game Msg -> Updater model msg) -> Msg -> UpdateList model msg
+gameUpdaters localUpdate msg =
+    case msg of
+        ChangeName n ->
+            [ localUpdate (\m -> ( { m | name = Just n }, Cmd.none )) ]
+
+        ChangeMinPlayers v ->
+            [ localUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none )) ]
+
+        ChangeMaxPlayers v ->
+            [ localUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none )) ]
+
+        ChangeDurationSecs l ->
+            [ localUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none )) ]
+
+        ChangeBggID i ->
+            [ localUpdate (\m -> ( { m | bggID = Just i }, Cmd.none )) ]
+
+        ChangePitch p ->
+            [ localUpdate (\m -> ( { m | pitch = Just p }, Cmd.none )) ]
+
+        ChangeInterested i ->
+            [ localUpdate (\m -> ( { m | interested = Just i }, Cmd.none )) ]
+
+        ChangeCanTeach t ->
+            [ localUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none )) ]
+
+        ChangeNotes n ->
+            [ localUpdate (\m -> ( { m | notes = Just n }, Cmd.none )) ]
+
+        Pick thing ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | name = Just thing.name
+                        , bggID = Just thing.bggId
+                        , minPlayers = Just thing.minPlayers
+                        , maxPlayers = Just thing.maxPlayers
+                        , durationSecs = Just (thing.durationMinutes * 60)
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        _ ->
+            []
+
+
 gameUpdate : Msg -> Game -> ( Game, Cmd Msg )
 gameUpdate msg game =
     case msg of
@@ -297,6 +348,43 @@ gameUpdate msg game =
             ( game, Cmd.none )
 
 
+searchUpdaters : (Updater (List BGGGame) Msg -> Updater model msg) -> Msg -> UpdateList model msg
+searchUpdaters localUpdate msg =
+    case msg of
+        Pick thing ->
+            let
+                onlyPicked g =
+                    case g of
+                        SearchResult _ ->
+                            False
+
+                        Thing t ->
+                            t.bggId == thing.bggId
+            in
+            [ localUpdate (\m -> ( List.filter onlyPicked m, Cmd.none )) ]
+
+        BGGSearchResult r ->
+            case r of
+                Ok l ->
+                    [ localUpdate (\_ -> ( l, shotgunGames l )) ]
+
+                -- XXX error handling
+                Err _ ->
+                    []
+
+        BGGThingResult r ->
+            case r of
+                Ok newGame ->
+                    [ localUpdate (\m -> ( enrichGame m newGame, Cmd.none )) ]
+
+                -- XXX error handling
+                Err _ ->
+                    []
+
+        _ ->
+            []
+
+
 searchUpdate : Msg -> List BGGGame -> ( List BGGGame, Cmd Msg )
 searchUpdate msg bggSearchResults =
     case msg of
@@ -330,6 +418,25 @@ searchUpdate msg bggSearchResults =
 
         _ ->
             ( bggSearchResults, Cmd.none )
+
+
+type alias Interface base gas model msg =
+    { base
+        | localUpdate : Updater (GameAndSearch gas) Msg -> Updater model msg
+    }
+
+
+updaters : Interface base gas model msg -> Msg -> UpdateList model msg
+updaters { localUpdate } msg =
+    let
+        gameLocalUpdate =
+            localUpdate << childUpdate .resource (\m -> \g -> { m | resource = g }) identity
+
+        searchLocalUpdate =
+            localUpdate << childUpdate .bggSearchResults (\m -> \g -> { m | bggSearchResults = g }) identity
+    in
+    searchUpdaters searchLocalUpdate msg
+        ++ gameUpdaters gameLocalUpdate msg
 
 
 bidiupdate : Msg -> GameAndSearch g -> ( GameAndSearch g, Cmd Msg, OutMsg.Msg )

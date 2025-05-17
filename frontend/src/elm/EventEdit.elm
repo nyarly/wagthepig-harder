@@ -1,4 +1,13 @@
-module EventEdit exposing (Bookmark(..), Model, Msg(..), bidiupdate, forCreate, init, view)
+module EventEdit exposing
+    ( Bookmark(..)
+    , Model
+    , Msg(..)
+    , bidiupdate
+    , forCreate
+    , init
+    , updaters
+    , view
+    )
 
 import Auth
 import Event exposing (browseToEvent, nickToVars)
@@ -14,6 +23,7 @@ import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Task
 import Time
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
 
@@ -101,7 +111,7 @@ type Msg
     | ChangeTime String
     | ChangeLocation String
     | Submit
-    | GotEvent Up.Etag Resource OutMsg.Msg
+    | GotEvent Up.Etag Resource
     | ErrGetEvent HM.Error
 
 
@@ -128,6 +138,61 @@ view model =
             ]
         ]
     ]
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate } msg =
+    let
+        updateRes f =
+            [ localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none )) ]
+    in
+    case msg of
+        Entered creds loc ->
+            case loc of
+                None ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, getCurrentTime )) ]
+
+                -- creating a new Event
+                Nickname id ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByNick creds id )) ]
+
+                Url url ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url )) ]
+
+        TimeNow t ->
+            updateRes (\r -> { r | time = t })
+
+        ChangeName n ->
+            updateRes (\r -> { r | name = n })
+
+        ChangeTime t ->
+            case Iso8601.toTime t of
+                Ok nt ->
+                    updateRes (\r -> { r | time = nt })
+
+                -- XXX error handling
+                Err _ ->
+                    []
+
+        ChangeLocation l ->
+            updateRes (\r -> { r | location = l })
+
+        GotEvent etag ev ->
+            [ localUpdate (\m -> ( { m | etag = etag, resource = ev }, Cmd.none )) ]
+
+        -- XXX error handling
+        ErrGetEvent _ ->
+            []
+
+        -- XXX
+        Submit ->
+            [ localUpdate (\m -> ( m, putEvent m.creds m )) ]
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -167,8 +232,8 @@ bidiupdate msg model =
         ChangeLocation l ->
             ( updateRes (\r -> { r | location = l }) model, Cmd.none, OutMsg.None )
 
-        GotEvent etag ev outmsg ->
-            ( { model | etag = etag, resource = ev }, Cmd.none, outmsg )
+        GotEvent etag ev ->
+            ( { model | etag = etag, resource = ev }, Cmd.none, OutMsg.None )
 
         ErrGetEvent _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -193,7 +258,7 @@ putEvent creds model =
                 , etag = Just model.etag -- Maybe Etag
                 , encode = encodeEvent -- s -> E.Value
                 , decoder = decoder -- D.Decoder r
-                , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+                , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
                 , startAt = aff
                 , browsePlan = [] -- List AffordanceExtractor
                 , creds = creds -- Auth.Cred
@@ -208,7 +273,7 @@ fetchByNick creds id =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot
         , browsePlan = browseToEvent (nickToVars id)
         }
@@ -221,7 +286,7 @@ fetchFromUrl creds url =
         , decoder = decoder
 
         -- XXX used to update path with stuff
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = HM.link HM.GET url
         , browsePlan = []
         }

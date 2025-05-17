@@ -5,11 +5,12 @@ import Dict
 import Html exposing (Html, button, form, text)
 import Html.Attributes exposing (disabled)
 import Html.Attributes.Extra exposing (attributeMaybe)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Events exposing (onSubmit)
 import Http
 import Hypermedia as HM exposing (Method(..), OperationSelector(..), emptyResponse)
 import Json.Encode as E
 import OutMsg
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
 
@@ -58,6 +59,34 @@ encodeModel model =
         [ ( "name", E.string model.name )
         , ( "bggUsername", E.string model.bgg_username )
         ]
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate } msg =
+    case msg of
+        Entered ->
+            [ localUpdate (\m -> ( { m | fromServer = Nothing }, Cmd.none )) ]
+
+        ChangeEmail email ->
+            [ localUpdate (\m -> ( { m | email = email }, Cmd.none )) ]
+
+        ChangeName name ->
+            [ localUpdate (\m -> ( { m | name = name }, Cmd.none )) ]
+
+        ChangeBGG bgg ->
+            [ localUpdate (\m -> ( { m | bgg_username = bgg }, Cmd.none )) ]
+
+        Submit ->
+            [ localUpdate (\m -> ( m, put m )) ]
+
+        ServerResponse res ->
+            [ localUpdate (\m -> ( { m | fromServer = Just res }, Cmd.none )) ]
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )

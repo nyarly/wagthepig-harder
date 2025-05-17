@@ -11,13 +11,10 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
+import Updaters exposing (UpdateList, Updater, childUpdate)
 
 
 type alias EventId =
-    Int
-
-
-type alias GameId =
     Int
 
 
@@ -30,13 +27,6 @@ type alias Model =
     , bggSearchResults : List BGGGame
     , resource : V.Game -- XXX Maybe?
     }
-
-
-type Bookmark
-    = None
-    | New Affordance
-    | Nickname V.Nick
-    | Url HM.Uri
 
 
 type Msg
@@ -66,6 +56,48 @@ view model =
                ]
         )
     ]
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
+        , lowerModel : model -> Model
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, lowerModel, requestNav } msg =
+    let
+        updateRes f m =
+            { m | resource = f m.resource }
+
+        gameInterface =
+            { localUpdate = localUpdate << childUpdate identity (\_ -> identity) GameMsg
+            }
+    in
+    case msg of
+        GameMsg gmsg ->
+            V.updaters gameInterface gmsg
+
+        Entered creds ev ->
+            [ localUpdate
+                (\_ ->
+                    ( { init | event_id = ev, creds = creds } |> updateRes (\r -> { r | interested = Just True })
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        Submit ->
+            [ localUpdate (\m -> ( m, putGame m.creds m )) ]
+
+        CreatedGame ->
+            [ \model -> requestNav (Router.EventShow (lowerModel model).event_id Nothing) model ]
+
+        -- XXX error handling
+        ErrGetGame _ ->
+            []
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )

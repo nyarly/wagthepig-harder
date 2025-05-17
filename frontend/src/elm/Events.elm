@@ -1,4 +1,4 @@
-module Events exposing (Model, Msg(..), bidiupdate, init, view)
+module Events exposing (Model, Msg(..), init, updaters, view)
 
 import Auth
 import Event
@@ -10,10 +10,10 @@ import Http
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
-import OutMsg
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time
+import Updaters exposing (UpdateList, Updater)
 
 
 type alias TableSorting =
@@ -95,24 +95,43 @@ init =
         (Resource Nothing [] [])
 
 
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
+
+{-
+   type alias Interface base model msg =
+       { base
+           | localUpdate : Updater Model Msg -> Updater model msg
+           , requestCreateEvent : Affordance -> UpdateList model msg
+           , requestUpdatePath : Router.Target -> Updater model msg
+       }
+-}
+-- updaters : Interface base model msg -> Msg -> UpdateList model msg
+
+
+updaters :
+    { a
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestCreateEvent : Affordance -> Updater model msg
+        , requestUpdatePath : Router.Target -> Updater model msg
+    }
+    -> Msg
+    -> UpdateList model msg
+updaters { localUpdate, requestCreateEvent, requestUpdatePath } msg =
     case msg of
         Entered creds _ ->
-            ( { model | creds = creds }, fetch creds, OutMsg.None )
+            [ localUpdate (\model -> ( { model | creds = creds }, fetch creds )) ]
 
         GotEvents new ->
-            ( { model | resource = new }, Cmd.none, OutMsg.None )
+            [ localUpdate (\m -> ( { m | resource = new }, Cmd.none )) ]
 
         ChangeSort newsort ->
-            ( model, Cmd.none, OutMsg.Main << OutMsg.UpdatePage << Router.Events << Just <| newsort )
+            [ requestUpdatePath (Router.Events (Just newsort)) ]
 
+        --XXX need to handle an error
         ErrGetEvents _ ->
-            ( model, Cmd.none, OutMsg.None )
+            []
 
-        -- XXX
         CreateNewEvent aff ->
-            ( model, Cmd.none, OutMsg.Page << OutMsg.CreateEvent <| aff )
+            [ requestCreateEvent aff ]
 
 
 sortWith : EventSortBy -> Event -> Event -> Order

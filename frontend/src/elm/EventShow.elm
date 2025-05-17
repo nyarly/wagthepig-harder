@@ -1,4 +1,4 @@
-module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, view)
+module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, updaters, view)
 
 import Auth
 import BGGAPI
@@ -21,6 +21,7 @@ import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispa
 import Router exposing (GameSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
 import Time
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Ew
 
 
@@ -63,7 +64,7 @@ type alias Game =
     , pitch : Maybe String
     , interested : Maybe Bool
     , canTeach : Maybe Bool
-    , notes : Maybe Bool
+    , notes : Maybe String
     , whoElse : OtherPlayers
     , thumbnail : Maybe String
     }
@@ -90,7 +91,7 @@ gameDecoder =
         |> decodeMaybe "pitch" D.string
         |> decodeMaybe "interested" D.bool
         |> decodeMaybe "canTeach" D.bool
-        |> decodeMaybe "notes" D.bool
+        |> decodeMaybe "notes" D.string
         |> hardcoded Empty
         |> hardcoded Nothing
 
@@ -143,7 +144,7 @@ type Bookmark
 type Msg
     = Entered Auth.Cred Bookmark
     | ChangeSort GameSorting
-    | GotEvent Up.Etag Resource OutMsg.Msg
+    | GotEvent Up.Etag Resource
     | GotGameList GameList
     | GetOtherPlayers G.Nick Affordance
     | GotOtherPlayers G.Nick OtherPlayers
@@ -158,6 +159,151 @@ type Msg
     | ErrGetEvent HM.Error
     | ErrGameList HM.Error
     | ErrGetBGGData BGGAPI.Error
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestUpdatePath : Router.Target -> Updater model msg
+        , lowerModel : model -> Model
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, requestUpdatePath, lowerModel } msg =
+    case msg of
+        Entered creds loc ->
+            case loc of
+                Nickname id ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByNick creds id )) ]
+
+                Url url ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url )) ]
+
+                None ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, Cmd.none )) ]
+
+        ChangeSort newsort ->
+            [ \model ->
+                case (lowerModel model).resource of
+                    Just res ->
+                        requestUpdatePath (Router.EventShow res.nick (Just newsort)) model
+
+                    Nothing ->
+                        ( model, Cmd.none )
+            ]
+
+        GotEvent etag ev ->
+            [ localUpdate (\m -> ( { m | etag = etag, resource = Just ev }, fetchGamesList m.creds ev.gamesTemplate )) ]
+
+        GotGameList list ->
+            [ localUpdate (\m -> ( { m | games = Just list }, fetchBGGData list )) ]
+
+        -- XXX error handling
+        ErrGetEvent _ ->
+            []
+
+        -- XXX error handling
+        ErrGameList _ ->
+            []
+
+        UpdateGameInterest val event_id nick ->
+            [ localUpdate (\m -> ( m, updateInterest val m.creds event_id nick )) ]
+
+        -- XXX need to update table
+        UpdatedGameInterest val nick ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games = gameItemUpdate nick (\g -> { g | interested = Just val }) m.games
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        UpdateGameTeaching val event_id nick ->
+            [ localUpdate (\m -> ( m, updateTeaching val m.creds event_id nick )) ]
+
+        -- XXX need to update table
+        UpdatedGameTeaching val nick ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games = gameItemUpdate nick (\g -> { g | canTeach = Just val }) m.games
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        -- XXX error handling
+        UpdateError _ ->
+            []
+
+        CloseOtherPlayers nick ->
+            let
+                closeGame game =
+                    { game | whoElse = closeOtherPlayers game.whoElse }
+            in
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games = gameItemUpdate nick closeGame m.games
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        GetOtherPlayers nick aff ->
+            let
+                closeGame game =
+                    { game | whoElse = closeOtherPlayers game.whoElse }
+
+                closeAll games =
+                    Maybe.map (List.map closeGame) games
+            in
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games = closeAll m.games
+                      }
+                    , fetchOtherPlayers m.creds nick aff
+                    )
+                )
+            ]
+
+        GotOtherPlayers nick list ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games =
+                            gameItemUpdate nick (\g -> { g | whoElse = list }) m.games
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        GotBGGData gameId bggData ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | games =
+                            gameItemUpdate gameId (\g -> { g | thumbnail = Just bggData.thumbnail }) m.games
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        -- XXX
+        ErrOtherPlayers _ ->
+            []
+
+        ErrGetBGGData _ ->
+            []
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
@@ -182,8 +328,8 @@ bidiupdate msg model =
                 Nothing ->
                     ( model, Cmd.none, OutMsg.None )
 
-        GotEvent etag ev outmsg ->
-            ( { model | etag = etag, resource = Just ev }, fetchGamesList model.creds ev.gamesTemplate, outmsg )
+        GotEvent etag ev ->
+            ( { model | etag = etag, resource = Just ev }, fetchGamesList model.creds ev.gamesTemplate, OutMsg.None )
 
         GotGameList list ->
             ( { model | games = Just list }, fetchBGGData list, OutMsg.None )
@@ -379,7 +525,7 @@ makeGameRow event_id game =
             [ a [ class "button edit", href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
             , button [ class "whoelse", onClick (GetOtherPlayers game.nick game.users) ] [ span [] [ text "Who Else?" ] ]
             ]
-        , td [] [ text (Maybe.withDefault "" (Maybe.map boolStr game.notes)) ]
+        , td [] [ text (Maybe.withDefault "" game.notes) ]
         , whoElseTD game
         ]
     )
@@ -536,7 +682,7 @@ fetchByNick creds id =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot
         , browsePlan = browseToEvent (nickToVars id)
         }
@@ -547,7 +693,7 @@ fetchFromUrl creds url =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = HM.link HM.GET url
         , browsePlan = []
         }

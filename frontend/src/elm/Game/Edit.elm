@@ -1,8 +1,9 @@
-module Game.Edit exposing (Model, Msg(..), bidiupdate, init, roundTrip, view)
+module Game.Edit exposing (Model, Msg(..), bidiupdate, init, roundTrip, updaters, view)
 
 import Auth
 import BGGAPI exposing (BGGGame(..))
 import Dict
+import Game.Create exposing (putGame)
 import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
@@ -15,6 +16,7 @@ import Json.Encode as E
 import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
+import Updaters exposing (UpdateList, Updater, childUpdate)
 
 
 type alias EventId =
@@ -53,7 +55,7 @@ type Msg
     | LoadLoc Affordance
     | Submit
     | CreatedGame
-    | GotGame Up.Etag LoadedResource OutMsg.Msg
+    | GotGame Up.Etag LoadedResource
     | ErrGetGame HM.Error
     | GameMsg V.Msg
 
@@ -99,6 +101,67 @@ view model =
     ]
 
 
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , lowerModel : model -> Model
+        , requestNav : Router.Target -> Updater model msg
+    }
+
+
+childUpdate : (LoadedResource -> ( LoadedResource, Cmd V.Msg )) -> Updater Model Msg
+childUpdate upper model =
+    case model.resource of
+        NotLoaded ->
+            ( model, Cmd.none )
+
+        Loaded res ->
+            upper res
+                |> Tuple.mapBoth (\m -> { model | resource = Loaded m }) (Cmd.map GameMsg)
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { requestNav, localUpdate, lowerModel } msg =
+    case msg of
+        Entered creds ev i ->
+            [ localUpdate (\m -> ( { m | event_id = ev, creds = creds }, fetchByNick creds ev (V.Nick i (Auth.accountID creds)) )) ]
+
+        LoadLoc aff ->
+            [ localUpdate (\m -> ( m, fetchFromUrl m.creds m.event_id aff.uri )) ]
+
+        GameMsg gmsg ->
+            let
+                interface =
+                    { localUpdate = localUpdate << childUpdate
+                    }
+            in
+            V.updaters interface gmsg
+
+        Submit ->
+            [ \model ->
+                let
+                    gmod =
+                        lowerModel model
+                in
+                case gmod.resource of
+                    NotLoaded ->
+                        ( model, Cmd.none )
+
+                    Loaded res ->
+                        localUpdate (\m -> ( m, putGame gmod.creds gmod.etag res )) model
+            ]
+
+        CreatedGame ->
+            [ \m -> requestNav (Router.EventShow (lowerModel m).event_id Nothing) m
+            ]
+
+        GotGame etag g ->
+            [ localUpdate (\m -> ( { m | etag = etag, resource = Loaded g }, Cmd.none )) ]
+
+        ErrGetGame _ ->
+            []
+
+
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =
     case msg of
@@ -128,8 +191,8 @@ bidiupdate msg model =
         CreatedGame ->
             ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
 
-        GotGame etag g outmsg ->
-            ( { model | etag = etag, resource = Loaded g }, Cmd.none, outmsg )
+        GotGame etag g ->
+            ( { model | etag = etag, resource = Loaded g }, Cmd.none, OutMsg.None )
 
         ErrGetGame _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -155,8 +218,10 @@ browseToFetch vars =
 
 putGame : Auth.Cred -> Up.Etag -> LoadedResource -> Cmd Msg
 putGame creds etag res =
-    -- Up.put encoder decoder updateMsg creds etag res
     case res.update of
+        Nothing ->
+            Cmd.none
+
         Just aff ->
             Up.create
                 { resource = res
@@ -168,16 +233,13 @@ putGame creds etag res =
                 , creds = creds
                 }
 
-        Nothing ->
-            Cmd.none
-
 
 fetchByNick : Auth.Cred -> Int -> V.Nick -> Cmd Msg
 fetchByNick creds event_id nick =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
         , startAt = apiRoot
         , browsePlan = browseToFetch (nickToVars creds event_id nick)
         }
@@ -188,7 +250,7 @@ fetchFromUrl creds _ url =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
         , startAt = HM.link HM.GET url
         , browsePlan = []
         }

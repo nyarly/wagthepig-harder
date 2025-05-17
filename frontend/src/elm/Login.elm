@@ -1,4 +1,4 @@
-module Login exposing (Model, Msg(..), bidiupdate, init, logout, view)
+module Login exposing (Model, Msg(..), init, logout, updaters, view)
 
 import Auth
 import Dict
@@ -8,8 +8,8 @@ import Html.Events exposing (onClick, onSubmit)
 import Http
 import Hypermedia as HM exposing (OperationSelector(..), emptyBody, emptyResponse)
 import Json.Encode as E
-import OutMsg
 import Router exposing (Target(..))
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
 
@@ -26,7 +26,8 @@ init =
 
 
 type Msg
-    = ChangeEmail String
+    = Entered
+    | ChangeEmail String
     | ChangePassword String
     | AuthenticationAttempted
     | AuthResponse (Result Http.Error Auth.Cred)
@@ -55,38 +56,46 @@ view model =
     ]
 
 
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
+        , installNewCred : Auth.Cred -> Updater model msg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, installNewCred, requestNav } msg =
     case msg of
+        Entered ->
+            []
+
         ChangeEmail newemail ->
-            ( { model | email = newemail }, Cmd.none, OutMsg.None )
+            [ localUpdate (\m -> ( { m | email = newemail }, Cmd.none )) ]
 
         ChangePassword newpassword ->
-            ( { model | password = newpassword }, Cmd.none, OutMsg.None )
+            [ localUpdate (\m -> ( { m | password = newpassword }, Cmd.none )) ]
 
         AuthenticationAttempted ->
-            ( { model | fromServer = None }
-            , login model.email model.password
-            , OutMsg.None
-            )
+            [ localUpdate (\m -> ( { m | fromServer = None }, login m.email m.password )) ]
 
         AuthResponse res ->
             case res of
                 Ok user ->
-                    ( { model | fromServer = Success user, password = "" }, Cmd.none, OutMsg.Main (OutMsg.NewCred user Router.Landing) )
+                    [ localUpdate (\m -> ( { m | fromServer = Success user, password = "" }, Cmd.none ))
+                    , installNewCred user
+                    , requestNav Router.Landing
+                    ]
 
+                -- XXX error handling
                 Err err ->
-                    ( { model | fromServer = Failed err, password = "" }, Cmd.none, OutMsg.None )
+                    [ localUpdate (\m -> ( { m | fromServer = Failed err, password = "" }, Cmd.none )) ]
 
         WantsReg ->
-            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav Router.Register) )
+            [ requestNav Router.Register ]
 
         LoggedOut _ ->
-            ( model, Auth.logout, OutMsg.None )
-
-
-
--- type alias ResToMsg x a msg = (Result x a -> msg)
+            [ localUpdate (\m -> ( m, Auth.logout )) ]
 
 
 login : String -> String -> Cmd Msg

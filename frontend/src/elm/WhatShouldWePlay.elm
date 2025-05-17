@@ -1,4 +1,4 @@
-module WhatShouldWePlay exposing (Model, Msg(..), Nick, bidiupdate, init, view)
+module WhatShouldWePlay exposing (Model, Msg(..), Nick, bidiupdate, init, updaters, view)
 
 import Auth
 import BGGAPI
@@ -17,6 +17,7 @@ import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlaye
 import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
 import Router exposing (ReccoSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybes, sortingHeader)
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Ew
 
 
@@ -131,6 +132,92 @@ init =
 
 type alias EventPlayers =
     Maybe (List Player)
+
+
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestUpdatePath : Router.Target -> Updater model msg
+        , lowerModel : model -> Model
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, requestUpdatePath, lowerModel } msg =
+    let
+        closeRecco recco =
+            { recco | whoElse = closeOtherPlayers recco.whoElse }
+
+        closeAll reccos =
+            Maybe.map (List.map closeRecco) reccos
+    in
+    case msg of
+        Entered creds nick ->
+            [ localUpdate (\m -> ( { m | creds = creds, nick = nick }, fetchEventPlayers creds nick )) ]
+
+        SelectUsers selectedIds ->
+            [ localUpdate (\m -> ( { m | selectedIds = selectedIds }, Cmd.none )) ]
+
+        SetExtraPlayerCount extraCount ->
+            [ localUpdate (\m -> ( { m | extraCount = extraCount }, Cmd.none )) ]
+
+        GotRecco suggestion ->
+            [ localUpdate (\m -> ( { m | suggestion = Just suggestion }, bggGameData suggestion )) ]
+
+        Submit ->
+            [ localUpdate (\m -> ( m, sendRequest m )) ]
+
+        ClearReccos ->
+            [ localUpdate (\m -> ( { m | suggestion = Nothing }, Cmd.none )) ]
+
+        ChangeSort newsort ->
+            [ \m -> requestUpdatePath (Router.WhatShouldWePlay (lowerModel m).nick.eventId (Just newsort)) m ]
+
+        CloseOtherPlayers url ->
+            [ localUpdate (\m -> ( { m | suggestion = reccoItemUpdate url closeRecco m.suggestion }, Cmd.none )) ]
+
+        GotPlayers players ->
+            [ localUpdate (\m -> ( { m | players = Just players }, Cmd.none )) ]
+
+        GetOtherPlayers aff ->
+            [ localUpdate (\m -> ( { m | suggestion = closeAll m.suggestion }, fetchOtherPlayers m.creds aff )) ]
+
+        GotOtherPlayers uri list ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | suggestion =
+                            reccoItemUpdate uri (\g -> { g | whoElse = list }) m.suggestion
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        GotBGGData url thumbnail ->
+            [ localUpdate
+                (\m ->
+                    ( { m
+                        | suggestion =
+                            reccoItemUpdate url (\g -> { g | thumbnail = Just thumbnail }) m.suggestion
+                      }
+                    , Cmd.none
+                    )
+                )
+            ]
+
+        -- -- XXX error handling
+        ErrGetRecco _ ->
+            []
+
+        ErrGetPlayers _ ->
+            []
+
+        ErrOtherPlayers _ ->
+            []
+
+        ErrGetBGGData _ ->
+            []
 
 
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )

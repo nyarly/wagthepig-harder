@@ -1,4 +1,12 @@
-module Router exposing (EventSortBy(..), GameSortBy(..), ReccoSortBy(..), Target(..), buildFromTarget, pageName, routeToTarget)
+module Router exposing
+    ( EventSortBy(..)
+    , GameSortBy(..)
+    , ReccoSortBy(..)
+    , Target(..)
+    , buildFromTarget
+    , pageName
+    , routeToTarget
+    )
 
 import Auth exposing (Cred)
 import Dict

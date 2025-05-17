@@ -1,4 +1,4 @@
-module Pages exposing (Models, Msg(..), bidiupdate, init, pageNav, view)
+module Pages exposing (Models, Msg(..), init, pageNavMsg, updaters, view)
 
 import Auth
 import CompleteRegistration
@@ -8,12 +8,13 @@ import Events
 import Game.Create
 import Game.Edit
 import Html exposing (Html)
+import Hypermedia exposing (Affordance)
 import Landing
 import Login
-import OutMsg
-import Profile
+import Profile exposing (Msg(..))
 import Register
 import Router exposing (Target(..))
+import Updaters exposing (UpdateList, Updater, childUpdate)
 import WhatShouldWePlay
 
 
@@ -29,6 +30,7 @@ type Msg
     | WhatShouldWePlayMsg WhatShouldWePlay.Msg
     | RegisterMsg Register.Msg
     | CompleteRegistrationMsg CompleteRegistration.Msg
+    | CredentialedArrivalMsg Auth.Cred Target
 
 
 
@@ -74,17 +76,16 @@ init =
         CompleteRegistration.init
 
 
-view : Router.Target -> Models -> (Msg -> msg) -> List (Html msg)
-view target models toMsg =
+view : Router.Target -> Models -> List (Html Msg)
+view target models =
     let
         wrapMsg msg htmls =
-            List.map (Html.map (\m -> toMsg (msg m))) htmls
+            List.map (Html.map msg) htmls
     in
-    case target of
+    case Debug.log "view-target" target of
         Router.CredentialedArrival _ _ ->
             []
 
-        --XXX
         Router.Landing ->
             Landing.view models.landing
                 |> wrapMsg LandingMsg
@@ -150,123 +151,155 @@ view target models toMsg =
 -}
 
 
-pageNav : Router.Target -> Auth.Cred -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
-pageNav target creds models =
+pageNavMsg : Router.Target -> Auth.Cred -> Msg
+pageNavMsg target creds =
     case target of
         Router.CredentialedArrival next cred ->
-            ( models, Cmd.none, OutMsg.Main (OutMsg.NewCred cred next) )
+            CredentialedArrivalMsg cred next
 
         Router.Profile ->
-            bidiupdate (ProfileMsg (Profile.Entered creds Profile.Creds)) models
+            ProfileMsg (Profile.Entered creds Profile.Creds)
 
         Router.Events sort ->
-            bidiupdate (EventsMsg (Events.Entered creds sort)) models
+            EventsMsg (Events.Entered creds sort)
 
         Router.Register ->
-            bidiupdate (RegisterMsg Register.Entered) models
+            RegisterMsg Register.Entered
 
         Router.EventShow id _ ->
-            bidiupdate (EventShowMsg (EventShow.Entered creds (EventShow.Nickname id))) models
+            EventShowMsg (EventShow.Entered creds (EventShow.Nickname id))
 
         Router.WhatShouldWePlay id _ ->
-            bidiupdate (WhatShouldWePlayMsg (WhatShouldWePlay.Entered creds (WhatShouldWePlay.Nick id))) models
+            WhatShouldWePlayMsg (WhatShouldWePlay.Entered creds (WhatShouldWePlay.Nick id))
 
         Router.CreateEvent ->
-            bidiupdate (EventEditMsg (EventEdit.Entered creds EventEdit.None)) models
+            EventEditMsg (EventEdit.Entered creds EventEdit.None)
 
         Router.EventEdit id ->
-            bidiupdate (EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname id))) models
+            EventEditMsg (EventEdit.Entered creds (EventEdit.Nickname id))
 
         Router.CreateGame ev ->
-            bidiupdate (GameCreateMsg (Game.Create.Entered creds ev)) models
+            GameCreateMsg (Game.Create.Entered creds ev)
 
         Router.EditGame event_id game_id ->
-            bidiupdate (GameEditMsg (Game.Edit.Entered creds event_id game_id)) models
+            GameEditMsg (Game.Edit.Entered creds event_id game_id)
 
         Router.CompleteRegistration email ->
-            bidiupdate (CompleteRegistrationMsg (CompleteRegistration.Entered creds email)) models
+            CompleteRegistrationMsg (CompleteRegistration.Entered creds email)
 
-        _ ->
-            ( models, Cmd.none, OutMsg.None )
+        Login ->
+            LoginMsg Login.Entered
 
-
-
--- I wish Elm had a better way to map modules
--- fundamentally there's a pattern I want to follow here around building an interface
--- which Elm uses for App in the first place...
--- consider cribbing from Elm.Main.init({}) - is that possible?
+        Landing ->
+            LandingMsg Landing.Entered
 
 
-bidiupdate : Msg -> Models -> ( Models, Cmd Msg, OutMsg.Msg )
-bidiupdate msg models =
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Models Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
+        , requestUpdatePath : Router.Target -> Updater model msg
+        , installNewCred : Auth.Cred -> Updater model msg
+        , lowerModel : model -> Models
+    }
+
+
+createEventUpdater : Interface base model msg -> Affordance -> Updater model msg
+createEventUpdater { localUpdate, requestNav } aff =
+    Updaters.compose
+        [ localUpdate (\models -> ( { models | event = EventEdit.forCreate aff }, Cmd.none ))
+        , requestNav Router.CreateEvent
+        ]
+
+
+childInterface :
+    Interface base model msg
+    -> (Models -> cmodel)
+    -> (Models -> cmodel -> Models)
+    -> (cmsg -> Msg)
+    ->
+        { requestNav : Router.Target -> Updater model msg
+        , requestUpdatePath : Router.Target -> Updater model msg
+        , installNewCred : Auth.Cred -> Updater model msg
+        , requestCreateEvent : Affordance -> Updater model msg
+        , lowerModel : model -> cmodel
+        , localUpdate : Updater cmodel cmsg -> Updater model msg
+        }
+childInterface iface getModel setModel wrapMsg =
+    let
+        { requestNav, requestUpdatePath, installNewCred, localUpdate, lowerModel } =
+            iface
+    in
+    { requestNav = requestNav
+    , requestUpdatePath = requestUpdatePath
+    , installNewCred = installNewCred
+    , requestCreateEvent = createEventUpdater iface
+    , lowerModel = lowerModel >> getModel
+    , localUpdate = localUpdate << childUpdate getModel setModel wrapMsg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters iface msg =
+    let
+        pageInterface =
+            childInterface iface
+    in
     case msg of
+        CredentialedArrivalMsg cred next ->
+            [ iface.installNewCred cred
+            , iface.requestNav next
+            ]
+
         LandingMsg _ ->
-            ( models, Cmd.none, OutMsg.None )
+            []
 
         ProfileMsg submsg ->
-            Profile.bidiupdate submsg models.profile
-                |> OutMsg.mapBoth (\pm -> { models | profile = pm }) (Cmd.map ProfileMsg)
-                |> consumeOutmsg
+            Profile.updaters
+                (pageInterface .profile (\models -> \pm -> { models | profile = pm }) ProfileMsg)
+                submsg
 
         LoginMsg submsg ->
-            Login.bidiupdate submsg models.login
-                |> OutMsg.mapBoth (\pm -> { models | login = pm }) (Cmd.map LoginMsg)
-                |> consumeOutmsg
+            Login.updaters
+                (pageInterface .login (\models -> \pm -> { models | login = pm }) LoginMsg)
+                submsg
 
         EventsMsg submsg ->
-            Events.bidiupdate submsg models.events
-                |> OutMsg.mapBoth (\pm -> { models | events = pm }) (Cmd.map EventsMsg)
-                |> consumeOutmsg
+            Events.updaters
+                (pageInterface .events (\models -> \pm -> { models | events = pm }) EventsMsg)
+                submsg
 
         EventEditMsg submsg ->
-            EventEdit.bidiupdate submsg models.event
-                |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
-                |> consumeOutmsg
+            EventEdit.updaters
+                (pageInterface .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
+                submsg
 
         EventShowMsg submsg ->
-            EventShow.bidiupdate submsg models.games
-                |> OutMsg.mapBoth (\pm -> { models | games = pm }) (Cmd.map EventShowMsg)
-                |> consumeOutmsg
+            EventShow.updaters
+                (pageInterface .games (\models -> \pm -> { models | games = pm }) EventShowMsg)
+                submsg
 
         WhatShouldWePlayMsg submsg ->
-            WhatShouldWePlay.bidiupdate submsg models.reccos
-                |> OutMsg.mapBoth (\pm -> { models | reccos = pm }) (Cmd.map WhatShouldWePlayMsg)
-                |> consumeOutmsg
+            WhatShouldWePlay.updaters
+                (pageInterface .reccos (\models -> \pm -> { models | reccos = pm }) WhatShouldWePlayMsg)
+                submsg
 
         RegisterMsg submsg ->
-            Register.bidiupdate submsg models.register
-                |> OutMsg.mapBoth (\pm -> { models | register = pm }) (Cmd.map RegisterMsg)
-                |> consumeOutmsg
+            Register.updaters
+                (pageInterface .register (\models -> \pm -> { models | register = pm }) RegisterMsg)
+                submsg
 
         CompleteRegistrationMsg submsg ->
-            CompleteRegistration.bidiupdate submsg models.complete_registration
-                |> OutMsg.mapBoth (\pm -> { models | complete_registration = pm }) (Cmd.map CompleteRegistrationMsg)
-                |> consumeOutmsg
+            CompleteRegistration.updaters
+                (pageInterface .complete_registration (\models -> \pm -> { models | complete_registration = pm }) CompleteRegistrationMsg)
+                submsg
 
         GameEditMsg submsg ->
-            Game.Edit.bidiupdate submsg models.editGame
-                |> OutMsg.mapBoth (\pm -> { models | editGame = pm }) (Cmd.map GameEditMsg)
-                |> consumeOutmsg
+            Game.Edit.updaters
+                (pageInterface .editGame (\models -> \pm -> { models | editGame = pm }) GameEditMsg)
+                submsg
 
         GameCreateMsg submsg ->
-            Game.Create.bidiupdate submsg models.createGame
-                |> OutMsg.mapBoth (\pm -> { models | createGame = pm }) (Cmd.map GameCreateMsg)
-                |> consumeOutmsg
-
-
-consumeOutmsg : ( Models, Cmd Msg, OutMsg.Msg ) -> ( Models, Cmd Msg, OutMsg.Msg )
-consumeOutmsg ( models, cmd, out ) =
-    case out of
-        OutMsg.Page pagemsg ->
-            case pagemsg of
-                OutMsg.CreateEvent aff ->
-                    ( { models | event = EventEdit.forCreate aff }, cmd, OutMsg.Main << OutMsg.Nav <| Router.CreateEvent )
-
-        {-
-           -- XXX Hrrm. This creates a whole regime where I have to add outmsgs
-           OutMsg.EditEvent creds aff ->
-               EventEdit.bidiupdate (EventEdit.Entered creds (EventEdit.Url aff.uri)) EventEdit.init
-                   |> OutMsg.mapBoth (\pm -> { models | event = pm }) (Cmd.map EventEditMsg)
-        -}
-        _ ->
-            ( models, cmd, out )
+            Game.Create.updaters
+                (pageInterface .createGame (\models -> \pm -> { models | createGame = pm }) GameCreateMsg)
+                submsg

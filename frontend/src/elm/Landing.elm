@@ -11,6 +11,7 @@ type alias Model =
 
 type Msg
     = ClickedSomething
+    | Entered
 
 
 view : Model -> List (Html Msg)

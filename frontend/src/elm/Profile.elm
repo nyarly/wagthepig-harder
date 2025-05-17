@@ -1,4 +1,12 @@
-module Profile exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, view)
+module Profile exposing
+    ( Bookmark(..)
+    , Model
+    , Msg(..)
+    , bidiupdate
+    , init
+    , updaters
+    , view
+    )
 
 import Auth
 import Dict
@@ -15,6 +23,7 @@ import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import String exposing (length)
+import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
 
@@ -81,7 +90,7 @@ type Msg
     | ChangeName String
     | ChangeBGG String
     | SubmitProfile
-    | GotProfile Up.Etag Profile OutMsg.Msg
+    | GotProfile Up.Etag Profile
     | ErrProfileGet Http.Error
     | ChangeOldPassword String
     | ChangeNewPassword String
@@ -122,6 +131,73 @@ view model =
     ]
 
 
+type alias Interface base model msg =
+    { base
+        | localUpdate : Updater Model Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
+    }
+
+
+updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters { localUpdate, requestNav } msg =
+    let
+        updateProfile f =
+            [ localUpdate (\m -> ( { m | profile = f m.profile }, Cmd.none )) ]
+
+        updatePassword f =
+            [ localUpdate (\m -> ( { m | password = f m.password }, Cmd.none )) ]
+    in
+    case msg of
+        Entered creds loc ->
+            case loc of
+                Creds ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByCreds creds )) ]
+
+                Url url ->
+                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url.uri )) ]
+
+        ChangeName n ->
+            updateProfile (\pf -> { pf | name = n })
+
+        ChangeEmail e ->
+            updateProfile (\pf -> { pf | email = e })
+
+        ChangeBGG b ->
+            updateProfile (\pf -> { pf | bgg_username = b })
+
+        SubmitProfile ->
+            [ localUpdate (\m -> ( m, putProfile m.creds m )) ]
+
+        GotProfile etag prof ->
+            [ localUpdate (\m -> ( { m | etag = etag, profile = prof }, Cmd.none )) ]
+
+        -- XXX error handling
+        ErrProfileGet _ ->
+            []
+
+        -- XXX
+        ChangeOldPassword p ->
+            updatePassword (\pw -> { pw | old = p })
+
+        ChangeNewPassword p ->
+            updatePassword (\pw -> { pw | new = p })
+
+        ChangeNewPasswordAgain p ->
+            updatePassword (\pw -> { pw | newAgain = p })
+
+        SubmitPassword ->
+            [ localUpdate (\m -> ( m, submitPasswordUpdate m )) ]
+
+        AuthResponse res ->
+            case res of
+                Ok () ->
+                    [ requestNav Router.Login ]
+
+                -- XXX error handling
+                Err _ ->
+                    []
+
+
 bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
 bidiupdate msg model =
     let
@@ -152,8 +228,8 @@ bidiupdate msg model =
         SubmitProfile ->
             ( model, putProfile model.creds model, OutMsg.None )
 
-        GotProfile etag m out ->
-            ( { model | etag = etag, profile = m }, Cmd.none, out )
+        GotProfile etag m ->
+            ( { model | etag = etag, profile = m }, Cmd.none, OutMsg.None )
 
         ErrProfileGet _ ->
             ( model, Cmd.none, OutMsg.None )
@@ -227,7 +303,7 @@ putProfile creds model =
                 , etag = Just model.etag -- Maybe Etag
                 , encode = encode -- s -> E.Value
                 , decoder = decoder -- D.Decoder r
-                , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+                , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
                 , startAt = aff
                 , browsePlan = [] -- List AffordanceExtractor
                 , creds = creds -- Auth.Cred
@@ -243,7 +319,7 @@ fetchByCreds creds =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
         , startAt = apiRoot
         , browsePlan = browseToProfile (nickToVars (Auth.accountID creds))
         }
@@ -254,7 +330,7 @@ fetchFromUrl creds url =
     Up.retrieve
         { creds = creds
         , decoder = decoder
-        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps OutMsg.None)
+        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
         , startAt = HM.link HM.GET url
         , browsePlan = []
         }

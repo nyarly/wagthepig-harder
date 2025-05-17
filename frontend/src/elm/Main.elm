@@ -1,4 +1,11 @@
-module Main exposing (..)
+module Main exposing
+    ( Msg(..)
+    , init
+    , main
+    , subscriptions
+    , update
+    , view
+    )
 
 import Auth
 import Browser
@@ -9,11 +16,11 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Encode exposing (Value)
 import Login
-import OutMsg
 import Pages
 import Platform.Cmd as Cmd
 import Router
 import State
+import Updaters
 import Url
 
 
@@ -73,11 +80,53 @@ init flags url key =
             Dict.foldl loadIntoModel baseModel fromStore
     in
     routeToPage url model
-        |> consumeOutmsg
+
+
+type alias Updater model msg =
+    model -> ( model, Cmd msg )
+
+
+
+-- [ requestUpdatePath (\m -> Router.WhatShouldWePlay m.nick.eventId (Just newsort)) ]
+
+
+onNav : Router.Target -> Updater Model Msg
+onNav target model =
+    ( model
+    , Nav.pushUrl model.key (Router.buildFromTarget target)
+    )
+
+
+onUpdatePage : Router.Target -> Updater Model Msg
+onUpdatePage target model =
+    ( model
+    , Nav.replaceUrl model.key (Router.buildFromTarget target)
+    )
+
+
+onNewCred : Auth.Cred -> Updater Model Msg
+onNewCred newcred model =
+    ( { model | creds = newcred }
+    , Auth.storeCred newcred
+    )
+
+
+childUpdate : Updater Pages.Models Pages.Msg -> Updater Model Msg
+childUpdate =
+    Updaters.childUpdate .pages (\model -> \pagemodel -> { model | pages = pagemodel }) PageMsg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        interface =
+            { requestNav = onNav
+            , requestUpdatePath = onUpdatePage
+            , installNewCred = onNewCred
+            , lowerModel = .pages
+            , localUpdate = childUpdate
+            }
+    in
     case msg of
         LinkClicked urlRequest ->
             case urlRequest of
@@ -96,10 +145,6 @@ update msg model =
                         Just _ ->
                             ( model, Nav.load href )
 
-        UrlChanged url ->
-            routeToPage url model
-                |> consumeOutmsg
-
         PathRequested path ->
             ( model, Nav.pushUrl model.key path )
 
@@ -109,44 +154,11 @@ update msg model =
         SignOut ->
             ( { model | creds = Auth.unauthenticated }, Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds)) )
 
+        UrlChanged url ->
+            routeToPage url model
+
         PageMsg submsg ->
-            Pages.bidiupdate submsg model.pages
-                |> OutMsg.mapBoth (\pagemodel -> { model | pages = pagemodel }) (Cmd.map PageMsg)
-                |> consumeOutmsg
-
-
-consumeOutmsg : ( Model, Cmd Msg, OutMsg.Msg ) -> ( Model, Cmd Msg )
-consumeOutmsg ( model, msg, out ) =
-    case out of
-        OutMsg.Main mymsg ->
-            case mymsg of
-                OutMsg.Nav target ->
-                    ( model
-                    , Cmd.batch
-                        [ msg
-                        , Nav.pushUrl model.key (Router.buildFromTarget target)
-                        ]
-                    )
-
-                OutMsg.UpdatePage target ->
-                    ( model
-                    , Cmd.batch
-                        [ msg
-                        , Nav.replaceUrl model.key (Router.buildFromTarget target)
-                        ]
-                    )
-
-                OutMsg.NewCred newcred target ->
-                    ( { model | creds = newcred }
-                    , Cmd.batch
-                        [ msg
-                        , Auth.storeCred newcred
-                        , Nav.pushUrl model.key (Router.buildFromTarget target)
-                        ]
-                    )
-
-        _ ->
-            ( model, msg )
+            Updaters.compose (Pages.updaters interface submsg) model
 
 
 loadIntoModel : String -> Value -> Model -> Model
@@ -164,23 +176,32 @@ loadIntoModel key value model =
             model
 
 
-routeToPage : Url.Url -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
+routeToPage : Url.Url -> Model -> ( Model, Cmd Msg )
 routeToPage url model =
-    case ( model.url.path == url.path, Router.routeToTarget url ) of
+    case ( Debug.log "model.url.path" model.url.path == Debug.log "url.path" url.path, Router.routeToTarget url ) of
         -- If we route to the same page again, do nothing
         -- Debatable: query params might be significant, and only the page can know that
         -- XXX therefore, consider adding a Pages.queryUpdate to handle that case
         ( True, Just target ) ->
-            ( { model | page = target }, Cmd.none, OutMsg.None )
+            Debug.log "just updating page url" ( { model | page = target }, Cmd.none )
 
         ( False, Just target ) ->
-            Pages.pageNav target model.creds model.pages
-                |> OutMsg.mapBoth
-                    (\pagemodel -> { model | url = url, pages = pagemodel, page = target })
-                    (Cmd.map PageMsg)
+            let
+                interface =
+                    { requestNav = onNav
+                    , requestUpdatePath = onUpdatePage
+                    , installNewCred = onNewCred
+                    , lowerModel = .pages
+                    , localUpdate = childUpdate
+                    }
+
+                submsg =
+                    Pages.pageNavMsg target model.creds
+            in
+            Updaters.compose (Pages.updaters interface submsg) { model | page = target }
 
         ( _, Nothing ) ->
-            ( model, Nav.pushUrl model.key "/", OutMsg.None )
+            ( model, Nav.pushUrl model.key "/" )
 
 
 
@@ -198,6 +219,10 @@ subscriptions _ =
 
 view : Model -> Browser.Document Msg
 view model =
+    let
+        wrapMsg =
+            List.map (Html.map PageMsg)
+    in
     { title = "Wag The Pig"
     , body =
         [ div [ class "page", class (Router.pageName model.page) ]
@@ -211,7 +236,9 @@ view model =
                     , authButton model
                     ]
                 ]
-                :: Pages.view model.page model.pages PageMsg
+                :: (Pages.view model.page model.pages
+                        |> wrapMsg
+                   )
                 ++ [ div [ class "footer" ]
                         [ a [ href "https://github.com/nyarly/wagthepig" ] [ text "Contribute!" ]
                         , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [ text "Complain!" ], text "Suggest!" ]
