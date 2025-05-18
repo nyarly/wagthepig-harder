@@ -1,4 +1,4 @@
-module CompleteRegistration exposing (Model, Msg(..), bidiupdate, init, updaters, view)
+module CompleteRegistration exposing (Model, Msg(..), init, updaters, view)
 
 import Auth
 import Dict
@@ -10,7 +10,6 @@ import Html.Extra as Html exposing (viewIf)
 import Http
 import Hypermedia as HM exposing (OperationSelector(..))
 import Json.Encode as E
-import OutMsg
 import Router exposing (Target(..))
 import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
@@ -100,34 +99,6 @@ updaters { localUpdate, requestNav } msg =
 
                 Err err ->
                     [ localUpdate (\m -> ( { m | fromServer = Failed err }, Cmd.none )) ]
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    case msg of
-        Entered cred email ->
-            ( { model | creds = cred, email = email }, Cmd.none, OutMsg.None )
-
-        ChangePassword newpassword ->
-            ( { model | password = newpassword }, Cmd.none, OutMsg.None )
-
-        ChangePasswordAgain newpassword ->
-            ( { model | passwordAgain = newpassword }, Cmd.none, OutMsg.None )
-
-        UpdateAttempted ->
-            ( { model | fromServer = None }
-            , updatePassword model.creds model.email model.password
-            , OutMsg.None
-            )
-
-        AuthResponse res ->
-            case res of
-                Ok () ->
-                    -- n.b. we could do the login ourselves, but I want to avoid a folk "magic-link" pattern here
-                    ( { model | fromServer = Success }, Cmd.none, OutMsg.Main (OutMsg.Nav Router.Login) )
-
-                Err err ->
-                    ( { model | fromServer = Failed err }, Cmd.none, OutMsg.None )
 
 
 updatePassword : Auth.Cred -> String -> String -> Cmd Msg

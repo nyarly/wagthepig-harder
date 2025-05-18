@@ -1,4 +1,10 @@
-module Register exposing (..)
+module Register exposing
+    ( Model
+    , Msg(..)
+    , init
+    , updaters
+    , view
+    )
 
 import Auth
 import Dict
@@ -9,7 +15,6 @@ import Html.Events exposing (onSubmit)
 import Http
 import Hypermedia as HM exposing (Method(..), OperationSelector(..), emptyResponse)
 import Json.Encode as E
-import OutMsg
 import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
@@ -87,28 +92,6 @@ updaters { localUpdate } msg =
 
         ServerResponse res ->
             [ localUpdate (\m -> ( { m | fromServer = Just res }, Cmd.none )) ]
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    case msg of
-        Entered ->
-            ( { model | fromServer = Nothing }, Cmd.none, OutMsg.None )
-
-        ChangeEmail email ->
-            ( { model | email = email }, Cmd.none, OutMsg.None )
-
-        ChangeName name ->
-            ( { model | name = name }, Cmd.none, OutMsg.None )
-
-        ChangeBGG bgg ->
-            ( { model | bgg_username = bgg }, Cmd.none, OutMsg.None )
-
-        Submit ->
-            ( model, put model, OutMsg.None )
-
-        ServerResponse res ->
-            ( { model | fromServer = Just res }, Cmd.none, OutMsg.None )
 
 
 put : Model -> Cmd Msg

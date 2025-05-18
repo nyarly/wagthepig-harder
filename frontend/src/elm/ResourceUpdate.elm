@@ -3,7 +3,6 @@ module ResourceUpdate exposing
     , MakeMsg
     , Representation(..)
     , apiRoot
-      -- , browseToSend
     , create
     , delete
     , resultDispatch
@@ -19,7 +18,6 @@ import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import Json.Decode as D
 import Json.Encode as E
-import OutMsg
 import Task
 
 
@@ -75,7 +73,7 @@ import Task
 
 type Representation e r
     = Loc Affordance
-    | Res Etag r OutMsg.Msg
+    | Res Etag r
     | Error e
 
 
@@ -346,7 +344,7 @@ handlePutResult makeMsg res =
                 Loc (HM.link GET url)
 
             Ok (Got etag rs) ->
-                Res etag rs OutMsg.None
+                Res etag rs
 
             Err err ->
                 Error err

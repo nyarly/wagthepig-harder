@@ -8,7 +8,6 @@ import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
-import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import Updaters exposing (UpdateList, Updater, childUpdate)
@@ -98,30 +97,6 @@ updaters { localUpdate, lowerModel, requestNav } msg =
         -- XXX error handling
         ErrGetGame _ ->
             []
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    let
-        updateRes f m =
-            { m | resource = f m.resource }
-    in
-    case msg of
-        GameMsg gmsg ->
-            V.bidiupdate gmsg model
-                |> OutMsg.mapBoth (\m -> m) (Cmd.map GameMsg)
-
-        Entered creds ev ->
-            ( { init | event_id = ev, creds = creds } |> updateRes (\r -> { r | interested = Just True }), Cmd.none, OutMsg.None )
-
-        Submit ->
-            ( model, putGame model.creds model, OutMsg.None )
-
-        CreatedGame ->
-            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
-
-        ErrGetGame _ ->
-            ( model, Cmd.none, OutMsg.None )
 
 
 nickToVars : Auth.Cred -> Int -> Dict.Dict String String

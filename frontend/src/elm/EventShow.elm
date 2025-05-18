@@ -1,4 +1,11 @@
-module EventShow exposing (Bookmark(..), Model, Msg(..), bidiupdate, init, updaters, view)
+module EventShow exposing
+    ( Bookmark(..)
+    , Model
+    , Msg(..)
+    , init
+    , updaters
+    , view
+    )
 
 import Auth
 import BGGAPI
@@ -15,7 +22,6 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Iso8601
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
-import OutMsg
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
 import Router exposing (GameSortBy(..))
@@ -306,109 +312,6 @@ updaters { localUpdate, requestUpdatePath, lowerModel } msg =
             []
 
 
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    case msg of
-        Entered creds loc ->
-            case loc of
-                Nickname id ->
-                    ( { model | creds = creds }, fetchByNick creds id, OutMsg.None )
-
-                Url url ->
-                    ( { model | creds = creds }, fetchFromUrl creds url, OutMsg.None )
-
-                None ->
-                    ( { model | creds = creds }, Cmd.none, OutMsg.None )
-
-        ChangeSort newsort ->
-            case model.resource of
-                Just event ->
-                    ( model, Cmd.none, OutMsg.Main << OutMsg.UpdatePage <| Router.EventShow event.nick (Just newsort) )
-
-                Nothing ->
-                    ( model, Cmd.none, OutMsg.None )
-
-        GotEvent etag ev ->
-            ( { model | etag = etag, resource = Just ev }, fetchGamesList model.creds ev.gamesTemplate, OutMsg.None )
-
-        GotGameList list ->
-            ( { model | games = Just list }, fetchBGGData list, OutMsg.None )
-
-        ErrGetEvent _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        ErrGameList _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        UpdateGameInterest val event_id nick ->
-            ( model, updateInterest val model.creds event_id nick, OutMsg.None )
-
-        -- XXX need to update table
-        UpdatedGameInterest val nick ->
-            ( { model
-                | games = gameItemUpdate nick (\g -> { g | interested = Just val }) model.games
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        UpdateGameTeaching val event_id nick ->
-            ( model, updateTeaching val model.creds event_id nick, OutMsg.None )
-
-        -- XXX need to update table
-        UpdatedGameTeaching val nick ->
-            ( { model
-                | games = gameItemUpdate nick (\g -> { g | canTeach = Just val }) model.games
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        UpdateError _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        CloseOtherPlayers nick ->
-            let
-                closeGame game =
-                    { game | whoElse = closeOtherPlayers game.whoElse }
-            in
-            ( { model | games = gameItemUpdate nick closeGame model.games }, Cmd.none, OutMsg.None )
-
-        GetOtherPlayers nick aff ->
-            let
-                closeGame game =
-                    { game | whoElse = closeOtherPlayers game.whoElse }
-
-                closeAll games =
-                    Maybe.map (List.map closeGame) games
-            in
-            ( { model | games = closeAll model.games }, fetchOtherPlayers model.creds nick aff, OutMsg.None )
-
-        GotOtherPlayers nick list ->
-            ( { model
-                | games =
-                    gameItemUpdate nick (\g -> { g | whoElse = list }) model.games
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        GotBGGData gameId bggData ->
-            ( { model
-                | games =
-                    gameItemUpdate gameId (\g -> { g | thumbnail = Just bggData.thumbnail }) model.games
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        ErrOtherPlayers _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        ErrGetBGGData _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-
 gameItemUpdate : G.Nick -> (Game -> Game) -> Maybe GameList -> Maybe GameList
 gameItemUpdate nick doUpdate games =
     Maybe.map
@@ -600,12 +503,11 @@ updateGame :
 updateGame { doUpdate, successMsg, failMsg } val creds event_id game_nick =
     let
         mkMsg rep =
-            -- Representation e r -> msg
             case rep of
                 Up.Loc _ ->
                     successMsg val game_nick
 
-                Up.Res _ _ _ ->
+                Up.Res _ _ ->
                     successMsg val game_nick
 
                 Up.Error e ->
@@ -630,15 +532,6 @@ updateTeaching =
         , successMsg = UpdatedGameTeaching
         , failMsg = UpdateError
         }
-
-
-boolStr : Bool -> String
-boolStr b =
-    if b then
-        "yes"
-
-    else
-        "no"
 
 
 handleResponse : { a | onResult : value -> Msg, onErr : error -> Msg } -> Result error value -> Msg

@@ -1,4 +1,11 @@
-module WhatShouldWePlay exposing (Model, Msg(..), Nick, bidiupdate, init, updaters, view)
+module WhatShouldWePlay exposing
+    ( Model
+    , Msg(..)
+    , Nick
+    , init
+    , updaters
+    , view
+    )
 
 import Auth
 import BGGAPI
@@ -12,7 +19,6 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
-import OutMsg
 import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlayersDecoder, playerDecoder, playerName)
 import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
 import Router exposing (ReccoSortBy(..))
@@ -218,83 +224,6 @@ updaters { localUpdate, requestUpdatePath, lowerModel } msg =
 
         ErrGetBGGData _ ->
             []
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    let
-        closeRecco recco =
-            { recco | whoElse = closeOtherPlayers recco.whoElse }
-    in
-    case msg of
-        Entered creds nick ->
-            ( { model | creds = creds, nick = nick }, fetchEventPlayers creds nick, OutMsg.None )
-
-        SelectUsers selectedIds ->
-            ( { model | selectedIds = selectedIds }, Cmd.none, OutMsg.None )
-
-        SetExtraPlayerCount extraCount ->
-            ( { model | extraCount = Debug.log "set-extra-count" extraCount }, Cmd.none, OutMsg.None )
-
-        GotRecco suggestion ->
-            ( { model | suggestion = Just suggestion }, bggGameData suggestion, OutMsg.None )
-
-        ErrGetRecco _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        Submit ->
-            ( model, sendRequest model, OutMsg.None )
-
-        ClearReccos ->
-            ( { model | suggestion = Nothing }, Cmd.none, OutMsg.None )
-
-        ChangeSort newsort ->
-            case model.suggestion of
-                Just _ ->
-                    ( model, Cmd.none, OutMsg.Main << OutMsg.UpdatePage <| Router.WhatShouldWePlay model.nick.eventId (Just newsort) )
-
-                Nothing ->
-                    ( model, Cmd.none, OutMsg.None )
-
-        CloseOtherPlayers url ->
-            ( { model | suggestion = reccoItemUpdate url closeRecco model.suggestion }, Cmd.none, OutMsg.None )
-
-        GotPlayers players ->
-            ( { model | players = Just players }, Cmd.none, OutMsg.None )
-
-        GetOtherPlayers aff ->
-            let
-                closeAll reccos =
-                    Maybe.map (List.map closeRecco) reccos
-            in
-            ( { model | suggestion = closeAll model.suggestion }, fetchOtherPlayers model.creds aff, OutMsg.None )
-
-        GotOtherPlayers uri list ->
-            ( { model
-                | suggestion =
-                    reccoItemUpdate uri (\g -> { g | whoElse = list }) model.suggestion
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        GotBGGData url thumbnail ->
-            ( { model
-                | suggestion =
-                    reccoItemUpdate url (\g -> { g | thumbnail = Just thumbnail }) model.suggestion
-              }
-            , Cmd.none
-            , OutMsg.None
-            )
-
-        ErrGetPlayers _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        ErrOtherPlayers _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        ErrGetBGGData _ ->
-            ( model, Cmd.none, OutMsg.None )
 
 
 reccoItemUpdate : Uri -> (Recco -> Recco) -> Maybe (List Recco) -> Maybe (List Recco)

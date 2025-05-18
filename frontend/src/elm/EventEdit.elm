@@ -2,7 +2,6 @@ module EventEdit exposing
     ( Bookmark(..)
     , Model
     , Msg(..)
-    , bidiupdate
     , forCreate
     , init
     , updaters
@@ -19,7 +18,6 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
 import Json.Encode as E
-import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Task
 import Time
@@ -193,54 +191,6 @@ updaters { localUpdate } msg =
         -- XXX
         Submit ->
             [ localUpdate (\m -> ( m, putEvent m.creds m )) ]
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    let
-        updateRes f m =
-            { m | resource = f m.resource }
-    in
-    case msg of
-        Entered creds loc ->
-            case loc of
-                None ->
-                    ( { model | creds = creds }, getCurrentTime, OutMsg.None )
-
-                -- creating a new Event
-                Nickname id ->
-                    ( { model | creds = creds }, fetchByNick creds id, OutMsg.None )
-
-                Url url ->
-                    ( { model | creds = creds }, fetchFromUrl creds url, OutMsg.None )
-
-        TimeNow t ->
-            ( updateRes (\r -> { r | time = t }) model, Cmd.none, OutMsg.None )
-
-        ChangeName n ->
-            ( updateRes (\r -> { r | name = n }) model, Cmd.none, OutMsg.None )
-
-        ChangeTime t ->
-            case Iso8601.toTime t of
-                Ok nt ->
-                    ( updateRes (\r -> { r | time = nt }) model, Cmd.none, OutMsg.None )
-
-                Err _ ->
-                    ( model, Cmd.none, OutMsg.None )
-
-        -- XXX silent rejection of errors :(
-        ChangeLocation l ->
-            ( updateRes (\r -> { r | location = l }) model, Cmd.none, OutMsg.None )
-
-        GotEvent etag ev ->
-            ( { model | etag = etag, resource = ev }, Cmd.none, OutMsg.None )
-
-        ErrGetEvent _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        -- XXX
-        Submit ->
-            ( model, putEvent model.creds model, OutMsg.None )
 
 
 getCurrentTime : Cmd Msg

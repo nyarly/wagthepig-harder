@@ -1,4 +1,11 @@
-module Game.Edit exposing (Model, Msg(..), bidiupdate, init, roundTrip, updaters, view)
+module Game.Edit exposing
+    ( Model
+    , Msg(..)
+    , init
+    , roundTrip
+    , updaters
+    , view
+    )
 
 import Auth
 import BGGAPI exposing (BGGGame(..))
@@ -13,7 +20,6 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
-import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import Updaters exposing (UpdateList, Updater, childUpdate)
@@ -160,42 +166,6 @@ updaters { requestNav, localUpdate, lowerModel } msg =
 
         ErrGetGame _ ->
             []
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    case msg of
-        GameMsg gmsg ->
-            case model.resource of
-                NotLoaded ->
-                    ( model, Cmd.none, OutMsg.None )
-
-                Loaded res ->
-                    V.bidiupdate gmsg res
-                        |> OutMsg.mapBoth (\m -> { model | resource = Loaded m }) (Cmd.map GameMsg)
-
-        Entered creds ev i ->
-            ( { init | event_id = ev, creds = creds }, fetchByNick creds ev (V.Nick i (Auth.accountID creds)), OutMsg.None )
-
-        LoadLoc aff ->
-            ( model, fetchFromUrl model.creds model.event_id aff.uri, OutMsg.None )
-
-        Submit ->
-            case model.resource of
-                NotLoaded ->
-                    ( model, Cmd.none, OutMsg.None )
-
-                Loaded res ->
-                    ( model, putGame model.creds model.etag res, OutMsg.None )
-
-        CreatedGame ->
-            ( model, Cmd.none, OutMsg.Main (OutMsg.Nav (Router.EventShow model.event_id Nothing)) )
-
-        GotGame etag g ->
-            ( { model | etag = etag, resource = Loaded g }, Cmd.none, OutMsg.None )
-
-        ErrGetGame _ ->
-            ( model, Cmd.none, OutMsg.None )
 
 
 nickToVars : Auth.Cred -> Int -> V.Nick -> Dict.Dict String String

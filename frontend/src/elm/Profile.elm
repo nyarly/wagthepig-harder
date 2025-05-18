@@ -2,7 +2,6 @@ module Profile exposing
     ( Bookmark(..)
     , Model
     , Msg(..)
-    , bidiupdate
     , init
     , updaters
     , view
@@ -19,7 +18,6 @@ import Http
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), emptyResponse)
 import Json.Decode as D
 import Json.Encode as E
-import OutMsg
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import String exposing (length)
@@ -196,64 +194,6 @@ updaters { localUpdate, requestNav } msg =
                 -- XXX error handling
                 Err _ ->
                     []
-
-
-bidiupdate : Msg -> Model -> ( Model, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    let
-        updateProfile f =
-            { model | profile = f model.profile }
-
-        updatePassword f =
-            { model | password = f model.password }
-    in
-    case msg of
-        Entered creds loc ->
-            case loc of
-                Creds ->
-                    ( { model | creds = creds }, fetchByCreds creds, OutMsg.None )
-
-                Url url ->
-                    ( { model | creds = creds }, fetchFromUrl creds url.uri, OutMsg.None )
-
-        ChangeName n ->
-            ( updateProfile (\pf -> { pf | name = n }), Cmd.none, OutMsg.None )
-
-        ChangeEmail e ->
-            ( updateProfile (\pf -> { pf | email = e }), Cmd.none, OutMsg.None )
-
-        ChangeBGG b ->
-            ( updateProfile (\pf -> { pf | bgg_username = b }), Cmd.none, OutMsg.None )
-
-        SubmitProfile ->
-            ( model, putProfile model.creds model, OutMsg.None )
-
-        GotProfile etag m ->
-            ( { model | etag = etag, profile = m }, Cmd.none, OutMsg.None )
-
-        ErrProfileGet _ ->
-            ( model, Cmd.none, OutMsg.None )
-
-        -- XXX
-        ChangeOldPassword p ->
-            ( updatePassword (\pw -> { pw | old = p }), Cmd.none, OutMsg.None )
-
-        ChangeNewPassword p ->
-            ( updatePassword (\pw -> { pw | new = p }), Cmd.none, OutMsg.None )
-
-        ChangeNewPasswordAgain p ->
-            ( updatePassword (\pw -> { pw | newAgain = p }), Cmd.none, OutMsg.None )
-
-        SubmitPassword ->
-            ( model, submitPasswordUpdate model, OutMsg.None )
-
-        AuthResponse res ->
-            case res of
-                Ok () ->
-                    ( model, Cmd.none, OutMsg.Main (OutMsg.Nav Router.Login) )
-
-                Err _ ->
-                    ( model, Cmd.none, OutMsg.None )
 
 
 submitPasswordUpdate : Model -> Cmd Msg

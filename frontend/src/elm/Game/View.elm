@@ -4,7 +4,6 @@ module Game.View exposing
     , Msg(..)
     , Nick
     , bggLink
-    , bidiupdate
     , decoder
     , encoder
     , init
@@ -13,7 +12,7 @@ module Game.View exposing
     , view
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch, shotgunGames)
+import BGGAPI exposing (BGGGame(..), BGGThing, shotgunGames)
 import Html exposing (Html, a, button, img, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
@@ -22,7 +21,6 @@ import Hypermedia exposing (Method(..), OperationSelector(..), decodeMaybe, enco
 import Json.Decode as D
 import Json.Encode as E
 import Maybe exposing (withDefault)
-import OutMsg
 import Updaters exposing (UpdateList, Updater, childUpdate)
 import ViewUtil as Eww
 
@@ -303,51 +301,6 @@ gameUpdaters localUpdate msg =
             []
 
 
-gameUpdate : Msg -> Game -> ( Game, Cmd Msg )
-gameUpdate msg game =
-    case msg of
-        ChangeName n ->
-            ( { game | name = Just n }, Cmd.none )
-
-        ChangeMinPlayers v ->
-            ( { game | minPlayers = Just v }, Cmd.none )
-
-        ChangeMaxPlayers v ->
-            ( { game | maxPlayers = Just v }, Cmd.none )
-
-        ChangeDurationSecs l ->
-            ( { game | durationSecs = Just l }, Cmd.none )
-
-        ChangeBggID i ->
-            ( { game | bggID = Just i }, Cmd.none )
-
-        ChangePitch p ->
-            ( { game | pitch = Just p }, Cmd.none )
-
-        ChangeInterested i ->
-            ( { game | interested = Just i }, Cmd.none )
-
-        ChangeCanTeach t ->
-            ( { game | canTeach = Just t }, Cmd.none )
-
-        ChangeNotes n ->
-            ( { game | notes = Just n }, Cmd.none )
-
-        Pick thing ->
-            ( { game
-                | name = Just thing.name
-                , bggID = Just thing.bggId
-                , minPlayers = Just thing.minPlayers
-                , maxPlayers = Just thing.maxPlayers
-                , durationSecs = Just (thing.durationMinutes * 60)
-              }
-            , Cmd.none
-            )
-
-        _ ->
-            ( game, Cmd.none )
-
-
 searchUpdaters : (Updater (List BGGGame) Msg -> Updater model msg) -> Msg -> UpdateList model msg
 searchUpdaters localUpdate msg =
     case msg of
@@ -385,41 +338,6 @@ searchUpdaters localUpdate msg =
             []
 
 
-searchUpdate : Msg -> List BGGGame -> ( List BGGGame, Cmd Msg )
-searchUpdate msg bggSearchResults =
-    case msg of
-        Pick thing ->
-            let
-                onlyPicked g =
-                    case g of
-                        SearchResult _ ->
-                            False
-
-                        Thing t ->
-                            t.bggId == thing.bggId
-            in
-            ( List.filter onlyPicked bggSearchResults, Cmd.none )
-
-        BGGSearchResult r ->
-            case r of
-                Ok l ->
-                    ( l, shotgunGames l )
-
-                Err _ ->
-                    ( bggSearchResults, Cmd.none )
-
-        BGGThingResult r ->
-            case r of
-                Ok newGame ->
-                    ( enrichGame bggSearchResults newGame, Cmd.none )
-
-                Err _ ->
-                    ( bggSearchResults, Cmd.none )
-
-        _ ->
-            ( bggSearchResults, Cmd.none )
-
-
 type alias Interface base gas model msg =
     { base
         | localUpdate : Updater (GameAndSearch gas) Msg -> Updater model msg
@@ -437,71 +355,6 @@ updaters { localUpdate } msg =
     in
     searchUpdaters searchLocalUpdate msg
         ++ gameUpdaters gameLocalUpdate msg
-
-
-bidiupdate : Msg -> GameAndSearch g -> ( GameAndSearch g, Cmd Msg, OutMsg.Msg )
-bidiupdate msg model =
-    let
-        gameDispatch =
-            let
-                ( game, out ) =
-                    gameUpdate msg model.resource
-            in
-            ( { model | resource = game }, out, OutMsg.None )
-
-        searchDispatch =
-            let
-                ( search, out ) =
-                    searchUpdate msg model.bggSearchResults
-            in
-            ( { model | bggSearchResults = search }, out, OutMsg.None )
-    in
-    case msg of
-        ChangeName _ ->
-            gameDispatch
-
-        ChangeMinPlayers _ ->
-            gameDispatch
-
-        ChangeMaxPlayers _ ->
-            gameDispatch
-
-        ChangeDurationSecs _ ->
-            gameDispatch
-
-        ChangeBggID _ ->
-            gameDispatch
-
-        ChangePitch _ ->
-            gameDispatch
-
-        ChangeInterested _ ->
-            gameDispatch
-
-        ChangeCanTeach _ ->
-            gameDispatch
-
-        ChangeNotes _ ->
-            gameDispatch
-
-        BGGSearchResult _ ->
-            searchDispatch
-
-        BGGThingResult _ ->
-            searchDispatch
-
-        Pick _ ->
-            let
-                ( game, gOut ) =
-                    gameUpdate msg model.resource
-
-                ( search, sOut ) =
-                    searchUpdate msg model.bggSearchResults
-            in
-            ( { model | resource = game, bggSearchResults = search }, Cmd.batch [ gOut, sOut ], OutMsg.None )
-
-        SearchName ->
-            ( model, requestBGGSearch BGGSearchResult (withDefault "" model.resource.name), OutMsg.None )
 
 
 shotgunGames : List BGGGame -> Cmd Msg

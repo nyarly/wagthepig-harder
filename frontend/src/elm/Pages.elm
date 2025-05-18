@@ -135,22 +135,6 @@ view target models =
                 |> wrapMsg CompleteRegistrationMsg
 
 
-
-{-
-   Consider for future iterations:
-   what if the router produced XXXMsg( XXX.Entered ... ) messages
-   instead of Router.Page enum values
-
-   pro: we could skip the pageNav function, because it becomes just
-   Pages.bidiupdate(enteredMsg)
-
-   cons: ?
-
-   weird: is there a reference cycle introduced that way?
-   could it be broken via OutMsg somehow?
--}
-
-
 pageNavMsg : Router.Target -> Auth.Cred -> Msg
 pageNavMsg target creds =
     case target of
