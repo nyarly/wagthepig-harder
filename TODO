@@ -1,5 +1,6 @@
 * FE update to use newest ResourceUpdate functions
-* FE remove `Entered Url` options?
+* FE remove `Entered Url` options? e.g. Bookmark enums
+* FE consider removing UpdateList - have everyone compose their Updaters
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Subcommand for cron to trigger DB cleanups (expired revokes)

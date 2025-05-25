@@ -20,8 +20,10 @@ import Pages
 import Platform.Cmd as Cmd
 import Router
 import State
+import Toast exposing (withAttributes, withTrayAttributes)
 import Updaters
 import Url
+import ViewUtil exposing (svgIcon)
 
 
 type alias Model =
@@ -30,6 +32,7 @@ type alias Model =
     , page : Router.Target
     , pages : Pages.Models
     , creds : Auth.Cred
+    , toastTray : Toast.Tray Toast
     }
 
 
@@ -40,6 +43,17 @@ type Msg
     | SignOut
     | StoreChange ( String, Value )
     | PageMsg Pages.Msg
+    | ToastMsg Toast.Msg
+    | CloseToast (Toast.Info ())
+
+
+type Toast
+    = MainToast ToastContent
+    | PageToast Pages.Toast
+
+
+type ToastContent
+    = Tester
 
 
 main : Program Value Model Msg
@@ -57,21 +71,19 @@ main =
 init : Value -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
-        {-
-            startingPage =
-                Router.routeToTarget url
+        ( startingTray, toastCmd ) =
+            Toast.persistent (MainToast Tester)
+                |> Toast.withExitTransition 500
+                |> Toast.addUnique Toast.tray
 
-
-           ( finalUrl, target ) =
-               case startingPage of
-                   Just t ->
-                       ( url, t )
-
-                   Nothing ->
-                       ( { url | path = "/" }, Router.Landing )
-        -}
         baseModel =
-            Model key { url | path = "/" } Router.Landing Pages.init Auth.unauthenticated
+            Model
+                key
+                { url | path = "/" }
+                Router.Landing
+                Pages.init
+                Auth.unauthenticated
+                startingTray
 
         fromStore =
             State.loadAll flags
@@ -80,6 +92,7 @@ init flags url key =
             Dict.foldl loadIntoModel baseModel fromStore
     in
     routeToPage url model
+        |> Tuple.mapSecond (\c -> Cmd.batch [ c, Cmd.map ToastMsg toastCmd ])
 
 
 type alias Updater model msg =
@@ -111,9 +124,37 @@ onNewCred newcred model =
     )
 
 
+onAddToast : Toast -> Updater Model Msg
+onAddToast toast model =
+    let
+        ( newTray, msg ) =
+            Toast.addUnique model.toastTray
+                (Toast.persistent toast
+                    |> Toast.withExitTransition 500
+                )
+    in
+    ( { model | toastTray = newTray }
+    , Cmd.map ToastMsg msg
+    )
+
+
 childUpdate : Updater Pages.Models Pages.Msg -> Updater Model Msg
 childUpdate =
     Updaters.childUpdate .pages (\model -> \pagemodel -> { model | pages = pagemodel }) PageMsg
+
+
+handleToastMsg : Toast.Msg -> Updater Model Msg
+handleToastMsg msg model =
+    let
+        ( tray, newTmesg ) =
+            Toast.update msg model.toastTray
+    in
+    ( { model | toastTray = tray }, Cmd.map ToastMsg newTmesg )
+
+
+closeToast : Toast.Info () -> Updater Model Msg
+closeToast info model =
+    handleToastMsg (Toast.exit info.id) model
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -122,6 +163,7 @@ update msg model =
         interface =
             { requestNav = onNav
             , requestUpdatePath = onUpdatePage
+            , sendToast = PageToast >> onAddToast
             , installNewCred = onNewCred
             , lowerModel = .pages
             , localUpdate = childUpdate
@@ -160,6 +202,12 @@ update msg model =
         PageMsg submsg ->
             Updaters.compose (Pages.updaters interface submsg) model
 
+        ToastMsg submsg ->
+            handleToastMsg submsg model
+
+        CloseToast info ->
+            closeToast info model
+
 
 loadIntoModel : String -> Value -> Model -> Model
 loadIntoModel key value model =
@@ -193,6 +241,7 @@ routeToPage url model =
                     , installNewCred = onNewCred
                     , lowerModel = .pages
                     , localUpdate = childUpdate
+                    , sendToast = PageToast >> onAddToast
                     }
 
                 submsg =
@@ -239,14 +288,52 @@ view model =
                 :: (Pages.view model.page model.pages
                         |> wrapMsg
                    )
-                ++ [ div [ class "footer" ]
+                ++ [ Toast.render viewToast model.toastTray toastConfig
+                   , div [ class "footer" ]
                         [ a [ href "https://github.com/nyarly/wagthepig" ] [ text "Contribute!" ]
-                        , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [ text "Complain!" ], text "Suggest!" ]
+                        , text " "
+                        , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
                         ]
                    ]
             )
         ]
     }
+
+
+toastConfig : Toast.Config Msg
+toastConfig =
+    Toast.config ToastMsg
+        |> withTrayAttributes [ class "toast-tray" ]
+        |> withAttributes [ class "toast" ]
+        |> Toast.withEnterAttributes [ class "entering" ]
+        |> Toast.withExitAttributes [ class "exiting" ]
+
+
+viewToast : List (Html.Attribute Msg) -> Toast.Info Toast -> Html Msg
+viewToast attributes toastInfo =
+    let
+        unwrapToast info content =
+            Toast.Info info.id info.phase info.interaction content
+
+        wrapHtml =
+            List.map (Html.map PageMsg)
+    in
+    div attributes
+        ((case toastInfo.content of
+            MainToast Tester ->
+                [ text "this is a test toast" ]
+
+            PageToast subToast ->
+                Pages.viewToast (unwrapToast toastInfo subToast)
+                    |> wrapHtml
+         )
+            ++ [ button [ class "toast-close", onClick (CloseToast (stripToastInfo toastInfo)) ] [ svgIcon "cross" ] ]
+        )
+
+
+stripToastInfo : Toast.Info c -> Toast.Info ()
+stripToastInfo info =
+    Toast.Info info.id info.phase info.interaction ()
 
 
 authButton : Model -> Html Msg

@@ -1,4 +1,4 @@
-module Pages exposing (Models, Msg(..), init, pageNavMsg, updaters, view)
+module Pages exposing (Models, Msg(..), Toast, init, pageNavMsg, updaters, view, viewToast)
 
 import Auth
 import CompleteRegistration
@@ -14,6 +14,7 @@ import Login
 import Profile exposing (Msg(..))
 import Register
 import Router exposing (Target(..))
+import Toast
 import Updaters exposing (UpdateList, Updater, childUpdate)
 import WhatShouldWePlay
 
@@ -58,6 +59,10 @@ type alias Models =
     , register : Register.Model
     , complete_registration : CompleteRegistration.Model
     }
+
+
+type Toast
+    = EventEditToast EventEdit.Toast
 
 
 init : Models
@@ -135,6 +140,21 @@ view target models =
                 |> wrapMsg CompleteRegistrationMsg
 
 
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    let
+        unwrapToast info content =
+            Toast.Info info.id info.phase info.interaction content
+
+        wrapHtml pageMsg =
+            List.map (Html.map pageMsg)
+    in
+    case toastInfo.content of
+        EventEditToast subToast ->
+            EventEdit.viewToast (unwrapToast toastInfo subToast)
+                |> wrapHtml EventEditMsg
+
+
 pageNavMsg : Router.Target -> Auth.Cred -> Msg
 pageNavMsg target creds =
     case target of
@@ -185,6 +205,7 @@ type alias Interface base model msg =
         , requestUpdatePath : Router.Target -> Updater model msg
         , installNewCred : Auth.Cred -> Updater model msg
         , lowerModel : model -> Models
+        , sendToast : Toast -> Updater model msg
     }
 
 
@@ -198,6 +219,7 @@ createEventUpdater { localUpdate, requestNav } aff =
 
 childInterface :
     Interface base model msg
+    -> (ctoast -> Toast)
     -> (Models -> cmodel)
     -> (Models -> cmodel -> Models)
     -> (cmsg -> Msg)
@@ -208,10 +230,11 @@ childInterface :
         , requestCreateEvent : Affordance -> Updater model msg
         , lowerModel : model -> cmodel
         , localUpdate : Updater cmodel cmsg -> Updater model msg
+        , sendToast : ctoast -> Updater model msg
         }
-childInterface iface getModel setModel wrapMsg =
+childInterface iface wrapToast getModel setModel wrapMsg =
     let
-        { requestNav, requestUpdatePath, installNewCred, localUpdate, lowerModel } =
+        { requestNav, requestUpdatePath, installNewCred, localUpdate, lowerModel, sendToast } =
             iface
     in
     { requestNav = requestNav
@@ -220,6 +243,7 @@ childInterface iface getModel setModel wrapMsg =
     , requestCreateEvent = createEventUpdater iface
     , lowerModel = lowerModel >> getModel
     , localUpdate = localUpdate << childUpdate getModel setModel wrapMsg
+    , sendToast = wrapToast >> sendToast
     }
 
 
@@ -227,6 +251,9 @@ updaters : Interface base model msg -> Msg -> UpdateList model msg
 updaters iface msg =
     let
         pageInterface =
+            childInterface iface identity
+
+        pageInterfaceWithToast =
             childInterface iface
     in
     case msg of
@@ -255,7 +282,7 @@ updaters iface msg =
 
         EventEditMsg submsg ->
             EventEdit.updaters
-                (pageInterface .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
+                (pageInterfaceWithToast EventEditToast .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
                 submsg
 
         EventShowMsg submsg ->

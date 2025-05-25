@@ -2,25 +2,30 @@ module EventEdit exposing
     ( Bookmark(..)
     , Model
     , Msg(..)
+    , Toast
     , forCreate
     , init
     , updaters
     , view
+    , viewToast
     )
 
 import Auth
 import Event exposing (browseToEvent, nickToVars)
-import Html exposing (Html, button, div, form, text)
-import Html.Attributes exposing (class, disabled, id, type_)
+import Html exposing (Html, a, button, div, form, p, text)
+import Html.Attributes exposing (class, disabled, href, id, type_)
 import Html.Attributes.Extra as Attr
-import Html.Events exposing (onSubmit)
+import Html.Events exposing (onClick, onSubmit)
+import Http exposing (Error(..))
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
+import Router
 import Task
 import Time
+import Toast
 import Updaters exposing (UpdateList, Updater)
 import ViewUtil as Eww
 
@@ -29,6 +34,7 @@ type alias Model =
     { creds : Auth.Cred
     , etag : Up.Etag
     , resource : Resource
+    , retry : Maybe (Cmd Msg)
     }
 
 
@@ -49,6 +55,12 @@ type Bookmark
     | Url HM.Uri
 
 
+type Toast
+    = NotAuthorized
+    | Retryable (Cmd Msg)
+    | Unknown
+
+
 init : Model
 init =
     Model
@@ -63,6 +75,11 @@ init =
             (Time.millisToPosix 0)
             ""
         )
+        Nothing
+
+
+
+-- XXX baby jesus cries
 
 
 forCreate : Affordance -> Model
@@ -79,6 +96,7 @@ forCreate aff =
             (Time.millisToPosix 0)
             ""
         )
+        Nothing
 
 
 encodeEvent : Resource -> E.Value
@@ -111,6 +129,7 @@ type Msg
     | Submit
     | GotEvent Up.Etag Resource
     | ErrGetEvent HM.Error
+    | Retry (Cmd Msg)
 
 
 view : Model -> List (Html Msg)
@@ -138,15 +157,38 @@ view model =
     ]
 
 
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        NotAuthorized ->
+            [ p [] [ text "You're no longer logged in" ]
+            , a [ href (Router.buildFromTarget Router.Login), class "button" ] [ text "Log In Again" ]
+            ]
+
+        Retryable r ->
+            [ p []
+                [ text "There was a hiccup editing an event" ]
+            , button [ onClick (Retry r) ] [ text "Retry" ]
+            ]
+
+        Unknown ->
+            [ text "something went wrong editing an event" ]
+
+
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Model Msg -> Updater model msg
+        , sendToast : Toast -> Updater model msg
+        , lowerModel : model -> Model
     }
 
 
 updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate } msg =
+updaters iface msg =
     let
+        { localUpdate } =
+            iface
+
         updateRes f =
             [ localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none )) ]
     in
@@ -158,10 +200,20 @@ updaters { localUpdate } msg =
 
                 -- creating a new Event
                 Nickname id ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByNick creds id )) ]
+                    let
+                        fetch =
+                            fetchByNick creds id
+                    in
+                    [ localUpdate (\m -> ( { m | creds = creds, retry = Just fetch }, fetch ))
+                    ]
 
                 Url url ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url )) ]
+                    let
+                        fetch =
+                            fetchFromUrl creds url
+                    in
+                    [ localUpdate (\m -> ( { m | creds = creds, retry = Just fetch }, fetch ))
+                    ]
 
         TimeNow t ->
             updateRes (\r -> { r | time = t })
@@ -181,16 +233,60 @@ updaters { localUpdate } msg =
         ChangeLocation l ->
             updateRes (\r -> { r | location = l })
 
-        GotEvent etag ev ->
-            [ localUpdate (\m -> ( { m | etag = etag, resource = ev }, Cmd.none )) ]
-
-        -- XXX error handling
-        ErrGetEvent _ ->
-            []
-
         -- XXX
         Submit ->
-            [ localUpdate (\m -> ( m, putEvent m.creds m )) ]
+            [ localUpdate
+                (\m ->
+                    let
+                        put =
+                            putEvent m.creds m
+                    in
+                    ( { m | retry = Just put }, put )
+                )
+            ]
+
+        GotEvent etag ev ->
+            [ localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none )) ]
+
+        -- XXX error handling
+        ErrGetEvent err ->
+            handleError iface err
+
+        Retry cmd ->
+            [ localUpdate (\m -> ( m, cmd )) ]
+
+
+handleError : { a | sendToast : Toast -> Updater model msg, lowerModel : model -> Model } -> Error -> UpdateList model msg
+handleError { sendToast, lowerModel } err =
+    let
+        maybeRetry m =
+            case (lowerModel m).retry of
+                Just r ->
+                    sendToast (Retryable r) m
+
+                Nothing ->
+                    sendToast Unknown m
+    in
+    case err of
+        Timeout ->
+            [ maybeRetry ]
+
+        NetworkError ->
+            [ maybeRetry ]
+
+        BadUrl _ ->
+            [ sendToast Unknown ]
+
+        BadStatus status ->
+            case status of
+                403 ->
+                    [ sendToast NotAuthorized ]
+
+                _ ->
+                    [ sendToast Unknown ]
+
+        BadBody _ ->
+            [ sendToast Unknown ]
 
 
 getCurrentTime : Cmd Msg
