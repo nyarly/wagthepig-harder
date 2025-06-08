@@ -14,6 +14,8 @@ import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Http exposing (Error(..))
+import Hypermedia exposing (Error)
 import Json.Encode exposing (Value)
 import Login
 import Pages
@@ -45,6 +47,7 @@ type Msg
     | PageMsg Pages.Msg
     | ToastMsg Toast.Msg
     | CloseToast (Toast.Info ())
+    | Relogin
 
 
 type Toast
@@ -54,6 +57,9 @@ type Toast
 
 type ToastContent
     = Tester
+    | NotAuthorized
+    | CouldRetry
+    | Unknown
 
 
 main : Program Value Model Msg
@@ -117,6 +123,24 @@ onUpdatePage target model =
     )
 
 
+afterLogin : Router.Target -> Updater Model Msg
+afterLogin target =
+    Pages.afterLoginUpdater interface target
+
+
+loginSavePoint : Updater Model Msg
+loginSavePoint model =
+    afterLogin model.page model
+
+
+saveCurrentPageAndReLogin : Updater Model Msg
+saveCurrentPageAndReLogin =
+    Updaters.compose
+        [ loginSavePoint
+        , onNav Router.Login
+        ]
+
+
 onNewCred : Auth.Cred -> Updater Model Msg
 onNewCred newcred model =
     ( { model | creds = newcred }
@@ -157,18 +181,32 @@ closeToast info model =
     handleToastMsg (Toast.exit info.id) model
 
 
+interface :
+    { requestNav : Router.Target -> Model -> ( Model, Cmd Msg )
+    , requestUpdatePath : Router.Target -> Model -> ( Model, Cmd Msg )
+    , sendToast : Pages.Toast -> Model -> ( Model, Cmd Msg )
+    , installNewCred : Auth.Cred -> Model -> ( Model, Cmd Msg )
+    , lowerModel : { a | pages : b } -> b
+    , localUpdate : Updater Pages.Models Pages.Msg -> Model -> ( Model, Cmd Msg )
+    , relogin : Updater Model Msg
+    , handleError : Error -> Model -> ( Model, Cmd Msg )
+    , handleErrorWithRetry : Updater Model Msg -> Error -> Model -> ( Model, Cmd Msg )
+    }
+interface =
+    { requestNav = onNav
+    , requestUpdatePath = onUpdatePage
+    , sendToast = PageToast >> onAddToast
+    , installNewCred = onNewCred
+    , lowerModel = .pages
+    , localUpdate = childUpdate
+    , relogin = saveCurrentPageAndReLogin
+    , handleError = handleError
+    , handleErrorWithRetry = handleErrorWithRetry
+    }
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    let
-        interface =
-            { requestNav = onNav
-            , requestUpdatePath = onUpdatePage
-            , sendToast = PageToast >> onAddToast
-            , installNewCred = onNewCred
-            , lowerModel = .pages
-            , localUpdate = childUpdate
-            }
-    in
     case msg of
         LinkClicked urlRequest ->
             case urlRequest of
@@ -208,6 +246,41 @@ update msg model =
         CloseToast info ->
             closeToast info model
 
+        Relogin ->
+            saveCurrentPageAndReLogin model
+
+
+handleError : Error -> Updater Model Msg
+handleError =
+    handleErrorWithRetry (onAddToast (MainToast CouldRetry))
+
+
+handleErrorWithRetry : Updater Model Msg -> Error -> Updater Model Msg
+handleErrorWithRetry retry err model =
+    case err of
+        Timeout ->
+            retry model
+
+        NetworkError ->
+            retry model
+
+        BadUrl _ ->
+            onAddToast (MainToast Unknown) model
+
+        BadStatus status ->
+            case status of
+                401 ->
+                    onAddToast (MainToast NotAuthorized) model
+
+                403 ->
+                    onAddToast (MainToast NotAuthorized) model
+
+                _ ->
+                    onAddToast (MainToast Unknown) model
+
+        BadBody _ ->
+            onAddToast (MainToast Unknown) model
+
 
 loadIntoModel : String -> Value -> Model -> Model
 loadIntoModel key value model =
@@ -235,15 +308,6 @@ routeToPage url model =
 
         ( False, Just target ) ->
             let
-                interface =
-                    { requestNav = onNav
-                    , requestUpdatePath = onUpdatePage
-                    , installNewCred = onNewCred
-                    , lowerModel = .pages
-                    , localUpdate = childUpdate
-                    , sendToast = PageToast >> onAddToast
-                    }
-
                 submsg =
                     Pages.pageNavMsg target model.creds
             in
@@ -321,7 +385,20 @@ viewToast attributes toastInfo =
     div attributes
         ((case toastInfo.content of
             MainToast Tester ->
-                [ text "this is a test toast" ]
+                [ text "this is a test toast; this is only a test" ]
+
+            MainToast NotAuthorized ->
+                [ p [] [ text "You're no longer logged in" ]
+                , button [ onClick Relogin ] [ text "Log In" ]
+                ]
+
+            MainToast CouldRetry ->
+                [ p []
+                    [ text "There was a transient error; maybe try that again" ]
+                ]
+
+            MainToast Unknown ->
+                [ text "something weird went wrong - reach out to the devs!" ]
 
             PageToast subToast ->
                 Pages.viewToast (unwrapToast toastInfo subToast)

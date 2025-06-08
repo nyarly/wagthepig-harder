@@ -2,7 +2,9 @@ module Updaters exposing
     ( UpdateList
     , Updater
     , childUpdate
+    , comp
     , compose
+    , noChange
     )
 
 
@@ -12,6 +14,11 @@ type alias Updater model msg =
 
 type alias UpdateList model msg =
     List (Updater model msg)
+
+
+noChange : Updater model msg
+noChange model =
+    ( model, Cmd.none )
 
 
 childUpdate : (pmodel -> cmodel) -> (pmodel -> cmodel -> pmodel) -> (cmsg -> pmsg) -> Updater cmodel cmsg -> Updater pmodel pmsg
@@ -38,3 +45,15 @@ compose updaters model =
             List.foldl reduce acc updaters
     in
     ( finalmodel, Cmd.batch cmdlist )
+
+
+comp : Updater model msg -> Updater model msg -> Updater model msg
+comp left right mod =
+    let
+        ( lmod, lcmd ) =
+            left mod
+
+        ( rmod, rcmd ) =
+            right lmod
+    in
+    ( rmod, Cmd.batch [ lcmd, rcmd ] )

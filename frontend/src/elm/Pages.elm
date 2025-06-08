@@ -1,4 +1,4 @@
-module Pages exposing (Models, Msg(..), Toast, init, pageNavMsg, updaters, view, viewToast)
+module Pages exposing (Models, Msg(..), Toast, afterLoginUpdater, init, pageNavMsg, updaters, view, viewToast)
 
 import Auth
 import CompleteRegistration
@@ -8,7 +8,7 @@ import Events
 import Game.Create
 import Game.Edit
 import Html exposing (Html)
-import Hypermedia exposing (Affordance)
+import Hypermedia exposing (Affordance, Error)
 import Landing
 import Login
 import Profile exposing (Msg(..))
@@ -201,11 +201,14 @@ pageNavMsg target creds =
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Models Msg -> Updater model msg
+        , relogin : Updater model msg
         , requestNav : Router.Target -> Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
         , installNewCred : Auth.Cred -> Updater model msg
         , lowerModel : model -> Models
         , sendToast : Toast -> Updater model msg
+        , handleError : Error -> Updater model msg
+        , handleErrorWithRetry : Updater model msg -> Error -> Updater model msg
     }
 
 
@@ -225,19 +228,25 @@ childInterface :
     -> (cmsg -> Msg)
     ->
         { requestNav : Router.Target -> Updater model msg
+        , relogin : Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
         , installNewCred : Auth.Cred -> Updater model msg
         , requestCreateEvent : Affordance -> Updater model msg
         , lowerModel : model -> cmodel
         , localUpdate : Updater cmodel cmsg -> Updater model msg
         , sendToast : ctoast -> Updater model msg
+        , handleError : Error -> Updater model msg
+        , handleErrorWithRetry : Updater model msg -> Error -> Updater model msg
         }
 childInterface iface wrapToast getModel setModel wrapMsg =
     let
-        { requestNav, requestUpdatePath, installNewCred, localUpdate, lowerModel, sendToast } =
+        { requestNav, requestUpdatePath, installNewCred, localUpdate, lowerModel, sendToast, relogin, handleError, handleErrorWithRetry } =
             iface
     in
     { requestNav = requestNav
+    , relogin = relogin
+    , handleError = handleError
+    , handleErrorWithRetry = handleErrorWithRetry
     , requestUpdatePath = requestUpdatePath
     , installNewCred = installNewCred
     , requestCreateEvent = createEventUpdater iface
@@ -245,6 +254,18 @@ childInterface iface wrapToast getModel setModel wrapMsg =
     , localUpdate = localUpdate << childUpdate getModel setModel wrapMsg
     , sendToast = wrapToast >> sendToast
     }
+
+
+afterLoginUpdater :
+    Interface base model msg
+    -> Router.Target
+    -> Updater model msg
+afterLoginUpdater iface target =
+    let
+        ciface =
+            childInterface iface identity .login (\models -> \pm -> { models | login = pm }) LoginMsg
+    in
+    Login.nextPageUpdater ciface target
 
 
 updaters : Interface base model msg -> Msg -> UpdateList model msg
@@ -281,9 +302,10 @@ updaters iface msg =
                 submsg
 
         EventEditMsg submsg ->
-            EventEdit.updaters
+            [ EventEdit.updaters
                 (pageInterfaceWithToast EventEditToast .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
                 submsg
+            ]
 
         EventShowMsg submsg ->
             EventShow.updaters

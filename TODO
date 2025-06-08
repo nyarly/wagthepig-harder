@@ -17,7 +17,6 @@ WTP parity:
 
 F/E
 * Error handling - ideas
-  * Toasts - plugin
   * Highlight/jump to issue
   * Message near interaction (submit turns red)
   * Retries
@@ -26,8 +25,6 @@ F/E
 * Auth failure handling (big enough merits own bullet)
   * 401 -> drop auth,
   * present login
-  * if successful, retry previous "thing"
-  * at least: return to previous page.
   * distinguish expired vs. rejected credentials
 
 * Fork and strip for future projects

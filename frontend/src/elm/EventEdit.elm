@@ -12,8 +12,8 @@ module EventEdit exposing
 
 import Auth
 import Event exposing (browseToEvent, nickToVars)
-import Html exposing (Html, a, button, div, form, p, text)
-import Html.Attributes exposing (class, disabled, href, id, type_)
+import Html exposing (Html, button, div, form, p, text)
+import Html.Attributes exposing (class, disabled, id, type_)
 import Html.Attributes.Extra as Attr
 import Html.Events exposing (onClick, onSubmit)
 import Http exposing (Error(..))
@@ -22,11 +22,10 @@ import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
-import Router
 import Task
 import Time
 import Toast
-import Updaters exposing (UpdateList, Updater)
+import Updaters exposing (Updater, noChange)
 import ViewUtil as Eww
 
 
@@ -34,7 +33,7 @@ type alias Model =
     { creds : Auth.Cred
     , etag : Up.Etag
     , resource : Resource
-    , retry : Maybe (Cmd Msg)
+    , retry : Maybe Tried
     }
 
 
@@ -49,15 +48,19 @@ type alias Resource =
     }
 
 
+type alias Tried =
+    { msg : Msg
+    , nick : Int
+    }
+
+
 type Bookmark
     = None
     | Nickname Int
-    | Url HM.Uri
 
 
 type Toast
-    = NotAuthorized
-    | Retryable (Cmd Msg)
+    = Retryable Tried
     | Unknown
 
 
@@ -129,7 +132,7 @@ type Msg
     | Submit
     | GotEvent Up.Etag Resource
     | ErrGetEvent HM.Error
-    | Retry (Cmd Msg)
+    | Retry Msg
 
 
 view : Model -> List (Html Msg)
@@ -160,15 +163,10 @@ view model =
 viewToast : Toast.Info Toast -> List (Html Msg)
 viewToast toastInfo =
     case toastInfo.content of
-        NotAuthorized ->
-            [ p [] [ text "You're no longer logged in" ]
-            , a [ href (Router.buildFromTarget Router.Login), class "button" ] [ text "Log In Again" ]
-            ]
-
         Retryable r ->
             [ p []
                 [ text "There was a hiccup editing an event" ]
-            , button [ onClick (Retry r) ] [ text "Retry" ]
+            , button [ onClick (Retry r.msg) ] [ text "Retry" ]
             ]
 
         Unknown ->
@@ -180,40 +178,29 @@ type alias Interface base model msg =
         | localUpdate : Updater Model Msg -> Updater model msg
         , sendToast : Toast -> Updater model msg
         , lowerModel : model -> Model
+        , relogin : Updater model msg
+        , handleErrorWithRetry : Updater model msg -> Error -> Updater model msg
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters : Interface base model msg -> Msg -> Updater model msg
 updaters iface msg =
     let
-        { localUpdate } =
+        { localUpdate, handleErrorWithRetry, sendToast } =
             iface
 
         updateRes f =
-            [ localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none ))
     in
     case msg of
         Entered creds loc ->
             case loc of
-                None ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, getCurrentTime )) ]
-
                 -- creating a new Event
-                Nickname id ->
-                    let
-                        fetch =
-                            fetchByNick creds id
-                    in
-                    [ localUpdate (\m -> ( { m | creds = creds, retry = Just fetch }, fetch ))
-                    ]
+                None ->
+                    localUpdate (\m -> ( { m | creds = creds }, getCurrentTime ))
 
-                Url url ->
-                    let
-                        fetch =
-                            fetchFromUrl creds url
-                    in
-                    [ localUpdate (\m -> ( { m | creds = creds, retry = Just fetch }, fetch ))
-                    ]
+                Nickname id ->
+                    entryUpdater iface creds id
 
         TimeNow t ->
             updateRes (\r -> { r | time = t })
@@ -228,65 +215,77 @@ updaters iface msg =
 
                 -- XXX error handling
                 Err _ ->
-                    []
+                    sendToast Unknown
 
         ChangeLocation l ->
             updateRes (\r -> { r | location = l })
 
         -- XXX
         Submit ->
-            [ localUpdate
-                (\m ->
-                    let
-                        put =
-                            putEvent m.creds m
-                    in
-                    ( { m | retry = Just put }, put )
-                )
-            ]
+            localUpdate (\m -> ( { m | retry = Just (Tried Submit m.resource.nick) }, putEvent m.creds m ))
 
         GotEvent etag ev ->
-            [ localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none ))
 
         -- XXX error handling
         ErrGetEvent err ->
-            handleError iface err
+            handleErrorWithRetry (maybeRetry iface) err
 
-        Retry cmd ->
-            [ localUpdate (\m -> ( m, cmd )) ]
-
-
-handleError : { a | sendToast : Toast -> Updater model msg, lowerModel : model -> Model } -> Error -> UpdateList model msg
-handleError { sendToast, lowerModel } err =
-    let
-        maybeRetry m =
-            case (lowerModel m).retry of
-                Just r ->
-                    sendToast (Retryable r) m
-
-                Nothing ->
-                    sendToast Unknown m
-    in
-    case err of
-        Timeout ->
-            [ maybeRetry ]
-
-        NetworkError ->
-            [ maybeRetry ]
-
-        BadUrl _ ->
-            [ sendToast Unknown ]
-
-        BadStatus status ->
-            case status of
-                403 ->
-                    [ sendToast NotAuthorized ]
+        Retry m ->
+            case m of
+                Retry _ ->
+                    noChange
 
                 _ ->
-                    [ sendToast Unknown ]
+                    updaters iface m
 
-        BadBody _ ->
-            [ sendToast Unknown ]
+
+entryUpdater : Interface base model msg -> Auth.Cred -> Int -> Updater model msg
+entryUpdater iface creds id model =
+    let
+        { lowerModel, localUpdate } =
+            iface
+
+        doFetch =
+            localUpdate
+                (\m ->
+                    ( { m | creds = creds, retry = Just (Tried (Entered creds (Nickname id)) id) }
+                    , fetchByNick creds id
+                    )
+                )
+    in
+    case (lowerModel model).retry of
+        Just tried ->
+            if id == tried.nick then
+                Updaters.comp
+                    (localUpdate (\m -> ( { m | creds = creds }, Cmd.none )))
+                    (updaters iface tried.msg)
+                    model
+
+            else
+                doFetch model
+
+        Nothing ->
+            doFetch model
+
+
+maybeRetry :
+    { iface
+        | sendToast : Toast -> Updater model msg
+        , lowerModel : model -> Model
+    }
+    -> Updater model msg
+maybeRetry { sendToast, lowerModel } model =
+    let
+        toast =
+            case (lowerModel model).retry of
+                Just r ->
+                    Retryable r
+
+                Nothing ->
+                    Unknown
+    in
+    sendToast toast model
 
 
 getCurrentTime : Cmd Msg
@@ -322,17 +321,4 @@ fetchByNick creds id =
         , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot
         , browsePlan = browseToEvent (nickToVars id)
-        }
-
-
-fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
-fetchFromUrl creds url =
-    Up.retrieve
-        { creds = creds
-        , decoder = decoder
-
-        -- XXX used to update path with stuff
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
-        , startAt = HM.link HM.GET url
-        , browsePlan = []
         }

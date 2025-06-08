@@ -1,4 +1,4 @@
-module Login exposing (Model, Msg(..), init, logout, updaters, view)
+module Login exposing (Model, Msg(..), init, logout, nextPageUpdater, updaters, view)
 
 import Auth
 import Dict
@@ -17,12 +17,13 @@ type alias Model =
     { email : String
     , password : String
     , fromServer : AuthResponse
+    , nextPage : Router.Target
     }
 
 
 init : Model
 init =
-    Model "" "" None
+    Model "" "" None Router.Landing
 
 
 type Msg
@@ -61,11 +62,22 @@ type alias Interface base model msg =
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestNav : Router.Target -> Updater model msg
         , installNewCred : Auth.Cred -> Updater model msg
+        , lowerModel : model -> Model
     }
 
 
+nextPageUpdater :
+    { iface
+        | localUpdate : Updater Model Msg -> Updater model msg
+    }
+    -> Router.Target
+    -> Updater model msg
+nextPageUpdater { localUpdate } target =
+    localUpdate (\m -> ( { m | nextPage = target }, Cmd.none ))
+
+
 updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, installNewCred, requestNav } msg =
+updaters { localUpdate, installNewCred, requestNav, lowerModel } msg =
     case msg of
         Entered ->
             []
@@ -84,7 +96,7 @@ updaters { localUpdate, installNewCred, requestNav } msg =
                 Ok user ->
                     [ localUpdate (\m -> ( { m | fromServer = Success user, password = "" }, Cmd.none ))
                     , installNewCred user
-                    , requestNav Router.Landing
+                    , \m -> requestNav (lowerModel m).nextPage m
                     ]
 
                 -- XXX error handling
