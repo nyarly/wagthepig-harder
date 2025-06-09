@@ -1,15 +1,16 @@
-module Login exposing (Model, Msg(..), init, logout, nextPageUpdater, updaters, view)
+module Login exposing (Model, Msg(..), Toast, init, logout, nextPageUpdater, updaters, view, viewToast)
 
 import Auth
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (type_)
 import Html.Events exposing (onClick, onSubmit)
-import Http
+import Http exposing (Error(..))
 import Hypermedia as HM exposing (OperationSelector(..), emptyBody, emptyResponse)
 import Json.Encode as E
 import Router exposing (Target(..))
-import Updaters exposing (UpdateList, Updater)
+import Toast
+import Updaters exposing (Updater)
 import ViewUtil as Eww
 
 
@@ -42,6 +43,10 @@ type AuthResponse
     | Failed Http.Error
 
 
+type Toast
+    = NotAuthorized
+
+
 view : Model -> List (Html Msg)
 view model =
     [ h1 [] [ text "Log in" ]
@@ -63,12 +68,15 @@ type alias Interface base model msg =
         , requestNav : Router.Target -> Updater model msg
         , installNewCred : Auth.Cred -> Updater model msg
         , lowerModel : model -> Model
+        , handleError : Error -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
 
 
 nextPageUpdater :
     { iface
         | localUpdate : Updater Model Msg -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
     -> Router.Target
     -> Updater model msg
@@ -76,38 +84,71 @@ nextPageUpdater { localUpdate } target =
     localUpdate (\m -> ( { m | nextPage = target }, Cmd.none ))
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, installNewCred, requestNav, lowerModel } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters ({ localUpdate, installNewCred, requestNav, lowerModel } as iface) msg =
     case msg of
         Entered ->
-            []
+            Updaters.noChange
 
         ChangeEmail newemail ->
-            [ localUpdate (\m -> ( { m | email = newemail }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | email = newemail }, Cmd.none ))
 
         ChangePassword newpassword ->
-            [ localUpdate (\m -> ( { m | password = newpassword }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | password = newpassword }, Cmd.none ))
 
         AuthenticationAttempted ->
-            [ localUpdate (\m -> ( { m | fromServer = None }, login m.email m.password )) ]
+            localUpdate (\m -> ( { m | fromServer = None }, login m.email m.password ))
 
         AuthResponse res ->
             case res of
                 Ok user ->
-                    [ localUpdate (\m -> ( { m | fromServer = Success user, password = "" }, Cmd.none ))
-                    , installNewCred user
-                    , \m -> requestNav (lowerModel m).nextPage m
-                    ]
+                    Updaters.composeList
+                        [ localUpdate (\m -> ( { m | fromServer = Success user, password = "" }, Cmd.none ))
+                        , installNewCred user
+                        , \m -> requestNav (lowerModel m).nextPage m
+                        ]
 
-                -- XXX error handling
                 Err err ->
-                    [ localUpdate (\m -> ( { m | fromServer = Failed err, password = "" }, Cmd.none )) ]
+                    Updaters.compose
+                        (localUpdate (\m -> ( { m | fromServer = Failed err, password = "" }, Cmd.none )))
+                        (handleServerError iface err)
 
         WantsReg ->
-            [ requestNav Router.Register ]
+            requestNav Router.Register
 
         LoggedOut _ ->
-            [ localUpdate (\m -> ( m, Auth.logout )) ]
+            localUpdate (\m -> ( m, Auth.logout ))
+
+
+handleServerError :
+    { iface
+        | handleError : Error -> Updater model msg
+        , sendToast : Toast -> Updater model msg
+    }
+    -> Error
+    -> Updater model msg
+handleServerError { handleError, sendToast } err =
+    case err of
+        BadStatus status ->
+            case status of
+                401 ->
+                    sendToast NotAuthorized
+
+                403 ->
+                    sendToast NotAuthorized
+
+                _ ->
+                    handleError err
+
+        _ ->
+            handleError err
+
+
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        NotAuthorized ->
+            [ p [] [ text "User name or password not recognized - please, try again" ] ]
 
 
 login : String -> String -> Cmd Msg

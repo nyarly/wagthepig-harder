@@ -5,6 +5,7 @@ module Game.Edit exposing
     , roundTrip
     , updaters
     , view
+    , viewToast
     )
 
 import Auth
@@ -15,14 +16,15 @@ import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
-import Http
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
-import Updaters exposing (UpdateList, Updater, childUpdate)
+import Toast
+import Updaters exposing (Updater, childUpdate)
 
 
 type alias EventId =
@@ -107,11 +109,18 @@ view model =
     ]
 
 
+viewToast : Toast.Info V.Toast -> List (Html Msg)
+viewToast toastInfo =
+    List.map (Html.map GameMsg) (V.viewToast toastInfo)
+
+
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Model Msg -> Updater model msg
         , lowerModel : model -> Model
         , requestNav : Router.Target -> Updater model msg
+        , sendToast : V.Toast -> Updater model msg
+        , handleError : Error -> Updater model msg
     }
 
 
@@ -126,25 +135,26 @@ childUpdate upper model =
                 |> Tuple.mapBoth (\m -> { model | resource = Loaded m }) (Cmd.map GameMsg)
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { requestNav, localUpdate, lowerModel } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters { requestNav, localUpdate, lowerModel, handleError, sendToast } msg =
     case msg of
         Entered creds ev i ->
-            [ localUpdate (\m -> ( { m | event_id = ev, creds = creds }, fetchByNick creds ev (V.Nick i (Auth.accountID creds)) )) ]
+            localUpdate (\m -> ( { m | event_id = ev, creds = creds }, fetchByNick creds ev (V.Nick i (Auth.accountID creds)) ))
 
         LoadLoc aff ->
-            [ localUpdate (\m -> ( m, fetchFromUrl m.creds m.event_id aff.uri )) ]
+            localUpdate (\m -> ( m, fetchFromUrl m.creds m.event_id aff.uri ))
 
         GameMsg gmsg ->
             let
                 interface =
                     { localUpdate = localUpdate << childUpdate
+                    , sendToast = sendToast
                     }
             in
             V.updaters interface gmsg
 
         Submit ->
-            [ \model ->
+            \model ->
                 let
                     gmod =
                         lowerModel model
@@ -155,17 +165,15 @@ updaters { requestNav, localUpdate, lowerModel } msg =
 
                     Loaded res ->
                         localUpdate (\m -> ( m, putGame gmod.creds gmod.etag res )) model
-            ]
 
         CreatedGame ->
-            [ \m -> requestNav (Router.EventShow (lowerModel m).event_id Nothing) m
-            ]
+            \m -> requestNav (Router.EventShow (lowerModel m).event_id Nothing) m
 
         GotGame etag g ->
-            [ localUpdate (\m -> ( { m | etag = etag, resource = Loaded g }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | etag = etag, resource = Loaded g }, Cmd.none ))
 
-        ErrGetGame _ ->
-            []
+        ErrGetGame err ->
+            handleError err
 
 
 nickToVars : Auth.Cred -> Int -> V.Nick -> Dict.Dict String String

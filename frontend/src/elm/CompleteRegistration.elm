@@ -11,7 +11,7 @@ import Http
 import Hypermedia as HM exposing (OperationSelector(..))
 import Json.Encode as E
 import Router exposing (Target(..))
-import Updaters exposing (UpdateList, Updater)
+import Updaters exposing (Updater)
 import ViewUtil as Eww
 
 
@@ -74,31 +74,30 @@ type alias Interface base model msg =
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
+updaters : Interface base model msg -> Msg -> Updater model msg
 updaters { localUpdate, requestNav } msg =
     case msg of
         Entered cred email ->
-            [ localUpdate (\m -> ( { m | creds = cred, email = email }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | creds = cred, email = email }, Cmd.none ))
 
         ChangePassword newpassword ->
-            [ localUpdate (\m -> ( { m | password = newpassword }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | password = newpassword }, Cmd.none ))
 
         ChangePasswordAgain newpassword ->
-            [ localUpdate (\m -> ( { m | passwordAgain = newpassword }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | passwordAgain = newpassword }, Cmd.none ))
 
         UpdateAttempted ->
-            [ localUpdate (\m -> ( { m | fromServer = None }, updatePassword m.creds m.email m.password )) ]
+            localUpdate (\m -> ( { m | fromServer = None }, updatePassword m.creds m.email m.password ))
 
         AuthResponse res ->
             case res of
                 Ok () ->
                     -- n.b. we could do the login ourselves, but I want to avoid a folk "magic-link" pattern here
-                    [ localUpdate (\m -> ( { m | fromServer = Success }, Cmd.none ))
-                    , requestNav Router.Login
-                    ]
+                    Updaters.compose (localUpdate (\m -> ( { m | fromServer = Success }, Cmd.none )))
+                        (requestNav Router.Login)
 
                 Err err ->
-                    [ localUpdate (\m -> ( { m | fromServer = Failed err }, Cmd.none )) ]
+                    localUpdate (\m -> ( { m | fromServer = Failed err }, Cmd.none ))
 
 
 updatePassword : Auth.Cred -> String -> String -> Cmd Msg

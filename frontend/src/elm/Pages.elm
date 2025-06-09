@@ -7,6 +7,7 @@ import EventShow
 import Events
 import Game.Create
 import Game.Edit
+import Game.View
 import Html exposing (Html)
 import Hypermedia exposing (Affordance, Error)
 import Landing
@@ -15,7 +16,7 @@ import Profile exposing (Msg(..))
 import Register
 import Router exposing (Target(..))
 import Toast
-import Updaters exposing (UpdateList, Updater, childUpdate)
+import Updaters exposing (Updater, childUpdate, noChange)
 import WhatShouldWePlay
 
 
@@ -63,6 +64,12 @@ type alias Models =
 
 type Toast
     = EventEditToast EventEdit.Toast
+    | EventShowToast EventShow.Toast
+    | LoginToast Login.Toast
+    | GameCreateToast Game.View.Toast
+    | GameEditToast Game.View.Toast
+    | ProfileToast Profile.Toast
+    | WhatShouldWePlayToast WhatShouldWePlay.Toast
 
 
 init : Models
@@ -151,8 +158,25 @@ viewToast toastInfo =
     in
     case toastInfo.content of
         EventEditToast subToast ->
-            EventEdit.viewToast (unwrapToast toastInfo subToast)
-                |> wrapHtml EventEditMsg
+            EventEdit.viewToast (unwrapToast toastInfo subToast) |> wrapHtml EventEditMsg
+
+        EventShowToast subToast ->
+            EventShow.viewToast (unwrapToast toastInfo subToast) |> wrapHtml EventShowMsg
+
+        LoginToast subToast ->
+            Login.viewToast (unwrapToast toastInfo subToast) |> wrapHtml LoginMsg
+
+        GameCreateToast subToast ->
+            Game.Create.viewToast (unwrapToast toastInfo subToast) |> wrapHtml GameCreateMsg
+
+        GameEditToast subToast ->
+            Game.Edit.viewToast (unwrapToast toastInfo subToast) |> wrapHtml GameEditMsg
+
+        ProfileToast subToast ->
+            Profile.viewToast (unwrapToast toastInfo subToast) |> wrapHtml ProfileMsg
+
+        WhatShouldWePlayToast subToast ->
+            WhatShouldWePlay.viewToast (unwrapToast toastInfo subToast) |> wrapHtml WhatShouldWePlayMsg
 
 
 pageNavMsg : Router.Target -> Auth.Cred -> Msg
@@ -214,7 +238,7 @@ type alias Interface base model msg =
 
 createEventUpdater : Interface base model msg -> Affordance -> Updater model msg
 createEventUpdater { localUpdate, requestNav } aff =
-    Updaters.compose
+    Updaters.composeList
         [ localUpdate (\models -> ( { models | event = EventEdit.forCreate aff }, Cmd.none ))
         , requestNav Router.CreateEvent
         ]
@@ -263,76 +287,71 @@ afterLoginUpdater :
 afterLoginUpdater iface target =
     let
         ciface =
-            childInterface iface identity .login (\models -> \pm -> { models | login = pm }) LoginMsg
+            childInterface iface LoginToast .login (\models -> \pm -> { models | login = pm }) LoginMsg
     in
     Login.nextPageUpdater ciface target
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters iface msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters ({ installNewCred, requestNav } as iface) msg =
     let
         pageInterface =
-            childInterface iface identity
-
-        pageInterfaceWithToast =
             childInterface iface
     in
     case msg of
         CredentialedArrivalMsg cred next ->
-            [ iface.installNewCred cred
-            , iface.requestNav next
-            ]
+            Updaters.compose (installNewCred cred)
+                (requestNav next)
 
         LandingMsg _ ->
-            []
+            noChange
 
         ProfileMsg submsg ->
             Profile.updaters
-                (pageInterface .profile (\models -> \pm -> { models | profile = pm }) ProfileMsg)
+                (pageInterface ProfileToast .profile (\models -> \pm -> { models | profile = pm }) ProfileMsg)
                 submsg
 
         LoginMsg submsg ->
             Login.updaters
-                (pageInterface .login (\models -> \pm -> { models | login = pm }) LoginMsg)
+                (pageInterface LoginToast .login (\models -> \pm -> { models | login = pm }) LoginMsg)
                 submsg
 
         EventsMsg submsg ->
             Events.updaters
-                (pageInterface .events (\models -> \pm -> { models | events = pm }) EventsMsg)
+                (pageInterface identity .events (\models -> \pm -> { models | events = pm }) EventsMsg)
                 submsg
 
         EventEditMsg submsg ->
-            [ EventEdit.updaters
-                (pageInterfaceWithToast EventEditToast .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
+            EventEdit.updaters
+                (pageInterface EventEditToast .event (\models -> \pm -> { models | event = pm }) EventEditMsg)
                 submsg
-            ]
 
         EventShowMsg submsg ->
             EventShow.updaters
-                (pageInterface .games (\models -> \pm -> { models | games = pm }) EventShowMsg)
+                (pageInterface EventShowToast .games (\models -> \pm -> { models | games = pm }) EventShowMsg)
                 submsg
 
         WhatShouldWePlayMsg submsg ->
             WhatShouldWePlay.updaters
-                (pageInterface .reccos (\models -> \pm -> { models | reccos = pm }) WhatShouldWePlayMsg)
+                (pageInterface WhatShouldWePlayToast .reccos (\models -> \pm -> { models | reccos = pm }) WhatShouldWePlayMsg)
                 submsg
 
         RegisterMsg submsg ->
             Register.updaters
-                (pageInterface .register (\models -> \pm -> { models | register = pm }) RegisterMsg)
+                (pageInterface identity .register (\models -> \pm -> { models | register = pm }) RegisterMsg)
                 submsg
 
         CompleteRegistrationMsg submsg ->
             CompleteRegistration.updaters
-                (pageInterface .complete_registration (\models -> \pm -> { models | complete_registration = pm }) CompleteRegistrationMsg)
+                (pageInterface identity .complete_registration (\models -> \pm -> { models | complete_registration = pm }) CompleteRegistrationMsg)
                 submsg
 
         GameEditMsg submsg ->
             Game.Edit.updaters
-                (pageInterface .editGame (\models -> \pm -> { models | editGame = pm }) GameEditMsg)
+                (pageInterface GameEditToast .editGame (\models -> \pm -> { models | editGame = pm }) GameEditMsg)
                 submsg
 
         GameCreateMsg submsg ->
             Game.Create.updaters
-                (pageInterface .createGame (\models -> \pm -> { models | createGame = pm }) GameCreateMsg)
+                (pageInterface GameCreateToast .createGame (\models -> \pm -> { models | createGame = pm }) GameCreateMsg)
                 submsg

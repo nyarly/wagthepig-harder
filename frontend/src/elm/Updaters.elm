@@ -1,19 +1,14 @@
 module Updaters exposing
-    ( UpdateList
-    , Updater
+    ( Updater
     , childUpdate
-    , comp
     , compose
+    , composeList
     , noChange
     )
 
 
 type alias Updater model msg =
     model -> ( model, Cmd msg )
-
-
-type alias UpdateList model msg =
-    List (Updater model msg)
 
 
 noChange : Updater model msg
@@ -28,8 +23,8 @@ childUpdate getModel setModel wrapMsg upper model =
         |> Tuple.mapBoth (setModel model) (Cmd.map wrapMsg)
 
 
-compose : UpdateList model msg -> Updater model msg
-compose updaters model =
+composeList : List (Updater model msg) -> Updater model msg
+composeList updaters model =
     let
         acc =
             ( model, [] )
@@ -47,8 +42,8 @@ compose updaters model =
     ( finalmodel, Cmd.batch cmdlist )
 
 
-comp : Updater model msg -> Updater model msg -> Updater model msg
-comp left right mod =
+compose : Updater model msg -> Updater model msg -> Updater model msg
+compose left right mod =
     let
         ( lmod, lcmd ) =
             left mod

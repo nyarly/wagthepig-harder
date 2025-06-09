@@ -7,10 +7,12 @@ import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
-import Updaters exposing (UpdateList, Updater, childUpdate)
+import Toast
+import Updaters exposing (Updater, childUpdate)
 
 
 type alias EventId =
@@ -57,22 +59,30 @@ view model =
     ]
 
 
+viewToast : Toast.Info V.Toast -> List (Html Msg)
+viewToast toastInfo =
+    List.map (Html.map GameMsg) (V.viewToast toastInfo)
+
+
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestNav : Router.Target -> Updater model msg
         , lowerModel : model -> Model
+        , sendToast : V.Toast -> Updater model msg
+        , handleError : Error -> Updater model msg
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, lowerModel, requestNav } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters { localUpdate, lowerModel, requestNav, sendToast, handleError } msg =
     let
         updateRes f m =
             { m | resource = f m.resource }
 
         gameInterface =
             { localUpdate = localUpdate << childUpdate identity (\_ -> identity) GameMsg
+            , sendToast = sendToast
             }
     in
     case msg of
@@ -80,23 +90,21 @@ updaters { localUpdate, lowerModel, requestNav } msg =
             V.updaters gameInterface gmsg
 
         Entered creds ev ->
-            [ localUpdate
+            localUpdate
                 (\_ ->
                     ( { init | event_id = ev, creds = creds } |> updateRes (\r -> { r | interested = Just True })
                     , Cmd.none
                     )
                 )
-            ]
 
         Submit ->
-            [ localUpdate (\m -> ( m, putGame m.creds m )) ]
+            localUpdate (\m -> ( m, putGame m.creds m ))
 
         CreatedGame ->
-            [ \model -> requestNav (Router.EventShow (lowerModel model).event_id Nothing) model ]
+            \model -> requestNav (Router.EventShow (lowerModel model).event_id Nothing) model
 
-        -- XXX error handling
-        ErrGetGame _ ->
-            []
+        ErrGetGame err ->
+            handleError err
 
 
 nickToVars : Auth.Cred -> Int -> Dict.Dict String String

@@ -22,6 +22,7 @@ import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
+import Retries exposing (Tried, entryUpdater)
 import Task
 import Time
 import Toast
@@ -33,7 +34,7 @@ type alias Model =
     { creds : Auth.Cred
     , etag : Up.Etag
     , resource : Resource
-    , retry : Maybe Tried
+    , retry : Maybe (Tried Msg Int)
     }
 
 
@@ -48,19 +49,13 @@ type alias Resource =
     }
 
 
-type alias Tried =
-    { msg : Msg
-    , nick : Int
-    }
-
-
 type Bookmark
     = None
     | Nickname Int
 
 
 type Toast
-    = Retryable Tried
+    = Retryable (Tried Msg Int)
     | Unknown
 
 
@@ -184,13 +179,13 @@ type alias Interface base model msg =
 
 
 updaters : Interface base model msg -> Msg -> Updater model msg
-updaters iface msg =
+updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
     let
-        { localUpdate, handleErrorWithRetry, sendToast } =
-            iface
-
         updateRes f =
             localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none ))
+
+        justTried model =
+            Just (Tried msg model.resource.nick)
     in
     case msg of
         Entered creds loc ->
@@ -200,7 +195,16 @@ updaters iface msg =
                     localUpdate (\m -> ( { m | creds = creds }, getCurrentTime ))
 
                 Nickname id ->
-                    entryUpdater iface creds id
+                    let
+                        fetchUpdater m =
+                            ( { m | creds = creds, retry = justTried m }
+                            , fetchByNick creds id
+                            )
+
+                        retryUpdater m =
+                            ( { m | creds = creds }, Cmd.none )
+                    in
+                    entryUpdater iface fetchUpdater retryUpdater updaters id
 
         TimeNow t ->
             updateRes (\r -> { r | time = t })
@@ -213,7 +217,6 @@ updaters iface msg =
                 Ok nt ->
                     updateRes (\r -> { r | time = nt })
 
-                -- XXX error handling
                 Err _ ->
                     sendToast Unknown
 
@@ -222,12 +225,11 @@ updaters iface msg =
 
         -- XXX
         Submit ->
-            localUpdate (\m -> ( { m | retry = Just (Tried Submit m.resource.nick) }, putEvent m.creds m ))
+            localUpdate (\m -> ( { m | retry = justTried m }, putEvent m.creds m ))
 
         GotEvent etag ev ->
             localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none ))
 
-        -- XXX error handling
         ErrGetEvent err ->
             handleErrorWithRetry (maybeRetry iface) err
 
@@ -238,35 +240,6 @@ updaters iface msg =
 
                 _ ->
                     updaters iface m
-
-
-entryUpdater : Interface base model msg -> Auth.Cred -> Int -> Updater model msg
-entryUpdater iface creds id model =
-    let
-        { lowerModel, localUpdate } =
-            iface
-
-        doFetch =
-            localUpdate
-                (\m ->
-                    ( { m | creds = creds, retry = Just (Tried (Entered creds (Nickname id)) id) }
-                    , fetchByNick creds id
-                    )
-                )
-    in
-    case (lowerModel model).retry of
-        Just tried ->
-            if id == tried.nick then
-                Updaters.comp
-                    (localUpdate (\m -> ( { m | creds = creds }, Cmd.none )))
-                    (updaters iface tried.msg)
-                    model
-
-            else
-                doFetch model
-
-        Nothing ->
-            doFetch model
 
 
 maybeRetry :

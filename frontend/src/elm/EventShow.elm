@@ -2,9 +2,11 @@ module EventShow exposing
     ( Bookmark(..)
     , Model
     , Msg(..)
+    , Toast
     , init
     , updaters
     , view
+    , viewToast
     )
 
 import Auth
@@ -13,21 +15,23 @@ import Dict
 import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
 import Game.View as G exposing (bggLink)
-import Html exposing (Html, a, button, dd, dl, dt, h3, img, li, span, table, td, text, th, thead, tr, ul)
+import Html exposing (Html, a, button, dd, dl, dt, h3, img, li, p, span, table, td, text, th, thead, tr, ul)
 import Html.Attributes exposing (class, href, src)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
-import Http
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), decodeMaybe)
 import Iso8601
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
+import Retries exposing (Tried, entryUpdater)
 import Router exposing (GameSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
 import Time
-import Updaters exposing (UpdateList, Updater)
+import Toast
+import Updaters exposing (Updater, noChange)
 import ViewUtil as Ew
 
 
@@ -36,6 +40,7 @@ type alias Model =
     , etag : Up.Etag
     , resource : Maybe Resource
     , games : Maybe GameList
+    , retry : Maybe (Tried Msg Int)
     }
 
 
@@ -109,6 +114,7 @@ init =
         Nothing
         Nothing
         Nothing
+        Nothing
 
 
 decoder : D.Decoder Resource
@@ -143,7 +149,6 @@ mustHave emsg =
 
 type Bookmark
     = Nickname Int
-    | Url HM.Uri
     | None
 
 
@@ -165,6 +170,12 @@ type Msg
     | ErrGetEvent HM.Error
     | ErrGameList HM.Error
     | ErrGetBGGData BGGAPI.Error
+    | Retry Msg
+
+
+type Toast
+    = Retryable (Tried Msg Int)
+    | Unknown
 
 
 type alias Interface base model msg =
@@ -172,95 +183,91 @@ type alias Interface base model msg =
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
         , lowerModel : model -> Model
+        , handleErrorWithRetry : Updater model msg -> Error -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, requestUpdatePath, lowerModel } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, sendToast } as iface) msg =
+    let
+        justTried model =
+            Maybe.map (\r -> Tried msg r.nick) model.resource
+    in
     case msg of
         Entered creds loc ->
             case loc of
                 Nickname id ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByNick creds id )) ]
+                    let
+                        fetchUpdater m =
+                            ( { m | creds = creds, retry = justTried m }
+                            , fetchByNick creds id
+                            )
 
-                Url url ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url )) ]
+                        retryUpdater m =
+                            ( { m | creds = creds }, Cmd.none )
+                    in
+                    entryUpdater iface fetchUpdater retryUpdater updaters id
 
                 None ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, Cmd.none )) ]
+                    localUpdate (\m -> ( { m | creds = creds }, Cmd.none ))
 
         ChangeSort newsort ->
-            [ \model ->
+            \model ->
                 case (lowerModel model).resource of
                     Just res ->
                         requestUpdatePath (Router.EventShow res.nick (Just newsort)) model
 
                     Nothing ->
                         ( model, Cmd.none )
-            ]
 
         GotEvent etag ev ->
-            [ localUpdate (\m -> ( { m | etag = etag, resource = Just ev }, fetchGamesList m.creds ev.gamesTemplate )) ]
+            localUpdate (\m -> ( { m | etag = etag, resource = Just ev, retry = justTried m }, fetchGamesList m.creds ev.gamesTemplate ))
 
         GotGameList list ->
-            [ localUpdate (\m -> ( { m | games = Just list }, fetchBGGData list )) ]
-
-        -- XXX error handling
-        ErrGetEvent _ ->
-            []
-
-        -- XXX error handling
-        ErrGameList _ ->
-            []
+            localUpdate (\m -> ( { m | games = Just list, retry = justTried m }, fetchBGGData list ))
 
         UpdateGameInterest val event_id nick ->
-            [ localUpdate (\m -> ( m, updateInterest val m.creds event_id nick )) ]
+            localUpdate (\m -> ( { m | retry = justTried m }, updateInterest val m.creds event_id nick ))
 
-        -- XXX need to update table
         UpdatedGameInterest val nick ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | games = gameItemUpdate nick (\g -> { g | interested = Just val }) m.games
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
 
         UpdateGameTeaching val event_id nick ->
-            [ localUpdate (\m -> ( m, updateTeaching val m.creds event_id nick )) ]
+            localUpdate (\m -> ( { m | retry = justTried m }, updateTeaching val m.creds event_id nick ))
 
-        -- XXX need to update table
         UpdatedGameTeaching val nick ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | games = gameItemUpdate nick (\g -> { g | canTeach = Just val }) m.games
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
-
-        -- XXX error handling
-        UpdateError _ ->
-            []
 
         CloseOtherPlayers nick ->
             let
                 closeGame game =
                     { game | whoElse = closeOtherPlayers game.whoElse }
-            in
-            [ localUpdate
-                (\m ->
+
+                updateGames m =
                     ( { m
                         | games = gameItemUpdate nick closeGame m.games
                       }
                     , Cmd.none
                     )
-                )
-            ]
+            in
+            localUpdate updateGames
 
         GetOtherPlayers nick aff ->
             let
@@ -269,47 +276,92 @@ updaters { localUpdate, requestUpdatePath, lowerModel } msg =
 
                 closeAll games =
                     Maybe.map (List.map closeGame) games
-            in
-            [ localUpdate
-                (\m ->
+
+                fetchOthers m =
                     ( { m
                         | games = closeAll m.games
+                        , retry = justTried m
                       }
                     , fetchOtherPlayers m.creds nick aff
                     )
-                )
-            ]
+            in
+            localUpdate fetchOthers
 
         GotOtherPlayers nick list ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | games =
                             gameItemUpdate nick (\g -> { g | whoElse = list }) m.games
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
 
         GotBGGData gameId bggData ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | games =
                             gameItemUpdate gameId (\g -> { g | thumbnail = Just bggData.thumbnail }) m.games
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
 
-        -- XXX
-        ErrOtherPlayers _ ->
-            []
+        ErrGetEvent err ->
+            handleErrorWithRetry (maybeRetry iface) err
+
+        ErrGameList err ->
+            handleErrorWithRetry (maybeRetry iface) err
+
+        UpdateError err ->
+            handleErrorWithRetry (maybeRetry iface) err
+
+        ErrOtherPlayers err ->
+            handleErrorWithRetry (maybeRetry iface) err
 
         ErrGetBGGData _ ->
-            []
+            \model ->
+                let
+                    toast =
+                        case (lowerModel model).retry of
+                            Just r ->
+                                Retryable r
+
+                            Nothing ->
+                                Unknown
+                in
+                sendToast toast model
+
+        Retry m ->
+            case m of
+                Retry _ ->
+                    noChange
+
+                _ ->
+                    updaters iface m
+
+
+maybeRetry :
+    { iface
+        | sendToast : Toast -> Updater model msg
+        , lowerModel : model -> Model
+    }
+    -> Updater model msg
+maybeRetry { sendToast, lowerModel } model =
+    let
+        toast =
+            case (lowerModel model).retry of
+                Just r ->
+                    Retryable r
+
+                Nothing ->
+                    Unknown
+    in
+    sendToast toast model
 
 
 gameItemUpdate : G.Nick -> (Game -> Game) -> Maybe GameList -> Maybe GameList
@@ -325,6 +377,19 @@ gameItemUpdate nick doUpdate games =
             )
         )
         games
+
+
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        Retryable r ->
+            [ p []
+                [ text "There was a hiccup displaying the event" ]
+            , button [ onClick (Retry r.msg) ] [ text "Retry" ]
+            ]
+
+        Unknown ->
+            [ text "something went wrong editing an event" ]
 
 
 view : Model -> Maybe GameSorting -> List (Html Msg)
@@ -578,15 +643,4 @@ fetchByNick creds id =
         , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot
         , browsePlan = browseToEvent (nickToVars id)
-        }
-
-
-fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
-fetchFromUrl creds url =
-    Up.retrieve
-        { creds = creds
-        , decoder = decoder
-        , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
-        , startAt = HM.link HM.GET url
-        , browsePlan = []
         }

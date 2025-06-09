@@ -1,6 +1,4 @@
-* FE update to use newest ResourceUpdate functions
 * FE remove `Entered Url` options? e.g. Bookmark enums
-* FE consider removing UpdateList - have everyone compose their Updaters
 * Modern CSS (c.f. "6 patterns of CSS variables")
 * FE condreq support
 * Subcommand for cron to trigger DB cleanups (expired revokes)
@@ -19,13 +17,6 @@ F/E
 * Error handling - ideas
   * Highlight/jump to issue
   * Message near interaction (submit turns red)
-  * Retries
-  * Handling - e.g. creds rejected - drop creds (and toast)
-
-* Auth failure handling (big enough merits own bullet)
-  * 401 -> drop auth,
-  * present login
-  * distinguish expired vs. rejected credentials
 
 * Fork and strip for future projects
   * Rename semweb_api - "mattak" (b/c axum-mattak)
@@ -35,7 +26,6 @@ F/E
 * At what level should we cache link walking? Browser should do some of it,
   especially if we set short TTLs on API responses, and that'll be reliable and easy.
   We _could_ do some in-app caching as we walk, and control that on a per-page level
-* Revamp ResourceUpdate and Hypermedia around record arguments (5 args is too many)
 * General view "perspectives" - including multiuse queries
 * Pre compress frontend assets in prod deploy?
 * Pact for tests?

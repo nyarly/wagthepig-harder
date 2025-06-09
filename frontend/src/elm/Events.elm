@@ -13,7 +13,7 @@ import Json.Decode as D
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time
-import Updaters exposing (UpdateList, Updater)
+import Updaters exposing (Updater, noChange)
 
 
 type alias TableSorting =
@@ -95,43 +95,39 @@ init =
         (Resource Nothing [] [])
 
 
-
-{-
-   type alias Interface base model msg =
-       { base
-           | localUpdate : Updater Model Msg -> Updater model msg
-           , requestCreateEvent : Affordance -> UpdateList model msg
-           , requestUpdatePath : Router.Target -> Updater model msg
-       }
--}
--- updaters : Interface base model msg -> Msg -> UpdateList model msg
-
-
-updaters :
-    { a
+type alias Interface base model msg =
+    { base
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestCreateEvent : Affordance -> Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
     }
+
+
+
+-- updaters : Interface base model msg -> Msg -> UpdateList model msg
+
+
+updaters :
+    Interface iface model msg
     -> Msg
-    -> UpdateList model msg
+    -> Updater model msg
 updaters { localUpdate, requestCreateEvent, requestUpdatePath } msg =
     case msg of
         Entered creds _ ->
-            [ localUpdate (\model -> ( { model | creds = creds }, fetch creds )) ]
+            localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
 
         GotEvents new ->
-            [ localUpdate (\m -> ( { m | resource = new }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | resource = new }, Cmd.none ))
 
         ChangeSort newsort ->
-            [ requestUpdatePath (Router.Events (Just newsort)) ]
+            requestUpdatePath (Router.Events (Just newsort))
 
         --XXX need to handle an error
         ErrGetEvents _ ->
-            []
+            noChange
 
         CreateNewEvent aff ->
-            [ requestCreateEvent aff ]
+            requestCreateEvent aff
 
 
 sortWith : EventSortBy -> Event -> Event -> Order

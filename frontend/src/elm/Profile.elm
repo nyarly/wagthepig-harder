@@ -2,26 +2,29 @@ module Profile exposing
     ( Bookmark(..)
     , Model
     , Msg(..)
+    , Toast
     , init
     , updaters
     , view
+    , viewToast
     )
 
 import Auth
 import Dict
-import Html exposing (Html, button, form, span, text)
+import Html exposing (Html, button, form, p, span, text)
 import Html.Attributes exposing (class, disabled, type_)
 import Html.Attributes.Extra exposing (attributeIf, attributeMaybe)
 import Html.Events exposing (onSubmit)
 import Html.Extra exposing (viewIf)
-import Http
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), emptyResponse)
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import String exposing (length)
-import Updaters exposing (UpdateList, Updater)
+import Toast
+import Updaters exposing (Updater)
 import ViewUtil as Eww
 
 
@@ -97,6 +100,10 @@ type Msg
     | AuthResponse (Result Http.Error ())
 
 
+type Toast
+    = Unknown
+
+
 view : Model -> List (Html Msg)
 view model =
     let
@@ -129,30 +136,39 @@ view model =
     ]
 
 
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        Unknown ->
+            [ p [] [ text "there was a problem updating your password; try again, please?" ] ]
+
+
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestNav : Router.Target -> Updater model msg
+        , handleError : Error -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, requestNav } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters { localUpdate, requestNav, handleError, sendToast } msg =
     let
         updateProfile f =
-            [ localUpdate (\m -> ( { m | profile = f m.profile }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | profile = f m.profile }, Cmd.none ))
 
         updatePassword f =
-            [ localUpdate (\m -> ( { m | password = f m.password }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | password = f m.password }, Cmd.none ))
     in
     case msg of
         Entered creds loc ->
             case loc of
                 Creds ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchByCreds creds )) ]
+                    localUpdate (\m -> ( { m | creds = creds }, fetchByCreds creds ))
 
                 Url url ->
-                    [ localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url.uri )) ]
+                    localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url.uri ))
 
         ChangeName n ->
             updateProfile (\pf -> { pf | name = n })
@@ -164,16 +180,14 @@ updaters { localUpdate, requestNav } msg =
             updateProfile (\pf -> { pf | bgg_username = b })
 
         SubmitProfile ->
-            [ localUpdate (\m -> ( m, putProfile m.creds m )) ]
+            localUpdate (\m -> ( m, putProfile m.creds m ))
 
         GotProfile etag prof ->
-            [ localUpdate (\m -> ( { m | etag = etag, profile = prof }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | etag = etag, profile = prof }, Cmd.none ))
 
-        -- XXX error handling
-        ErrProfileGet _ ->
-            []
+        ErrProfileGet err ->
+            handleError err
 
-        -- XXX
         ChangeOldPassword p ->
             updatePassword (\pw -> { pw | old = p })
 
@@ -184,16 +198,15 @@ updaters { localUpdate, requestNav } msg =
             updatePassword (\pw -> { pw | newAgain = p })
 
         SubmitPassword ->
-            [ localUpdate (\m -> ( m, submitPasswordUpdate m )) ]
+            localUpdate (\m -> ( m, submitPasswordUpdate m ))
 
         AuthResponse res ->
             case res of
                 Ok () ->
-                    [ requestNav Router.Login ]
+                    requestNav Router.Login
 
-                -- XXX error handling
                 Err _ ->
-                    []
+                    sendToast Unknown
 
 
 submitPasswordUpdate : Model -> Cmd Msg

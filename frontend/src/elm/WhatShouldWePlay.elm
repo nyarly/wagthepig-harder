@@ -2,9 +2,11 @@ module WhatShouldWePlay exposing
     ( Model
     , Msg(..)
     , Nick
+    , Toast
     , init
     , updaters
     , view
+    , viewToast
     )
 
 import Auth
@@ -15,15 +17,18 @@ import Html exposing (Html, a, button, div, form, h1, h3, img, label, li, option
 import Html.Attributes exposing (class, for, href, multiple, src, type_, value)
 import Html.Events exposing (onClick, onSubmit)
 import Html.Keyed as Keyed
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response, Uri, decodeMaybe)
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
 import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlayersDecoder, playerDecoder, playerName)
 import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
+import Retries exposing (Tried)
 import Router exposing (ReccoSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybes, sortingHeader)
-import Updaters exposing (UpdateList, Updater)
+import Toast
+import Updaters exposing (Updater, noChange)
 import ViewUtil as Ew
 
 
@@ -34,6 +39,7 @@ type alias Model =
     , selectedIds : List String
     , extraCount : Int
     , suggestion : Maybe (List Recco)
+    , retry : Maybe (Tried Msg Nick)
     }
 
 
@@ -118,6 +124,12 @@ type Msg
     | ErrGetRecco HM.Error
     | GotPlayers (List Player)
     | ErrGetPlayers HM.Error
+    | Retry Msg
+
+
+type Toast
+    = Retryable (Tried Msg Nick)
+    | Unknown
 
 
 type alias Nick =
@@ -134,6 +146,7 @@ init =
         []
         0
         Nothing
+        Nothing
 
 
 type alias EventPlayers =
@@ -145,85 +158,135 @@ type alias Interface base model msg =
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
         , lowerModel : model -> Model
+        , handleErrorWithRetry : Updater model msg -> Error -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
 
 
-updaters : Interface base model msg -> Msg -> UpdateList model msg
-updaters { localUpdate, requestUpdatePath, lowerModel } msg =
+updaters : Interface base model msg -> Msg -> Updater model msg
+updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, sendToast } as iface) msg =
     let
         closeRecco recco =
             { recco | whoElse = closeOtherPlayers recco.whoElse }
 
         closeAll reccos =
             Maybe.map (List.map closeRecco) reccos
+
+        justTried model =
+            Just (Tried msg model.nick)
     in
     case msg of
         Entered creds nick ->
-            [ localUpdate (\m -> ( { m | creds = creds, nick = nick }, fetchEventPlayers creds nick )) ]
+            let
+                fetchUpdater m =
+                    ( { m | creds = creds, nick = nick, retry = Just (Tried (Entered creds nick) nick) }
+                    , fetchEventPlayers creds nick
+                    )
+
+                retryUpdater m =
+                    ( { m | creds = creds }, Cmd.none )
+            in
+            Retries.entryUpdater iface fetchUpdater retryUpdater updaters nick
 
         SelectUsers selectedIds ->
-            [ localUpdate (\m -> ( { m | selectedIds = selectedIds }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | selectedIds = selectedIds }, Cmd.none ))
 
         SetExtraPlayerCount extraCount ->
-            [ localUpdate (\m -> ( { m | extraCount = extraCount }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | extraCount = extraCount }, Cmd.none ))
 
         GotRecco suggestion ->
-            [ localUpdate (\m -> ( { m | suggestion = Just suggestion }, bggGameData suggestion )) ]
+            localUpdate (\m -> ( { m | suggestion = Just suggestion, retry = justTried m }, bggGameData suggestion ))
 
         Submit ->
-            [ localUpdate (\m -> ( m, sendRequest m )) ]
+            localUpdate (\m -> ( m, sendRequest m ))
 
         ClearReccos ->
-            [ localUpdate (\m -> ( { m | suggestion = Nothing }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | suggestion = Nothing }, Cmd.none ))
 
         ChangeSort newsort ->
-            [ \m -> requestUpdatePath (Router.WhatShouldWePlay (lowerModel m).nick.eventId (Just newsort)) m ]
+            \m -> requestUpdatePath (Router.WhatShouldWePlay (lowerModel m).nick.eventId (Just newsort)) m
 
         CloseOtherPlayers url ->
-            [ localUpdate (\m -> ( { m | suggestion = reccoItemUpdate url closeRecco m.suggestion }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | suggestion = reccoItemUpdate url closeRecco m.suggestion }, Cmd.none ))
 
         GotPlayers players ->
-            [ localUpdate (\m -> ( { m | players = Just players }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | players = Just players, retry = Nothing }, Cmd.none ))
 
         GetOtherPlayers aff ->
-            [ localUpdate (\m -> ( { m | suggestion = closeAll m.suggestion }, fetchOtherPlayers m.creds aff )) ]
+            localUpdate (\m -> ( { m | suggestion = closeAll m.suggestion, retry = justTried m }, fetchOtherPlayers m.creds aff ))
 
         GotOtherPlayers uri list ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | suggestion =
                             reccoItemUpdate uri (\g -> { g | whoElse = list }) m.suggestion
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
 
         GotBGGData url thumbnail ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | suggestion =
                             reccoItemUpdate url (\g -> { g | thumbnail = Just thumbnail }) m.suggestion
+                        , retry = Nothing
                       }
                     , Cmd.none
                     )
                 )
-            ]
 
-        -- -- XXX error handling
-        ErrGetRecco _ ->
-            []
+        ErrGetRecco err ->
+            handleErrorWithRetry (maybeRetry iface) err
 
-        ErrGetPlayers _ ->
-            []
+        ErrGetPlayers err ->
+            handleErrorWithRetry (maybeRetry iface) err
 
-        ErrOtherPlayers _ ->
-            []
+        ErrOtherPlayers err ->
+            handleErrorWithRetry (maybeRetry iface) err
 
         ErrGetBGGData _ ->
-            []
+            \model ->
+                let
+                    toast =
+                        case (lowerModel model).retry of
+                            Just r ->
+                                Retryable r
+
+                            Nothing ->
+                                Unknown
+                in
+                sendToast toast model
+
+        Retry m ->
+            case m of
+                Retry _ ->
+                    noChange
+
+                _ ->
+                    updaters iface m
+
+
+maybeRetry :
+    { iface
+        | sendToast : Toast -> Updater model msg
+        , lowerModel : model -> Model
+    }
+    -> Updater model msg
+maybeRetry { sendToast, lowerModel } model =
+    let
+        toast =
+            case (lowerModel model).retry of
+                Just r ->
+                    Retryable r
+
+                Nothing ->
+                    Unknown
+    in
+    sendToast toast model
 
 
 reccoItemUpdate : Uri -> (Recco -> Recco) -> Maybe (List Recco) -> Maybe (List Recco)
@@ -261,6 +324,19 @@ view model sorting =
 
         Just suggs ->
             reccoView model suggs sorting
+
+
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        Retryable r ->
+            [ p []
+                [ text "There was a hiccup getting reccomendations" ]
+            , button [ onClick (Retry r.msg) ] [ text "Retry" ]
+            ]
+
+        Unknown ->
+            [ text "something weird went wrong getting reccomendations" ]
 
 
 paramsView : Model -> List (Html Msg)

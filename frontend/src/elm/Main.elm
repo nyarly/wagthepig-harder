@@ -133,9 +133,16 @@ loginSavePoint model =
     afterLogin model.page model
 
 
+
+-- This should probably clear the credentials
+-- but: a) we're about to replace them
+-- and  b) they're stashed at each page
+-- for the future, this is a strong argument for a single extensible model
+
+
 saveCurrentPageAndReLogin : Updater Model Msg
 saveCurrentPageAndReLogin =
-    Updaters.compose
+    Updaters.composeList
         [ loginSavePoint
         , onNav Router.Login
         ]
@@ -189,8 +196,8 @@ interface :
     , lowerModel : { a | pages : b } -> b
     , localUpdate : Updater Pages.Models Pages.Msg -> Model -> ( Model, Cmd Msg )
     , relogin : Updater Model Msg
-    , handleError : Error -> Model -> ( Model, Cmd Msg )
-    , handleErrorWithRetry : Updater Model Msg -> Error -> Model -> ( Model, Cmd Msg )
+    , handleError : Error -> Updater Model Msg
+    , handleErrorWithRetry : Updater Model Msg -> Error -> Updater Model Msg
     }
 interface =
     { requestNav = onNav
@@ -238,7 +245,7 @@ update msg model =
             routeToPage url model
 
         PageMsg submsg ->
-            Updaters.compose (Pages.updaters interface submsg) model
+            Pages.updaters interface submsg model
 
         ToastMsg submsg ->
             handleToastMsg submsg model
@@ -311,7 +318,7 @@ routeToPage url model =
                 submsg =
                     Pages.pageNavMsg target model.creds
             in
-            Updaters.compose (Pages.updaters interface submsg) { model | page = target }
+            Pages.updaters interface submsg { model | page = target }
 
         ( _, Nothing ) ->
             ( model, Nav.pushUrl model.key "/" )

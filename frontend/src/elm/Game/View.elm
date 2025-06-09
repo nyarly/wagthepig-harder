@@ -3,6 +3,7 @@ module Game.View exposing
     , GameAndSearch
     , Msg(..)
     , Nick
+    , Toast
     , bggLink
     , decoder
     , encoder
@@ -10,18 +11,21 @@ module Game.View exposing
     , nickDecode
     , updaters
     , view
+    , viewToast
     )
 
 import BGGAPI exposing (BGGGame(..), BGGThing, shotgunGames)
-import Html exposing (Html, a, button, img, table, tbody, td, text, th, thead, tr)
+import Html exposing (Html, a, button, img, p, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
+import Http exposing (Error(..))
 import Hypermedia exposing (Method(..), OperationSelector(..), decodeMaybe, encodeMaybe)
 import Json.Decode as D
 import Json.Encode as E
 import Maybe exposing (withDefault)
-import Updaters exposing (UpdateList, Updater, childUpdate)
+import Toast
+import Updaters exposing (Updater, childUpdate)
 import ViewUtil as Eww
 
 
@@ -154,6 +158,10 @@ type Msg
     | BGGThingResult (Result BGGAPI.Error BGGThing)
 
 
+type Toast
+    = Unknown
+
+
 
 -- XXX this should be editView, and there should also be showView
 
@@ -252,38 +260,38 @@ interestedInput showInterest g =
         HtmlExtra.nothing
 
 
-gameUpdaters : (Updater Game Msg -> Updater model msg) -> Msg -> UpdateList model msg
+gameUpdaters : (Updater Game Msg -> Updater model msg) -> Msg -> Updater model msg
 gameUpdaters localUpdate msg =
     case msg of
         ChangeName n ->
-            [ localUpdate (\m -> ( { m | name = Just n }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | name = Just n }, Cmd.none ))
 
         ChangeMinPlayers v ->
-            [ localUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none ))
 
         ChangeMaxPlayers v ->
-            [ localUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none ))
 
         ChangeDurationSecs l ->
-            [ localUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none ))
 
         ChangeBggID i ->
-            [ localUpdate (\m -> ( { m | bggID = Just i }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | bggID = Just i }, Cmd.none ))
 
         ChangePitch p ->
-            [ localUpdate (\m -> ( { m | pitch = Just p }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | pitch = Just p }, Cmd.none ))
 
         ChangeInterested i ->
-            [ localUpdate (\m -> ( { m | interested = Just i }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | interested = Just i }, Cmd.none ))
 
         ChangeCanTeach t ->
-            [ localUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none ))
 
         ChangeNotes n ->
-            [ localUpdate (\m -> ( { m | notes = Just n }, Cmd.none )) ]
+            localUpdate (\m -> ( { m | notes = Just n }, Cmd.none ))
 
         Pick thing ->
-            [ localUpdate
+            localUpdate
                 (\m ->
                     ( { m
                         | name = Just thing.name
@@ -295,14 +303,19 @@ gameUpdaters localUpdate msg =
                     , Cmd.none
                     )
                 )
-            ]
 
         _ ->
-            []
+            Updaters.noChange
 
 
-searchUpdaters : (Updater (List BGGGame) Msg -> Updater model msg) -> Msg -> UpdateList model msg
-searchUpdaters localUpdate msg =
+searchUpdaters :
+    { iface
+        | localUpdate : Updater (List BGGGame) Msg -> Updater model msg
+        , sendToast : Toast -> Updater model msg
+    }
+    -> Msg
+    -> Updater model msg
+searchUpdaters { localUpdate, sendToast } msg =
     case msg of
         Pick thing ->
             let
@@ -314,38 +327,37 @@ searchUpdaters localUpdate msg =
                         Thing t ->
                             t.bggId == thing.bggId
             in
-            [ localUpdate (\m -> ( List.filter onlyPicked m, Cmd.none )) ]
+            localUpdate (\m -> ( List.filter onlyPicked m, Cmd.none ))
 
         BGGSearchResult r ->
             case r of
                 Ok l ->
-                    [ localUpdate (\_ -> ( l, shotgunGames l )) ]
+                    localUpdate (\_ -> ( l, shotgunGames l ))
 
-                -- XXX error handling
                 Err _ ->
-                    []
+                    sendToast Unknown
 
         BGGThingResult r ->
             case r of
                 Ok newGame ->
-                    [ localUpdate (\m -> ( enrichGame m newGame, Cmd.none )) ]
+                    localUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
 
-                -- XXX error handling
                 Err _ ->
-                    []
+                    sendToast Unknown
 
         _ ->
-            []
+            Updaters.noChange
 
 
 type alias Interface base gas model msg =
     { base
         | localUpdate : Updater (GameAndSearch gas) Msg -> Updater model msg
+        , sendToast : Toast -> Updater model msg
     }
 
 
-updaters : Interface base gas model msg -> Msg -> UpdateList model msg
-updaters { localUpdate } msg =
+updaters : Interface base gas model msg -> Msg -> Updater model msg
+updaters { localUpdate, sendToast } msg =
     let
         gameLocalUpdate =
             localUpdate << childUpdate .resource (\m -> \g -> { m | resource = g }) identity
@@ -353,8 +365,16 @@ updaters { localUpdate } msg =
         searchLocalUpdate =
             localUpdate << childUpdate .bggSearchResults (\m -> \g -> { m | bggSearchResults = g }) identity
     in
-    searchUpdaters searchLocalUpdate msg
-        ++ gameUpdaters gameLocalUpdate msg
+    Updaters.compose
+        (searchUpdaters { localUpdate = searchLocalUpdate, sendToast = sendToast } msg)
+        (gameUpdaters gameLocalUpdate msg)
+
+
+viewToast : Toast.Info Toast -> List (Html Msg)
+viewToast toastInfo =
+    case toastInfo.content of
+        Unknown ->
+            [ p [] [ text "there was an error from the BGG servers; try that again?" ] ]
 
 
 shotgunGames : List BGGGame -> Cmd Msg
