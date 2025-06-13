@@ -47,7 +47,7 @@ type Msg
     | PageMsg Pages.Msg
     | ToastMsg Toast.Msg
     | CloseToast (Toast.Info ())
-    | Relogin
+    | Relogin (Toast.Info ())
 
 
 type Toast
@@ -77,10 +77,19 @@ main =
 init : Value -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
-        ( startingTray, toastCmd ) =
-            Toast.persistent (MainToast Tester)
-                |> Toast.withExitTransition 500
-                |> Toast.addUnique Toast.tray
+        {-
+           There has to be a better way to do this:
+              ( startingTray, toastCmd ) =
+                  Toast.persistent (MainToast Tester)
+                      |> Toast.withExitTransition 500
+                      |> Toast.addUnique Toast.tray
+
+              ...
+
+             |> Tuple.mapSecond (\c -> Cmd.batch [ c, Cmd.map ToastMsg toastCmd ])
+        -}
+        startingTray =
+            Toast.tray
 
         baseModel =
             Model
@@ -98,7 +107,6 @@ init flags url key =
             Dict.foldl loadIntoModel baseModel fromStore
     in
     routeToPage url model
-        |> Tuple.mapSecond (\c -> Cmd.batch [ c, Cmd.map ToastMsg toastCmd ])
 
 
 type alias Updater model msg =
@@ -161,7 +169,7 @@ onAddToast toast model =
         ( newTray, msg ) =
             Toast.addUnique model.toastTray
                 (Toast.persistent toast
-                    |> Toast.withExitTransition 500
+                    |> Toast.withExitTransition 100
                 )
     in
     ( { model | toastTray = newTray }
@@ -253,8 +261,11 @@ update msg model =
         CloseToast info ->
             closeToast info model
 
-        Relogin ->
-            saveCurrentPageAndReLogin model
+        Relogin info ->
+            Updaters.compose
+                (closeToast info)
+                saveCurrentPageAndReLogin
+                model
 
 
 handleError : Error -> Updater Model Msg
@@ -281,6 +292,9 @@ handleErrorWithRetry retry err model =
 
                 403 ->
                     onAddToast (MainToast NotAuthorized) model
+
+                429 ->
+                    retry model
 
                 _ ->
                     onAddToast (MainToast Unknown) model
@@ -392,11 +406,11 @@ viewToast attributes toastInfo =
     div attributes
         ((case toastInfo.content of
             MainToast Tester ->
-                [ text "this is a test toast; this is only a test" ]
+                [ p [] [ text "This is a BRAND NEW test toast; this is only a test" ] ]
 
             MainToast NotAuthorized ->
                 [ p [] [ text "You're no longer logged in" ]
-                , button [ onClick Relogin ] [ text "Log In" ]
+                , button [ onClick (Relogin (stripToastInfo toastInfo)) ] [ text "Log In" ]
                 ]
 
             MainToast CouldRetry ->

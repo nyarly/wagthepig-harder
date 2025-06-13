@@ -471,12 +471,12 @@ reccoView model list maybeSort =
     , table []
         [ thead []
             [ th [] []
-            , sortingHeader "Name" ReccoName
-            , sortingHeader "Players" Players
-            , sortingHeader "Length" Length
-            , sortingHeader "Interested" PresentInterested
-            , sortingHeader "Teachers" PresentTeachers
-            , th [] []
+            , sortingHeader "Name" [ class "name" ] ReccoName
+            , sortingHeader "Players" [ class "players" ] Players
+            , sortingHeader "Length" [ class "length" ] Length
+            , sortingHeader "Interested" [ class "interested" ] PresentInterested
+            , sortingHeader "Teachers" [ class "teachers" ] PresentTeachers
+            , th [ class "whoelse" ] []
             ]
         , Keyed.node "tbody" [] (List.map makeReccoRow (sort list))
         ]
@@ -510,7 +510,7 @@ makeReccoRow recco =
         , td [ class "length" ] [ text <| String.fromFloat ((toFloat <| ndef recco.durationSecs) / 60) ]
         , td [ class "interested" ] [ text <| String.fromInt recco.interestLevel ]
         , td [ class "teachers" ] [ text <| String.fromInt recco.teachers ]
-        , td [ class "whoelse" ]
+        , td [ class "whoelse-button" ]
             [ button [ class "whoelse", onClick (GetOtherPlayers recco.userLink) ] [ span [] [ text "Who Else?" ] ]
             ]
         , whoElseTD recco
@@ -522,7 +522,7 @@ whoElseTD : Recco -> Html Msg
 whoElseTD { whoElse, userLink } =
     case whoElse of
         Open list ->
-            td [ class "whoelse" ]
+            td [ class "whoelse-list" ]
                 [ h3 []
                     [ text "Interested Players" ]
                 , ul

@@ -2,6 +2,10 @@ table {
   border-collapse: collapse;
 }
 
+table, thead, tbody, th, td, tr {
+  display: block;
+}
+
 th .icon {
   height: 0.6em;
   width: 1.2em;
@@ -10,4 +14,228 @@ th .icon {
 
 tr:nth-child(even) {
   background-color: var(--table-even-row-color);
+}
+
+th, td {
+  text-align: center;
+  padding: 0 1rem 0 0;
+}
+
+thead, tr {
+  display: grid;
+  grid-template-rows: auto auto;
+  border-bottom: 2px solid black;
+}
+
+thead {
+  position: sticky;
+  top: 0px;
+  background-color: var(--body-background-color);
+}
+
+th {
+  background-color: var(--body-background-color);
+}
+
+td.thumbnail {
+  img {
+    height: 4em;
+  }
+}
+
+@media only screen and (max-width: 760px), (min-device-width: 768px) and (max-device-width: 1024px)  {
+  /* Hide table headers (but not display: none;, for accessibility) */
+  thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+}
+
+.events {
+  table {
+    margin: 0 5vw;
+  }
+
+  thead, tr {
+    grid-template-columns: repeat(5, 1fr)
+  }
+}
+
+.games {
+  th.pitch {
+    color: var(--body-background-color);
+    /* display: none;
+    visibility: hidden; */
+  }
+  td.pitch {
+    text-align: left;
+    p {
+      text-align: left;
+    }
+    &.present {
+      border-bottom: 1px dotted gray;
+    }
+    &.absent {
+      padding: 0;
+      margin: 0;
+      height: 0;
+    }
+  }
+
+  @media only screen and (min-width: 760px)  {
+    thead, tr {
+      grid-template-columns: 9.1% 18.2% repeat(4, 4.5%) 9.1% 13.7% 18.2%;
+    }
+    thead {
+      place-items: stretch;
+    }
+    td.pitch {
+      grid-area: 1 / 1 / 1 / 11;
+      justify-content: center;
+      padding: 1em 3em;
+    }
+    .thumbnail  { grid-column: 1; }
+    .game       { grid-column: 2; }
+    .players    { grid-column: 3; }
+    .length     { grid-column: 4; }
+    .interested { grid-column: 5; }
+    .teachers   { grid-column: 6; }
+    .added      { grid-column: 7; }
+    .me {
+      grid-column: 8 ;
+      justify-self: center;
+    }
+    .tools {
+      grid-column: 9;
+      div {
+        flex-direction: row;
+        justify-content: center;
+      }
+    }
+    .notes {  grid-column: 10; }
+  }
+
+  @media only screen and (max-width: 760px), (min-device-width: 768px) and (max-device-width: 1024px)  {
+    tr {
+      margin: 0 0 1rem 0;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto 1fr 1fr 1fr 1fr 1fr auto;
+    }
+
+    td {
+      margin-bottom: 2px;
+    }
+
+    td.thumbnail {
+      grid-area: 2 / 1;
+    }
+    td.game {
+      grid-area: 2 / 2;
+    }
+    td.players, td.length, td.interested, td.teachers, td.added {
+      grid-column: 1;
+    }
+    td.players {
+      grid-row: 3;
+      &::after { content: " Players"; }
+    }
+    td.length {
+      grid-row: 4;
+      &::after { content: " Minutes"; }
+    }
+    td.interested {
+      grid-row: 5;
+      &::before { content: "Interested: "; }
+    }
+    td.teachers {
+      grid-row: 6;
+      &::before { content: "Know rules: "; }
+    }
+    td.added {
+      grid-row: 7;
+      &::before { content: "Added: "; }
+    }
+    td.me {
+      grid-area: 3 / 2 / 7 / 2;
+      justify-self: center;
+    }
+    td.tools {
+      grid-area: 8 / 1 / 8 / 3;
+      div {
+        flex-direction: row;
+        justify-content: center;
+      }
+    }
+    td.notes {
+      grid-area: 9 / 1 / 9 / 3;
+    }
+    td.pitch {
+      grid-area: 1 / 1 / 1 / 3;
+      text-align: left;
+      &.present {
+        padding: 1em;
+      }
+    }
+  }
+}
+
+.game_create {
+  /* Hide table headers (but not display: none;, for accessibility) */
+  table {
+    margin-bottom: 1em
+  }
+
+  thead {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+  td {
+    padding: 0.4vmax
+  }
+  td.image {
+    grid-area: 1/1/2/2;
+  }
+  td.name {
+    grid-area: 2/1/3/2;
+    font-weight: bolder;
+  }
+  td.description {
+    text-align: justify;
+    grid-area: 1/2/3/3;
+  }
+  td.pick {
+    grid-area: 3/1/4/4;
+  }
+}
+
+.whatshouldweplay {
+  thead, tr {
+    grid-template-columns: repeat(8, 1fr);
+    place-items: center;
+  }
+  td.image {
+    min-height: 4em;
+    img {
+      height: 4em;
+    }
+  }
+  td.whoelse-list {
+    text-align: right;
+    position: fixed;
+    background-color: white;
+    border: 2px solid black;
+    border-radius: 0.5em;
+    padding: 1.2em;
+
+    ul {
+      text-align: left;
+      padding-inline-start: 2em
+    }
+
+    h3 {
+      margin: 0.2em
+    }
+  }
 }

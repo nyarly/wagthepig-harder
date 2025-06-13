@@ -1,4 +1,4 @@
-module ViewUtil exposing (checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, onSelection, svgIcon)
+module ViewUtil exposing (bareInputPair, checkbox, disabledIf, disabledMaybe, inputPair, maybeSubmit, onSelection, svgIcon)
 
 -- more like "EwwwwUtil" amirite?
 
@@ -13,14 +13,18 @@ import Svg.Attributes as SAttr exposing (viewBox)
 
 inputPair : List (Attribute msg) -> String -> String -> (String -> msg) -> Html msg
 inputPair attrs name v event =
+    div [ class "field" ] (bareInputPair attrs name v event)
+
+
+bareInputPair : List (Attribute msg) -> String -> String -> (String -> msg) -> List (Html msg)
+bareInputPair attrs name v event =
     let
         pid =
             String.toLower name
     in
-    div [ class "field" ]
-        [ label [ for pid ] [ text name ]
-        , input ([ id pid, onInput event, value v ] ++ attrs) []
-        ]
+    [ label [ for pid ] [ text name ]
+    , input ([ id pid, onInput event, value v ] ++ attrs) []
+    ]
 
 
 checkbox : List (Attribute msg) -> String -> Bool -> (Bool -> msg) -> Html msg

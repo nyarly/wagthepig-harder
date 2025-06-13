@@ -127,9 +127,9 @@ sortIcon by ( s, order ) =
         Eww.svgIcon "sort-none"
 
 
-sortingHeader : (Sorting d -> msg) -> Sorting d -> String -> d -> Html msg
-sortingHeader ev sorting name by =
-    th [ onClick (ev (changeSort by sorting)), sortClass by sorting ] [ text name, sortIcon by sorting ]
+sortingHeader : (Sorting d -> msg) -> Sorting d -> String -> List (Html.Attribute msg) -> d -> Html msg
+sortingHeader ev sorting name attrs by =
+    th ([ onClick (ev (changeSort by sorting)), sortClass by sorting ] ++ attrs) [ text name, sortIcon by sorting ]
 
 
 sortMaybes : (a -> b -> Order) -> Maybe a -> Maybe b -> Order

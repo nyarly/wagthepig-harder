@@ -3,10 +3,10 @@ module Events exposing (Model, Msg(..), init, updaters, view)
 import Auth
 import Event
 import Html exposing (Html, a, button, h1, table, td, text, th, thead, tr)
-import Html.Attributes exposing (colspan, href)
+import Html.Attributes exposing (class, colspan, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
-import Http
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
@@ -100,6 +100,7 @@ type alias Interface base model msg =
         | localUpdate : Updater Model Msg -> Updater model msg
         , requestCreateEvent : Affordance -> Updater model msg
         , requestUpdatePath : Router.Target -> Updater model msg
+        , handleError : Error -> Updater model msg
     }
 
 
@@ -111,7 +112,7 @@ updaters :
     Interface iface model msg
     -> Msg
     -> Updater model msg
-updaters { localUpdate, requestCreateEvent, requestUpdatePath } msg =
+updaters { localUpdate, requestCreateEvent, requestUpdatePath, handleError } msg =
     case msg of
         Entered creds _ ->
             localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
@@ -122,9 +123,8 @@ updaters { localUpdate, requestCreateEvent, requestUpdatePath } msg =
         ChangeSort newsort ->
             requestUpdatePath (Router.Events (Just newsort))
 
-        --XXX need to handle an error
-        ErrGetEvents _ ->
-            noChange
+        ErrGetEvents err ->
+            handleError err
 
         CreateNewEvent aff ->
             requestCreateEvent aff
@@ -163,9 +163,9 @@ view model maybeSort =
     , createEventButton model.resource
     , table []
         [ thead []
-            [ sortingHeader "Name" EventName
-            , sortingHeader "Date" Date
-            , sortingHeader "Where" Location
+            [ sortingHeader "Name" [ class "name" ] EventName
+            , sortingHeader "Date" [ class "date" ] Date
+            , sortingHeader "Where" [ class "location" ] Location
             , th [ colspan 3 ] []
             ]
         , Keyed.node "tbody" [] (List.map makeRow (sortEvents model.resource.events))
@@ -177,11 +177,11 @@ makeRow : Event -> ( String, Html Msg )
 makeRow event =
     ( event.id
     , tr []
-        [ td [] [ text event.name ]
-        , td [] [ text (Event.formatTime event) ]
-        , td [] [ text event.location ]
-        , td [] [ eventShowButton event ]
-        , td [] [ eventEditButton event ]
+        [ td [ class "name" ] [ text event.name ]
+        , td [ class "date" ] [ text (Event.formatTime event) ]
+        , td [ class "location" ] [ text event.location ]
+        , td [ class "show" ] [ eventShowButton event ]
+        , td [ class "edit" ] [ eventEditButton event ]
         ]
     )
 

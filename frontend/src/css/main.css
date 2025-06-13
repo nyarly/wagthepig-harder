@@ -1,5 +1,6 @@
 @import url("forms.css");
 @import url("table.css");
+@import url("toast.css");
 
 
 :root {
@@ -9,6 +10,7 @@
   --button-text-color: white;
   --button-background-color: #009fc7;
   --table-even-row-color: #e7e7e7;
+  --body-background-color: white;
 }
 
 * {
@@ -25,7 +27,7 @@ a:visited {
 }
 
 body {
-  background-color: white;
+  background-color: var(--body-background-color);
   color: var(--main-text-color);
   font-family: verdana, arial, helvetica, sans-serif;
   font-size: 13px;
@@ -84,19 +86,27 @@ a.button, button {
   display: inline-flex;
   flex-wrap: nowrap;
   justify-content: space-around;
-  align-content: center;
+  align-items: center;
   background-color: var(--button-background-color);
   color: var(--button-text-color);
   border-width: 0px;
-  margin: 0em;
+  margin: 0.1vh 0.1vh 0.4vh 0.1vh;
   padding-block: 1px;
   padding-inline: 6px;
   border-radius: 0.5vw;
   height: 2em;
-  font-weight: bold;
+  min-width: 2em;
+  font-size: 1rem;
   text-decoration: none;
   text-wrap-mode: nowrap;
-  box-shadow: 0 0.4vh 0.1vh #ccc;
+  box-shadow: 0 0.4vh 0.1vw #ccc;
+}
+
+a.button:active, button:active {
+  box-shadow: none;
+  position: relative;
+  top: 0.4vh;
+  left: 0.1vw;
 }
 
 a.button svg, button svg {

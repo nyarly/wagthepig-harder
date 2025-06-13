@@ -1,15 +1,10 @@
-* FE remove `Entered Url` options? e.g. Bookmark enums
-* Modern CSS (c.f. "6 patterns of CSS variables")
-* FE condreq support
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
-
-* Gross styling pass
-* Tower governor bug?
-
+* B/E flag/env to indicate whether we can trust "forwarded" headers
 * B/E short TTL on API responses
 
-* B/E flag/env to indicate whether we can trust "forwarded" headers
+* Fork and strip for future projects
+  * Rename semweb_api - "mattak" (b/c axum-mattak)
 
 WTP parity:
 
@@ -18,11 +13,10 @@ F/E
   * Highlight/jump to issue
   * Message near interaction (submit turns red)
 
-* Fork and strip for future projects
-  * Rename semweb_api - "mattak" (b/c axum-mattak)
-
 == Future work
 
+* FE condreq support
+* Proxy for BGG? Images especially seem like a place we might be neighborly
 * At what level should we cache link walking? Browser should do some of it,
   especially if we set short TTLs on API responses, and that'll be reliable and easy.
   We _could_ do some in-app caching as we walk, and control that on a per-page level

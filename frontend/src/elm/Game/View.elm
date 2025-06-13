@@ -14,9 +14,9 @@ module Game.View exposing
     , viewToast
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, shotgunGames)
-import Html exposing (Html, a, button, img, p, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (disabled, href, name, src, type_)
+import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch, shotgunGames)
+import Html exposing (Html, a, button, div, img, p, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, disabled, href, name, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
 import Http exposing (Error(..))
@@ -184,8 +184,10 @@ view showInterest model =
         dnum =
             withDefault 0
     in
-    [ Eww.inputPair [] "Name" (dstr game.name) ChangeName
-    , button [ type_ "button", onClick SearchName, Eww.disabledMaybe game.name ] [ text "Search" ]
+    [ div [ class "field" ]
+        (Eww.bareInputPair [] "Name" (dstr game.name) ChangeName
+            ++ [ button [ type_ "button", onClick SearchName, Eww.disabledMaybe game.name ] [ text "Search" ] ]
+        )
     , searchResults foundGames
     , Eww.inputPair [] "MinPlayers" (String.fromInt (dnum game.minPlayers)) (numMsg ChangeMinPlayers)
     , Eww.inputPair [] "MaxPlayers" (String.fromInt (dnum game.maxPlayers)) (numMsg ChangeMaxPlayers)
@@ -215,10 +217,10 @@ searchResults bggSearchResults =
     if List.length bggSearchResults > 0 then
         table []
             [ thead []
-                [ th [] [ text "Thumb" ]
-                , th [] [ text "Name" ]
-                , th [] [ text "Description" ]
-                , th [] [ text "Pick" ]
+                [ th [ class "image" ] [ text "Cover" ]
+                , th [ class "name" ] [ text "Name" ]
+                , th [ class "description" ] [ text "Description" ]
+                , th [ class "pick" ] [ text "Pick" ]
                 ]
             , tbody []
                 (List.map
@@ -236,18 +238,18 @@ viewBggResult game =
     case game of
         SearchResult bggRes ->
             tr []
-                [ td [] [ text "placeholder" ]
-                , td [] [ text bggRes.name ]
-                , td [] [ text "?" ]
-                , td [] [ button [ type_ "button", disabled True ] [ text "Pick" ] ]
+                [ td [ class "image" ] [ text "placeholder" ]
+                , td [ class "name" ] [ text bggRes.name ]
+                , td [ class "description" ] [ text "?" ]
+                , td [ class "pick" ] [ button [ type_ "button", disabled True ] [ text "Pick" ] ]
                 ]
 
         Thing thing ->
             tr []
-                [ td [] [ img [ src thing.thumbnail ] [] ]
-                , td [] [ text thing.name ]
-                , td [] [ text thing.description ]
-                , td [] [ button [ type_ "button", onClick (Pick thing) ] [ text "Pick" ] ]
+                [ td [ class "image" ] [ img [ src thing.thumbnail ] [] ]
+                , td [ class "name" ] [ text thing.name ]
+                , td [ class "description" ] [ text thing.description ]
+                , td [ class "pick" ] [ button [ type_ "button", onClick (Pick thing) ] [ text "Pick" ] ]
                 ]
 
 
@@ -261,37 +263,37 @@ interestedInput showInterest g =
 
 
 gameUpdaters : (Updater Game Msg -> Updater model msg) -> Msg -> Updater model msg
-gameUpdaters localUpdate msg =
+gameUpdaters gameLocalUpdate msg =
     case msg of
         ChangeName n ->
-            localUpdate (\m -> ( { m | name = Just n }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | name = Just n }, Cmd.none ))
 
         ChangeMinPlayers v ->
-            localUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none ))
 
         ChangeMaxPlayers v ->
-            localUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none ))
 
         ChangeDurationSecs l ->
-            localUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none ))
 
         ChangeBggID i ->
-            localUpdate (\m -> ( { m | bggID = Just i }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | bggID = Just i }, Cmd.none ))
 
         ChangePitch p ->
-            localUpdate (\m -> ( { m | pitch = Just p }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | pitch = Just p }, Cmd.none ))
 
         ChangeInterested i ->
-            localUpdate (\m -> ( { m | interested = Just i }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | interested = Just i }, Cmd.none ))
 
         ChangeCanTeach t ->
-            localUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none ))
 
         ChangeNotes n ->
-            localUpdate (\m -> ( { m | notes = Just n }, Cmd.none ))
+            gameLocalUpdate (\m -> ( { m | notes = Just n }, Cmd.none ))
 
         Pick thing ->
-            localUpdate
+            gameLocalUpdate
                 (\m ->
                     ( { m
                         | name = Just thing.name
@@ -310,12 +312,12 @@ gameUpdaters localUpdate msg =
 
 searchUpdaters :
     { iface
-        | localUpdate : Updater (List BGGGame) Msg -> Updater model msg
+        | searchLocalUpdate : Updater (List BGGGame) Msg -> Updater model msg
         , sendToast : Toast -> Updater model msg
     }
     -> Msg
     -> Updater model msg
-searchUpdaters { localUpdate, sendToast } msg =
+searchUpdaters { searchLocalUpdate, sendToast } msg =
     case msg of
         Pick thing ->
             let
@@ -327,12 +329,12 @@ searchUpdaters { localUpdate, sendToast } msg =
                         Thing t ->
                             t.bggId == thing.bggId
             in
-            localUpdate (\m -> ( List.filter onlyPicked m, Cmd.none ))
+            searchLocalUpdate (\m -> ( List.filter onlyPicked m, Cmd.none ))
 
         BGGSearchResult r ->
             case r of
                 Ok l ->
-                    localUpdate (\_ -> ( l, shotgunGames l ))
+                    searchLocalUpdate (\_ -> ( l, shotgunGames l ))
 
                 Err _ ->
                     sendToast Unknown
@@ -340,7 +342,7 @@ searchUpdaters { localUpdate, sendToast } msg =
         BGGThingResult r ->
             case r of
                 Ok newGame ->
-                    localUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
+                    searchLocalUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
 
                 Err _ ->
                     sendToast Unknown
@@ -365,9 +367,89 @@ updaters { localUpdate, sendToast } msg =
         searchLocalUpdate =
             localUpdate << childUpdate .bggSearchResults (\m -> \g -> { m | bggSearchResults = g }) identity
     in
-    Updaters.compose
-        (searchUpdaters { localUpdate = searchLocalUpdate, sendToast = sendToast } msg)
-        (gameUpdaters gameLocalUpdate msg)
+    case msg of
+        ChangeName n ->
+            gameLocalUpdate (\m -> ( { m | name = Just n }, Cmd.none ))
+
+        ChangeMinPlayers v ->
+            gameLocalUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none ))
+
+        ChangeMaxPlayers v ->
+            gameLocalUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none ))
+
+        ChangeDurationSecs l ->
+            gameLocalUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none ))
+
+        ChangeBggID i ->
+            gameLocalUpdate (\m -> ( { m | bggID = Just i }, Cmd.none ))
+
+        ChangePitch p ->
+            gameLocalUpdate (\m -> ( { m | pitch = Just p }, Cmd.none ))
+
+        ChangeInterested i ->
+            gameLocalUpdate (\m -> ( { m | interested = Just i }, Cmd.none ))
+
+        ChangeCanTeach t ->
+            gameLocalUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none ))
+
+        ChangeNotes n ->
+            gameLocalUpdate (\m -> ( { m | notes = Just n }, Cmd.none ))
+
+        Pick thing ->
+            let
+                onlyPicked g =
+                    case g of
+                        SearchResult _ ->
+                            False
+
+                        Thing t ->
+                            t.bggId == thing.bggId
+            in
+            Updaters.compose
+                (searchLocalUpdate (\m -> ( List.filter onlyPicked m, Cmd.none )))
+                (gameLocalUpdate
+                    (\m ->
+                        ( { m
+                            | name = Just thing.name
+                            , bggID = Just thing.bggId
+                            , minPlayers = Just thing.minPlayers
+                            , maxPlayers = Just thing.maxPlayers
+                            , durationSecs = Just (thing.durationMinutes * 60)
+                          }
+                        , Cmd.none
+                        )
+                    )
+                )
+
+        BGGSearchResult r ->
+            case r of
+                Ok l ->
+                    searchLocalUpdate (\_ -> ( l, shotgunGames l ))
+
+                Err _ ->
+                    sendToast Unknown
+
+        BGGThingResult r ->
+            case r of
+                Ok newGame ->
+                    searchLocalUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
+
+                Err _ ->
+                    sendToast Unknown
+
+        SearchName ->
+            localUpdate
+                (\model ->
+                    ( model, requestBGGSearch BGGSearchResult (withDefault "" model.resource.name) )
+                )
+
+
+
+{-
+   Updaters.compose
+       (searchUpdaters { searchLocalUpdate = searchLocalUpdate, sendToast = sendToast } msg)
+       (gameUpdaters gameLocalUpdate msg)
+-}
 
 
 viewToast : Toast.Info Toast -> List (Html Msg)

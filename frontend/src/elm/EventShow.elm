@@ -434,15 +434,15 @@ gamesView model maybeSort =
         ( Just ev, Just list ) ->
             [ table []
                 [ thead []
-                    [ th [] []
-                    , sortingHeader "Name" GameName
-                    , sortingHeader "Min Players" MinPlayers
-                    , sortingHeader "Max Players" MaxPlayers
-                    , sortingHeader "Duration" Duration
-                    , th [] [ text "Pitch" ]
-                    , sortingHeader "My Interest" Interest
-                    , th [] [ text "Tools" ]
-                    , th [] [ text "My Notes" ]
+                    [ th [ class "thumbnail" ] []
+                    , sortingHeader "Name" [ class "game" ] GameName
+                    , sortingHeader "Min Players" [ class "minplayers" ] MinPlayers
+                    , sortingHeader "Max Players" [ class "maxplayers" ] MaxPlayers
+                    , sortingHeader "Duration" [ class "duration" ] Duration
+                    , th [ class "pitch" ] [ text "Pitch" ]
+                    , sortingHeader "My Interest" [ class "me" ] Interest
+                    , th [ class "tools" ] [ text "Tools" ]
+                    , th [ class "notes" ] [ text "My Notes" ]
                     ]
                 , Keyed.node "tbody" [] (List.map (makeGameRow ev.nick) (sort list))
                 ]
@@ -464,7 +464,7 @@ makeGameRow event_id game =
     in
     ( Maybe.withDefault "noid" game.bggID
     , tr []
-        [ td []
+        [ td [ class "thumbnail" ]
             (case game.thumbnail of
                 Just th ->
                     [ img [ src th ] [] ]
@@ -472,12 +472,12 @@ makeGameRow event_id game =
                 Nothing ->
                     []
             )
-        , td [] [ bggLink game ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.minPlayers)) ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.maxPlayers)) ]
-        , td [] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
-        , td [] [ text (Maybe.withDefault "" game.pitch) ]
-        , td []
+        , td [ class "game" ] [ bggLink game ]
+        , td [ class "minplayers" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.minPlayers)) ]
+        , td [ class "maxplayers" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.maxPlayers)) ]
+        , td [ class "duration" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
+        , td [ class "pitch" ] [ text (Maybe.withDefault "" game.pitch) ]
+        , td [ class "me" ]
             [ let
                 current =
                     Maybe.withDefault True game.interested
@@ -489,11 +489,11 @@ makeGameRow event_id game =
               in
               button [ class "canteach", onClick (UpdateGameTeaching (not current) event_id game.nick) ] [ span [] [ text "Can Teach" ], checkbox current ]
             ]
-        , td []
+        , td [ class "tools" ]
             [ a [ class "button edit", href (Router.buildFromTarget (Router.EditGame event_id game.nick.game_id)) ] [ span [] [ text "Edit" ], Ew.svgIcon "pencil" ]
             , button [ class "whoelse", onClick (GetOtherPlayers game.nick game.users) ] [ span [] [ text "Who Else?" ] ]
             ]
-        , td [] [ text (Maybe.withDefault "" game.notes) ]
+        , td [ class "notes" ] [ text (Maybe.withDefault "" game.notes) ]
         , whoElseTD game
         ]
     )

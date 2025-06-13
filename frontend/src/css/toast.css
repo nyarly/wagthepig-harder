@@ -1,0 +1,32 @@
+.toast-tray {
+  display: flex;
+  flex-flow: column nowrap;
+  align-items: flex-end;
+  padding: 0.1em;
+}
+
+.toast-tray .toast {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  border: solid 2px black;
+  border-radius: 0.3em;
+  background-color: white;
+  margin: 0.1em;
+  padding: 0.2em;
+  line-height: 14px;
+}
+
+.toast-tray .toast p {
+  margin: 0.5em;
+}
+
+.toast-tray .toast button {
+  box-shadow: none;
+  margin: 0 0.1em;
+}
+
+.toast-tray button svg {
+  padding: 0;
+  margin: 0;
+}

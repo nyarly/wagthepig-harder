@@ -210,7 +210,11 @@ fn root_api_router() -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
     Router::new()
         .route(&path(RouteMap::Root), get(sitemap))
-            .layer(governor_setup("api-root",  &mut GovernorConfigBuilder::default()))
+        .layer(governor_setup("api-root",  GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor{})
+            .per_millisecond(50)
+            .burst_size(60)
+        ))
         // XXX key extractor that is either Authentication or SmartIp
 }
 
@@ -229,8 +233,8 @@ fn open_api_router() -> Router<AppState> {
         .route(&path(PasswordReset), post(authentication::reset_password))
         .layer(governor_setup("anonymous", GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor{})
-            .per_second(4)
-            .burst_size(2)
+            .per_second(1)
+            .burst_size(10)
         ))
 }
 
@@ -275,7 +279,11 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
         .route(&path(Recommend), post(recommendation::make))
 
         .layer(tower::ServiceBuilder::new()
-            .layer(governor_setup("authenticated",  &mut GovernorConfigBuilder::default()))
+            .layer(governor_setup("authenticated",  GovernorConfigBuilder::default()
+                .key_extractor(SmartIpKeyExtractor{})
+                .per_second(100)
+                .burst_size(30)
+            ))
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
             .layer(middleware::from_fn_with_state(state, authentication::add_rejections))
             .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
