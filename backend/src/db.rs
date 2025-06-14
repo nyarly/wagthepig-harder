@@ -249,6 +249,17 @@ impl Revocation<NoId> {
             .map_ok(|maps| maps.into_iter().map(|rec| rec.id.into()).collect())
             .map_err(Error::from)
     }
+
+    pub fn cleanup<'a>(db: impl Executor<'a, Database = Postgres> + 'a, system_expired: SystemTime)
+    -> impl Future<Output = Result<(), Error>> + 'a {
+        let expired = system_to_naive(system_expired);
+        sqlx::query!(
+            r#"delete from revocations where $1 > expires"#,
+            expired)
+            .execute(db)
+            .map_ok(|_| ())
+            .map_err(Error::from)
+    }
 }
 
 impl Revocation<RevocationId> {

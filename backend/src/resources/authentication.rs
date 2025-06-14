@@ -1,6 +1,5 @@
 use std::{
-    net::SocketAddr,
-    time::{Duration, SystemTime}
+    hint::black_box, net::SocketAddr, time::{Duration, SystemTime}
 };
 
 use axum::{
@@ -74,9 +73,21 @@ pub(crate) async fn authenticate(
     extract::Path(email): extract::Path<String>,
     Json(authreq): Json<AuthnRequest>
 ) -> Result<impl IntoResponse, Error> {
-    let user = User::by_email(&db, email.clone()).await?;
-
+    mailing::cleanup_revocations.builder()
+        .spawn(&db).await
+        .map_err(crate::db::Error::from)?;
     debug!("Attempting to verify user password");
+    let user = match User::by_email(&db, email.clone()).await {
+        Ok(u) => u,
+        Err(e) => {
+            // This is a best-effort attempt to prevent a timing oracle of user emails
+            let _ = black_box(bcrypt::verify(authreq.password.clone(), "this isnt a password, just busy work"));
+            Err(e)?
+        }
+    };
+
+    // XXX bcrypt ONLY for back-compatibility with Rails
+    // change to a real KDF in future
     if bcrypt::verify(authreq.password.clone(), user.encrypted_password.as_ref())? {
         debug!("Successfully verified password");
         let expires = SystemTime::now() + Duration::from_secs(ONE_WEEK);

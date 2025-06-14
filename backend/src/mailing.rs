@@ -10,7 +10,8 @@ use lettre::{
 };
 use semweb_api::biscuits;
 use serde::{Deserialize, Serialize};
-use sqlxmq::{job, CurrentJob};
+use sqlx::{Pool, Postgres};
+use sqlxmq::{job, CurrentJob, JobRegistry, JobRunnerHandle};
 use tracing::debug;
 
 use crate::db::Revocation;
@@ -29,7 +30,43 @@ pub(crate) struct ResetDetails {
     pub email: String,
 }
 
-const ONE_HOUR: u64 = 60 * 60;
+const ONE_HOUR: Duration = Duration::from_secs(60 * 60);
+const ONE_DAY: Duration = Duration::from_secs(60 * 60 * 24);
+
+pub(crate) async fn queue_listener(
+    pool: Pool<Postgres>,
+    admin: String,
+    canon_domain: String,
+    transport: Transport,
+    auth: biscuits::Authentication
+) -> Result<JobRunnerHandle, sqlx::Error> {
+    let mut registry = JobRegistry::new(&[cleanup_revocations, request_reset, request_registration]);
+    // Here is where you can configure the registry
+    // registry.set_error_handler(...)
+
+    registry.set_context(AdminEmail(admin));
+    registry.set_context(CanonDomain(canon_domain));
+    registry.set_context(transport);
+    registry.set_context(auth);
+
+    let runner = registry
+        .runner(&pool)
+        .set_concurrency(1, 20)
+        .run()
+    .await?;
+
+    // The job runner will continue listening and running
+    // jobs until `runner` is dropped.
+    Ok(runner)
+}
+
+#[job(channel_name = "cleanup")]
+pub(crate) async fn cleanup_revocations( current_job: CurrentJob ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let db = current_job.pool();
+    let too_old = SystemTime::now() - ONE_DAY;
+    Revocation::cleanup(db, too_old).await?;
+    Ok(())
+}
 
 #[job(channel_name = "emails")]
 pub(crate) async fn request_reset(
@@ -42,7 +79,7 @@ pub(crate) async fn request_reset(
     let details: ResetDetails = current_job.json()?.ok_or(crate::Error::Job("no job details".to_string()))?;
     let db = current_job.pool();
 
-    let expires = SystemTime::now() + Duration::from_secs(ONE_HOUR);
+    let expires = SystemTime::now() + ONE_HOUR;
     let bundle = auth.reset_password(&details.email, expires)?;
     let _ = Revocation::add_batch(db, bundle.revocation_ids, details.email.clone(), expires).await?;
 
@@ -98,7 +135,7 @@ pub(crate) async fn request_registration(
     let details: RegistrationDetails = current_job.json()?.ok_or(crate::Error::Job("no job details".to_string()))?;
     let db = current_job.pool();
 
-    let expires = SystemTime::now() + Duration::from_secs(ONE_HOUR);
+    let expires = SystemTime::now() + ONE_HOUR;
     let bundle = log_err("bundle token", auth.reset_password(&details.email, expires))?;
     let _ = Revocation::add_batch(db, bundle.revocation_ids, details.email.clone(), expires).await?;
 

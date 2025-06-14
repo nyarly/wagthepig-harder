@@ -11,7 +11,6 @@ use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
 use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
-use sqlxmq::{JobRegistry, JobRunnerHandle};
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::{KeyExtractor, SmartIpKeyExtractor}, GovernorLayer};
 use tower_http::trace::TraceLayer;
 
@@ -115,10 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let auth = biscuits::Authentication::new(config.authentication_path)?;
 
-    let _runner = queue_listener(
+    let _runner = mailing::queue_listener(
         pool.clone(),
-        mailing::AdminEmail(config.admin_address.to_string()),
-        mailing::CanonDomain(config.canon_domain.to_string()),
+        config.admin_address.to_string(),
+        config.canon_domain.to_string(),
         transport,
         auth.clone(),
     ).await?;
@@ -143,34 +142,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?; Ok(())
-}
-
-async fn queue_listener(
-    pool: Pool<Postgres>,
-    admin: mailing::AdminEmail,
-    canon_domain: mailing::CanonDomain,
-    transport: mailing::Transport,
-    auth: biscuits::Authentication
-) -> Result<JobRunnerHandle, sqlx::Error> {
-    use mailing::{request_reset, request_registration};
-    let mut registry = JobRegistry::new(&[request_reset, request_registration]);
-    // Here is where you can configure the registry
-    // registry.set_error_handler(...)
-
-    registry.set_context(admin);
-    registry.set_context(canon_domain);
-    registry.set_context(transport);
-    registry.set_context(auth);
-
-    let runner = registry
-        .runner(&pool)
-        .set_concurrency(1, 20)
-        .run()
-    .await?;
-
-    // The job runner will continue listening and running
-    // jobs until `runner` is dropped.
-    Ok(runner)
 }
 
 
