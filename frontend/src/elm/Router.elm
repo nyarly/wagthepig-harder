@@ -64,6 +64,8 @@ type GameSortBy
     = GameName
     | MinPlayers
     | MaxPlayers
+    | InterestCount
+    | TeacherCount
     | Duration
     | Interest
 
@@ -80,6 +82,12 @@ gameSortToString sort =
         MaxPlayers ->
             "maxplayer"
 
+        InterestCount ->
+            "numinterest"
+
+        TeacherCount ->
+            "numteacher"
+
         Duration ->
             "dur"
 
@@ -95,6 +103,8 @@ gameSortDict =
         , ( "maxplayer", MaxPlayers )
         , ( "dur", Duration )
         , ( "interest", Interest )
+        , ( "numinterest", InterestCount )
+        , ( "numteacher", TeacherCount )
         ]
 
 

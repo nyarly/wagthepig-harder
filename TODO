@@ -1,3 +1,4 @@
+* Mobile styling for recco list, game headers
 * Subcommand for cron to trigger DB cleanups (expired revokes)
 * Disguise auth timing when no email
 * B/E flag/env to indicate whether we can trust "forwarded" headers

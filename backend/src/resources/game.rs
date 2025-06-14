@@ -66,11 +66,11 @@ pub(crate) struct EventGameListResponse {
     pub make_recommendation: Link,
     pub users: Link,
     pub game: IriTemplate,
-    pub games: Vec<GameResponse>
+    pub games: Vec<GameItemResponse>
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::InterestData>>) -> Result<Self, semweb_api::Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::PlayerData>>) -> Result<Self, semweb_api::Error> {
         let game_tmpl = RouteMap::Game.prefixed(nested_at).template()?;
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -101,8 +101,59 @@ impl EventGameListResponse {
             },
 
             games: list.into_iter().map(|game|
-                GameResponse::from_query(nested_at, user_id.clone(), game)
+                GameItemResponse::from_query(nested_at, user_id.clone(), game)
             ).collect::<Result<_,_>>()?
+        })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct GameItemResponse {
+    #[serde(flatten)]
+    pub resource_fields: ResourceFields<GameLocate>,
+    pub users: Link,
+
+    pub name: Option<String>,
+    pub min_players: Option<i32>,
+    pub max_players: Option<i32>,
+    pub bgg_link: Option<String>,
+    pub duration_secs: Option<i32>,
+    pub bgg_id: Option<String>,
+    pub pitch: Option<String>,
+    pub interested: Option<bool>,
+    pub can_teach: Option<bool>,
+    pub interest_level: i64,
+    pub teachers: i64,
+    pub notes: Option<String>,
+}
+
+impl GameItemResponse {
+    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::PlayerData>) -> Result<Self, semweb_api::Error> {
+        Ok(Self{
+            resource_fields: ResourceFields::new(
+                &RouteMap::Game.prefixed(nested_at),
+                GameLocate{ game_id: value.id, user_id },
+                "api:gameByIdTemplate",
+                vec![ op(ActionType::View), op(ActionType::Update) ]
+            )?,
+            users: Link {
+                id: RouteMap::GameUsers.prefixed(nested_at).fill(GameUsersLocate{ game_id: value.id })?,
+                operation: vec![ op(ActionType::View) ]
+            },
+
+            name: value.data.name,
+            min_players: value.data.min_players,
+            max_players: value.data.max_players,
+            bgg_link: value.data.bgg_link,
+            duration_secs: value.data.duration_secs,
+            bgg_id: value.data.bgg_id,
+            pitch: value.data.pitch,
+            interested: value.extra.interest.interested,
+            interest_level: value.extra.recco.interest_level,
+            teachers: value.extra.recco.teachers,
+            can_teach: value.extra.interest.can_teach,
+            notes: value.extra.interest.notes,
         })
     }
 }

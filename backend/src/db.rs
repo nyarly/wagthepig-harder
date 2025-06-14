@@ -401,6 +401,16 @@ pub(crate) struct RecommendData {
     pub teachers: i64
 }
 
+#[derive(sqlx::FromRow, Debug, Default, Clone)]
+#[allow(dead_code)] // Have to match DB
+pub(crate) struct PlayerData {
+    #[sqlx(flatten)]
+    pub recco: RecommendData,
+    #[sqlx(flatten)]
+    pub interest: InterestData,
+}
+
+
 impl Default for Game<NoId, NoId, NoId, Omit> {
     fn default() -> Self {
         Self {
@@ -564,18 +574,25 @@ impl Game<GameId, EventId, UserId, InterestData> {
             .fetch_optional(db)
             .map_err(Error::from)
     }
+}
 
+impl Game<GameId, EventId, UserId, PlayerData> {
     pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, email: String)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         sqlx::query_as(
             r#"select games.*,
+                count('games.id') as interest_level,
+                count('games.id') FILTER (WHERE interests.can_teach is true) as teachers,
                 (interests.id is not null) as interested,
                 (coalesce (interests.can_teach, false)) as can_teach,
                 interests.notes
-            from games
+            from
+                games
                 left join interests on games.id = interests.game_id
                 join users on interests.user_id = users.id and email = $2
-            where event_id = $1"#)
+            where event_id = $1
+            group by (games.id, interests.id)
+            "#)
             .bind(event_id.id())
             .bind(email)
             .fetch_all(db)

@@ -75,6 +75,8 @@ type alias Game =
     , pitch : Maybe String
     , interested : Maybe Bool
     , canTeach : Maybe Bool
+    , interestLevel : Int
+    , teachers : Int
     , notes : Maybe String
     , whoElse : OtherPlayers
     , thumbnail : Maybe String
@@ -102,6 +104,8 @@ gameDecoder =
         |> decodeMaybe "pitch" D.string
         |> decodeMaybe "interested" D.bool
         |> decodeMaybe "canTeach" D.bool
+        |> required "interestLevel" D.int
+        |> required "teachers" D.int
         |> decodeMaybe "notes" D.string
         |> hardcoded Empty
         |> hardcoded Nothing
@@ -439,6 +443,8 @@ gamesView model maybeSort =
                     , sortingHeader "Min Players" [ class "minplayers" ] MinPlayers
                     , sortingHeader "Max Players" [ class "maxplayers" ] MaxPlayers
                     , sortingHeader "Duration" [ class "duration" ] Duration
+                    , sortingHeader "Interested" [ class "interested" ] InterestCount
+                    , sortingHeader "Teachers" [ class "teachers" ] TeacherCount
                     , th [ class "pitch" ] [ text "Pitch" ]
                     , sortingHeader "My Interest" [ class "me" ] Interest
                     , th [ class "tools" ] [ text "Tools" ]
@@ -475,7 +481,9 @@ makeGameRow event_id game =
         , td [ class "game" ] [ bggLink game ]
         , td [ class "minplayers" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.minPlayers)) ]
         , td [ class "maxplayers" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.maxPlayers)) ]
-        , td [ class "duration" ] [ text (Maybe.withDefault "(missing)" (Maybe.map String.fromInt game.durationSecs)) ]
+        , td [ class "duration" ] [ text (Maybe.withDefault "(missing)" (Maybe.map (\seconds -> String.fromInt (seconds // 60)) game.durationSecs)) ]
+        , td [ class "interest-level" ] [ text (String.fromInt game.interestLevel) ]
+        , td [ class "teachers" ] [ text (String.fromInt game.teachers) ]
         , td [ class "pitch" ] [ text (Maybe.withDefault "" game.pitch) ]
         , td [ class "me" ]
             [ let
@@ -500,12 +508,12 @@ makeGameRow event_id game =
 
 
 whoElseTD : Game -> Html Msg
-whoElseTD { whoElse, nick } =
+whoElseTD { whoElse, nick, name } =
     case whoElse of
         Open list ->
             td [ class "whoelse" ]
                 [ h3 []
-                    [ text "Interested Players" ]
+                    [ text ("Players interested in " ++ Maybe.withDefault "that game" name) ]
                 , ul
                     []
                     (List.map
@@ -537,6 +545,12 @@ sortWith by l r =
 
         MaxPlayers ->
             compareMaybes l.maxPlayers r.maxPlayers
+
+        InterestCount ->
+            compare l.interestLevel r.interestLevel
+
+        TeacherCount ->
+            compare l.teachers r.teachers
 
         Duration ->
             compareMaybes l.durationSecs r.durationSecs

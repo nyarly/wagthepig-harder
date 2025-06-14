@@ -519,12 +519,12 @@ makeReccoRow recco =
 
 
 whoElseTD : Recco -> Html Msg
-whoElseTD { whoElse, userLink } =
+whoElseTD { whoElse, userLink, name } =
     case whoElse of
         Open list ->
             td [ class "whoelse-list" ]
                 [ h3 []
-                    [ text "Interested Players" ]
+                    [ text ("Players interested in " ++ Maybe.withDefault "that game" name) ]
                 , ul
                     []
                     (List.map
