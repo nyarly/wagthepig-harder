@@ -1,6 +1,4 @@
-* Subcommand for cron to trigger DB cleanups (expired revokes)
-* B/E flag/env to indicate whether we can trust "forwarded" headers
-* B/E short TTL on API responses
+* B/E build configuration to compile in dist assets
 
 * Fork and strip for future projects
   * Rename semweb_api - "mattak" (b/c axum-mattak)

@@ -1,17 +1,18 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::{IpAddr, SocketAddr}, sync::Arc, time::Duration};
 
 use axum::{
-    extract::{self, FromRef}, http::StatusCode, middleware, response::{IntoResponse, Result}, routing::{get, post, put}, Router
+    extract::{self}, http::StatusCode, middleware, response::{IntoResponse, Result}, routing::{get, post, put}, Router
 };
 
 use bcrypt::BcryptError;
 use biscuit_auth::macros::authorizer;
+use semweb_api::cachecontrol::CacheControlLayer;
 use clap::Parser;
 use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
 use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::{KeyExtractor, SmartIpKeyExtractor}, GovernorLayer};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::{KeyExtractor, PeerIpKeyExtractor, SmartIpKeyExtractor}, GovernorLayer};
 use tower_http::trace::TraceLayer;
 
 use tracing::{debug, info, warn};
@@ -28,7 +29,7 @@ mod resources;
 mod db;
 mod mailing;
 
-#[derive(FromRef, Clone)]
+#[derive(extract::FromRef, Clone)]
 struct AppState {
     pool: Pool<Postgres>,
     auth: Authentication,
@@ -37,6 +38,10 @@ struct AppState {
 
 #[derive(Parser)]
 struct Config {
+    /// The local address
+    #[arg(long, env = "LOCAL_ADDR", default_value = "127.0.0.1:3000")]
+    local_addr: String,
+
     /// Canonical domain the site is served from. Will be used in messages sent via email
     #[arg(long, env = "CANON_DOMAIN")]
     canon_domain: String,
@@ -78,6 +83,13 @@ struct Config {
     /// Path to store token authenication secrets
     #[arg(long, env = "AUTH_KEYPAIR")]
     authentication_path: String,
+
+    /// Can we trust the X-Forwarded-For header?
+    /// Otherwise we have to use the peer IP for rate limiting.
+    /// In other words, if hosting behind e.g. nginx,
+    /// ensure that X-Forwarded-For is set and set this true.
+    #[arg(long, env = "TRUST_FORWARDED_HEADER", default_value = "false")]
+    trust_forwarded_header: bool,
 }
 
 impl Config {
@@ -124,11 +136,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = AppState{pool, auth: auth.clone()};
 
+    let rate_key = ConfigurableKeyExtractor::trust(config.trust_forwarded_header);
+
     let app = Router::new()
         .nest("/api",
-            root_api_router()
-                .merge(open_api_router())
-                .merge(secured_api_router(state.clone(), auth))
+            root_api_router(rate_key)
+                .merge(open_api_router(rate_key))
+                .merge(secured_api_router(state.clone(), auth, rate_key))
         );
 
     // XXX conditionally, include assets directly
@@ -138,24 +152,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.expect("couldn't bind on port 3000");
+    let listener = tokio::net::TcpListener::bind(config.local_addr.to_string()).await.expect("couldn't bind on local addr");
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?; Ok(())
 }
 
-
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
     routing::api_doc(nested_at.as_str())
 }
 
-fn governor_setup<K,M>(name: &str, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<K,M>
+#[derive(Clone,Copy,Debug)]
+pub enum ConfigurableKeyExtractor {
+    PeerIp(PeerIpKeyExtractor),
+    RevProxy(SmartIpKeyExtractor),
+}
+
+impl ConfigurableKeyExtractor {
+    fn trust(yes: bool) -> Self {
+        if yes {
+            ConfigurableKeyExtractor::RevProxy(SmartIpKeyExtractor{})
+        } else {
+            ConfigurableKeyExtractor::PeerIp(PeerIpKeyExtractor{})
+        }
+    }
+}
+
+impl KeyExtractor for ConfigurableKeyExtractor {
+    type Key = IpAddr;
+
+    fn name(&self) -> &'static str {
+        match self {
+            ConfigurableKeyExtractor::PeerIp(ex) => ex.name(),
+            ConfigurableKeyExtractor::RevProxy(ex) => ex.name(),
+        }
+    }
+
+    fn extract<T>(
+        &self,
+        req: &axum::http::Request<T>,
+    ) -> Result<Self::Key, tower_governor::GovernorError> {
+        match self {
+            ConfigurableKeyExtractor::PeerIp(ex) => ex.extract(req),
+            ConfigurableKeyExtractor::RevProxy(ex) => ex.extract(req),
+        }
+    }
+}
+fn governor_setup<K,M>(name: &str, extractor: ConfigurableKeyExtractor, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<ConfigurableKeyExtractor,M>
 where K: KeyExtractor + Sync + std::fmt::Debug,
     M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
     <K as KeyExtractor>::Key: Send + Sync + 'static
 {
     let governor_conf = Arc::new(
             cfg_builder
+            .key_extractor(extractor)
             .finish()
             .unwrap(),
     );
@@ -177,19 +227,19 @@ where K: KeyExtractor + Sync + std::fmt::Debug,
 }
 
 
-fn root_api_router() -> Router<AppState> {
+fn root_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
     Router::new()
         .route(&path(RouteMap::Root), get(sitemap))
-        .layer(governor_setup("api-root",  GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor{})
+        .layer(governor_setup("api-root", extractor, GovernorConfigBuilder::default()
             .per_millisecond(20)
             .burst_size(60)
         ))
+        .layer(CacheControlLayer::new(30))
         // XXX key extractor that is either Authentication or SmartIp
 }
 
-fn open_api_router() -> Router<AppState> {
+fn open_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
 
     use resources::authentication;
@@ -202,14 +252,13 @@ fn open_api_router() -> Router<AppState> {
         .route(&path(Profile), put(authentication::register))
 
         .route(&path(PasswordReset), post(authentication::reset_password))
-        .layer(governor_setup("anonymous", GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor{})
+        .layer(governor_setup("anonymous", extractor, GovernorConfigBuilder::default()
             .per_second(1)
             .burst_size(10)
         ))
 }
 
-fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router<AppState> {
+fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor: ConfigurableKeyExtractor) -> Router<AppState> {
     use resources::{event, game, profile, recommendation};
     use RouteMap::*;
 
@@ -250,23 +299,23 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication) -> Router
         .route(&path(Recommend), post(recommendation::make))
 
         .layer(tower::ServiceBuilder::new()
-            .layer(governor_setup("authenticated",  GovernorConfigBuilder::default()
-                .key_extractor(SmartIpKeyExtractor{})
+            .layer(governor_setup("authenticated", extractor, GovernorConfigBuilder::default()
                 .per_millisecond(20)
                 .burst_size(60)
             ))
+            .layer(CacheControlLayer::new(1))
             .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
             .layer(middleware::from_fn_with_state(state, authentication::add_rejections))
             .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
-            allow if route({profile_path}), path_param("user_id", $user), user($user);
-            deny if route({profile_path});
+                allow if route({profile_path}), path_param("user_id", $user), user($user);
+                deny if route({profile_path});
 
-            allow if route({auth_path}), path_param("user_id", $user), user($user);
-            allow if route({auth_path}), path_param("user_id", $user), method("PUT"), reset_password($user);
-            deny if route({auth_path});
+                allow if route({auth_path}), path_param("user_id", $user), user($user);
+                allow if route({auth_path}), path_param("user_id", $user), method("PUT"), reset_password($user);
+                deny if route({auth_path});
 
-            allow if user($user);
-            "#,
+                allow if user($user);
+                "#,
                 auth_path = path(Authenticate)
             )))
         )
