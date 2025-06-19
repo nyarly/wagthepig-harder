@@ -12,7 +12,12 @@ use include_dir::Dir;
 
 use tracing::debug;
 
-// static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/frontend");
+/// provides an embedded assets server
+/// Create this like so:
+/// ```
+/// static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/frontend");
+/// embedded(router, &ASSETS_DIR);
+/// ```
 
 pub fn embedded<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_dir: &'static Dir<'static>) -> Result<Router<S>,Box<dyn StdError>> {
     let app = router
@@ -44,12 +49,11 @@ async fn embedded_not_found(request: Request, next: Next) -> Response {
 
 
 /// provides a simple file server, both for the BE and for static files in the filesystem
-#[allow(clippy::type_complexity)]
-pub fn fileserver<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<Router<S>,Box<dyn StdError>> {
+pub fn fileserver<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: &String) -> Result<Router<S>,Box<dyn StdError>> {
 
     let app = router
         .nest_service("/",
-            ServeDir::new(path::Path::new(&frontend_path))
+            ServeDir::new(path::Path::new(frontend_path))
                 .not_found_service(ServeFile::new(format!("{}/html/index.html", frontend_path)))
         );
 
@@ -58,22 +62,18 @@ pub fn fileserver<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_
 
 /// provides a simple livereload server, both for the BE and for static files in the filesystem
 #[allow(clippy::type_complexity)]
-pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<(Router<S>, Box<dyn Watcher>),Box<dyn StdError>> {
+pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: &String) -> Result<(Router<S>, Box<dyn Watcher>),Box<dyn StdError>> {
     let livereload = LiveReloadLayer::new();
     let reloader = livereload.reloader();
 
-    let app = router
-        .nest_service("/",
-            ServeDir::new(path::Path::new(&frontend_path))
-                .not_found_service(ServeFile::new(format!("{}/html/index.html", frontend_path)))
-        )
+    let app = fileserver(router, frontend_path)?
         .layer(livereload);
 
     let mut watcher = notify::recommended_watcher(move |ev| {
         debug!("livereload: file change detected: {:?}", ev);
         reloader.reload()
     })?;
-    watcher.watch(path::Path::new(&frontend_path), notify::RecursiveMode::Recursive)?;
+    watcher.watch(path::Path::new(frontend_path), notify::RecursiveMode::Recursive)?;
 
     debug!("Finished setting up livereload {:?}", watcher);
     Ok((app, Box::new(watcher)))
@@ -82,8 +82,7 @@ pub fn livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_
 /// provides a livereload server, both for the BE and for static files in the filesystem
 /// Note that this leaks a notify::Watcher, on the assumption that you want to let that run for the
 /// lifetime of the app anyway. This way, we can have type parity with e.g. fileserver
-#[allow(clippy::type_complexity)]
-pub fn leaked_livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: String) -> Result<Router<S>,Box<dyn StdError>> {
+pub fn leaked_livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, frontend_path: &String) -> Result<Router<S>,Box<dyn StdError>> {
     let (app, watcher) = livereload(router, frontend_path)?;
     Box::leak(watcher);
     Ok(app)
@@ -92,7 +91,6 @@ pub fn leaked_livereload<S: Clone + Send + Sync + 'static>(router: Router<S>, fr
 pub type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
 /// provides a localhost proxy for SPA work with a separate dev server
-#[allow(dead_code)]
 pub async fn devproxy(State(client): State<Client>, mut req: Request) -> Result<Response, StatusCode> {
     let path = req.uri().path();
     let path_query = req

@@ -169,7 +169,7 @@ fn spa(router: Router<AppState>, _config: Config) -> Result<Router<AppState>, Bo
 
 #[cfg(all(debug_assertions,not(feature = "debug_embed")))]
 fn spa(router: Router<AppState>, config: &Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
-    spa::leaked_livereload(router, config.frontend_path.clone())
+    spa::leaked_livereload(router, &config.frontend_path)
 }
 
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
