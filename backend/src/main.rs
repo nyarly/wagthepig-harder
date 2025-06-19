@@ -22,12 +22,12 @@ use crate::routing::RouteMap;
 
 use semweb_api::{biscuits::{self, Authentication}, routing::route_config, spa};
 
-
 // app modules
 mod routing;
 mod resources;
 mod db;
 mod mailing;
+
 
 #[derive(extract::FromRef, Clone)]
 struct AppState {
@@ -77,6 +77,7 @@ struct Config {
     // XXX this doesn't make sense in Prod...
     // unless it would override compiled in files
     /// The path to serve front-end files from
+    #[cfg(all(debug_assertions,not(feature = "debug_embed")))]
     #[arg(long, env = "FRONTEND_PATH")]
     frontend_path: String,
 
@@ -124,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("can't connect to database");
 
-    let auth = biscuits::Authentication::new(config.authentication_path)?;
+    let auth = biscuits::Authentication::new(config.authentication_path.clone())?;
 
     let _runner = mailing::queue_listener(
         pool.clone(),
@@ -146,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     // XXX conditionally, include assets directly
-    let (app, _watcher) = spa::livereload(app, config.frontend_path)?;
+    let app = spa(app, &config)?;
 
     let app = app
         .layer(TraceLayer::new_for_http())
@@ -158,74 +159,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?; Ok(())
 }
 
+#[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
+static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/frontend");
+
+#[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
+fn spa(router: Router<AppState>, _config: Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
+    spa::embedded(router, &ASSETS_DIR)
+}
+
+#[cfg(all(debug_assertions,not(feature = "debug_embed")))]
+fn spa(router: Router<AppState>, config: &Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
+    spa::leaked_livereload(router, config.frontend_path.clone())
+}
+
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
     routing::api_doc(nested_at.as_str())
 }
-
-#[derive(Clone,Copy,Debug)]
-pub enum ConfigurableKeyExtractor {
-    PeerIp(PeerIpKeyExtractor),
-    RevProxy(SmartIpKeyExtractor),
-}
-
-impl ConfigurableKeyExtractor {
-    fn trust(yes: bool) -> Self {
-        if yes {
-            ConfigurableKeyExtractor::RevProxy(SmartIpKeyExtractor{})
-        } else {
-            ConfigurableKeyExtractor::PeerIp(PeerIpKeyExtractor{})
-        }
-    }
-}
-
-impl KeyExtractor for ConfigurableKeyExtractor {
-    type Key = IpAddr;
-
-    fn name(&self) -> &'static str {
-        match self {
-            ConfigurableKeyExtractor::PeerIp(ex) => ex.name(),
-            ConfigurableKeyExtractor::RevProxy(ex) => ex.name(),
-        }
-    }
-
-    fn extract<T>(
-        &self,
-        req: &axum::http::Request<T>,
-    ) -> Result<Self::Key, tower_governor::GovernorError> {
-        match self {
-            ConfigurableKeyExtractor::PeerIp(ex) => ex.extract(req),
-            ConfigurableKeyExtractor::RevProxy(ex) => ex.extract(req),
-        }
-    }
-}
-fn governor_setup<K,M>(name: &str, extractor: ConfigurableKeyExtractor, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<ConfigurableKeyExtractor,M>
-where K: KeyExtractor + Sync + std::fmt::Debug,
-    M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
-    <K as KeyExtractor>::Key: Send + Sync + 'static
-{
-    let governor_conf = Arc::new(
-            cfg_builder
-            .key_extractor(extractor)
-            .finish()
-            .unwrap(),
-    );
-
-    tracing::debug!("{name} governor created: {governor_conf:?}");
-
-    let governor_limiter = governor_conf.limiter().clone();
-    let interval = Duration::from_secs(60);
-    // a separate background task to clean up
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(interval);
-            tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
-            governor_limiter.retain_recent();
-        }
-    });
-
-    GovernorLayer { config: governor_conf }
-}
-
 
 fn root_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
@@ -320,6 +269,73 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor
             )))
         )
 }
+
+#[derive(Clone,Copy,Debug)]
+pub enum ConfigurableKeyExtractor {
+    PeerIp(PeerIpKeyExtractor),
+    RevProxy(SmartIpKeyExtractor),
+}
+
+impl ConfigurableKeyExtractor {
+    fn trust(yes: bool) -> Self {
+        if yes {
+            ConfigurableKeyExtractor::RevProxy(SmartIpKeyExtractor{})
+        } else {
+            ConfigurableKeyExtractor::PeerIp(PeerIpKeyExtractor{})
+        }
+    }
+}
+
+impl KeyExtractor for ConfigurableKeyExtractor {
+    type Key = IpAddr;
+
+    fn name(&self) -> &'static str {
+        match self {
+            ConfigurableKeyExtractor::PeerIp(ex) => ex.name(),
+            ConfigurableKeyExtractor::RevProxy(ex) => ex.name(),
+        }
+    }
+
+    fn extract<T>(
+        &self,
+        req: &axum::http::Request<T>,
+    ) -> Result<Self::Key, tower_governor::GovernorError> {
+        match self {
+            ConfigurableKeyExtractor::PeerIp(ex) => ex.extract(req),
+            ConfigurableKeyExtractor::RevProxy(ex) => ex.extract(req),
+        }
+    }
+}
+
+fn governor_setup<K,M>(name: &str, extractor: ConfigurableKeyExtractor, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<ConfigurableKeyExtractor,M>
+where K: KeyExtractor + Sync + std::fmt::Debug,
+    M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
+    <K as KeyExtractor>::Key: Send + Sync + 'static
+{
+    let governor_conf = Arc::new(
+            cfg_builder
+            .key_extractor(extractor)
+            .finish()
+            .unwrap(),
+    );
+
+    tracing::debug!("{name} governor created: {governor_conf:?}");
+
+    let governor_limiter = governor_conf.limiter().clone();
+    let interval = Duration::from_secs(60);
+    // a separate background task to clean up
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(interval);
+            tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
+            governor_limiter.retain_recent();
+        }
+    });
+
+    GovernorLayer { config: governor_conf }
+}
+
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

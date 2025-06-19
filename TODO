@@ -1,7 +1,9 @@
-* B/E build configuration to compile in dist assets
-
 * Fork and strip for future projects
   * Rename semweb_api - "mattak" (b/c axum-mattak)
+    - Consider moving SMTP stuff into mattak - used now just for auth
+    - Likewise sqlxmq
+  * Break out axum_spa crate - useful outside of semweb stuff
+  * How to strip Elm/frontend work?
 
 WTP parity:
 
@@ -10,10 +12,12 @@ F/E
   * Highlight/jump to issue
   * Message near interaction (submit turns red)
 
+* Proxy for BGG? Images especially seem like a place we might be neighborly
+
 == Future work
 
+* Rust based diecut for frontend splat
 * FE condreq support
-* Proxy for BGG? Images especially seem like a place we might be neighborly
 * At what level should we cache link walking? Browser should do some of it,
   especially if we set short TTLs on API responses, and that'll be reliable and easy.
   We _could_ do some in-app caching as we walk, and control that on a per-page level
@@ -45,40 +49,19 @@ F/E
   `resources` with all the code for a particular resource (family) to be in one
   place, including their locator-route. Then `main` bundles them all up
   into the Axum route map.
-* [Thinking this isn't actually what we want] Derive macro for RouteTemplate enums - like:
-
-Continuing to consider while building out the `routing` module. Would that be
-clearer? Consideration also: would that be aligning Locator with RM variants.
-```
-#[derive(Copy, Clone, RouteTemplate)]
-pub(crate) enum RouteMap {
-    // adds arm to impl RouteTemplate
-    // creates ProfileLocator struct with user_id: String field
-    #[endpoint("/profile/{user_id}"]
-    #[locator(ProfileLocator{String})]
-    Profile,
-    // adds arm, assumes you'll make the locator (likely EmptyLocator)
-    #[endpoint("/")]
-    Root,
-    #[endpoint("/event_games/{event_id}/user/{user_id}")]
-    #[locator(EventGamesLocator{u16, String})]
-    EventGames
-    // ...
-}
-```
+* Compile error if the endpoint doesn't match fields
   - datapoint: have seen errors that were confusing when URITemplate and
     Locator struct didn't align it would be great if that were impossible
   - the considerations here are the locator and the route string - the locator
     fixes the name and types of fields, but not the route...
-  - does the RouteMap need to be an enum? Consider instead `impl
-    RouteTemplate`, and change the "locator" structs to just the routes
-    themselves.
 
 Pre-ITP, had a moment thinking through Locator as an extra thing...
 - if using traits instead of enum, then Locator can simply become Route
 - since using traits on the enum anyway, we aren't getting a static dispatch advantage anymore.
 - simple derive for the RouteTemplate might also validate fields
 - (all this discussed in comment in src/routing.rs)
+
+
 
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
