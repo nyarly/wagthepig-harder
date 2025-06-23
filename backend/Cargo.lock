@@ -3479,6 +3479,7 @@ dependencies = [
  "futures",
  "governor",
  "hyper",
+ "include_dir",
  "indoc",
  "iri-string",
  "lettre",

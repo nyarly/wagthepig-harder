@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("can't connect to database");
 
-    let auth = biscuits::Authentication::new(config.authentication_path.clone())?;
+    let auth = Authentication::new(config.authentication_path.clone())?;
 
     let _runner = mailing::queue_listener(
         pool.clone(),
@@ -160,10 +160,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
+use include_dir::{include_dir,Dir};
+
+#[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
 static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/frontend");
 
 #[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
-fn spa(router: Router<AppState>, _config: Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
+fn spa(router: Router<AppState>, _config: &Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
     spa::embedded(router, &ASSETS_DIR)
 }
 
