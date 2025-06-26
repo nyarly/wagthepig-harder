@@ -6,7 +6,6 @@ use axum::{
 
 use bcrypt::BcryptError;
 use biscuit_auth::macros::authorizer;
-use semweb_api::cachecontrol::CacheControlLayer;
 use clap::Parser;
 use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
 use lettre::{AsyncSmtpTransport, Tokio1Executor};
@@ -20,7 +19,7 @@ use tracing_subscriber::{EnvFilter, prelude::*};
 
 use crate::routing::RouteMap;
 
-use semweb_api::{biscuits::{self, Authentication}, routing::route_config, spa};
+use mattak::{cachecontrol::CacheControlLayer, biscuits::{self, Authentication}, routing::route_config};
 
 // app modules
 mod routing;
@@ -167,12 +166,12 @@ static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/frontend");
 
 #[cfg(not(all(debug_assertions,not(feature = "debug_embed"))))]
 fn spa(router: Router<AppState>, _config: &Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
-    spa::embedded(router, &ASSETS_DIR)
+    axum_spa::embedded(router, &ASSETS_DIR)
 }
 
 #[cfg(all(debug_assertions,not(feature = "debug_embed")))]
 fn spa(router: Router<AppState>, config: &Config) -> Result<Router<AppState>, Box<dyn std::error::Error>> {
-    spa::leaked_livereload(router, &config.frontend_path)
+    axum_spa::leaked_livereload(router, &config.frontend_path)
 }
 
 async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
@@ -345,7 +344,7 @@ pub enum Error {
     #[error("database error: ${0:?}")]
     DB(#[from] db::Error),
     #[error("http error: ${0:?}")]
-    HTTP(#[from] semweb_api::Error),
+    HTTP(#[from] mattak::Error),
     #[error("status code: ${0:?} - ${1}")]
     StatusCode(StatusCode, String),
     #[error("cryptographic issue: ${0:?}")]

@@ -1,5 +1,5 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
-use semweb_api::{condreq, hypermedia::{op, ActionType, Link, ResourceFields}};
+use mattak::{condreq, hypermedia::{op, ActionType, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use iri_string::types::IriReferenceString;
@@ -14,7 +14,7 @@ pub(crate) struct RecommendRequest {
 }
 
 impl RecommendRequest {
-    pub(crate) fn player_ids(&self, nested_at: &str) -> Result<Vec<UserId>, semweb_api::Error> {
+    pub(crate) fn player_ids(&self, nested_at: &str) -> Result<Vec<UserId>, mattak::Error> {
         let user_route = RouteMap::User.prefixed(nested_at);
         self.players.clone().into_iter().map(|iri| {
             user_route.extract::<UserLocate>(iri.as_str()).map(|loc| loc.user_id)

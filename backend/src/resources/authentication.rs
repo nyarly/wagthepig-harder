@@ -12,7 +12,7 @@ use axum::{
 use biscuit_auth::macros::authorizer;
 use chrono::Utc;
 use hyper::StatusCode;
-use semweb_api::biscuits::{AuthContext, Authentication};
+use mattak::biscuits::{AuthContext, Authentication};
 use serde::Deserialize;
 use sqlx::{Pool, Postgres};
 use tracing::debug;
@@ -48,10 +48,10 @@ pub(crate) struct AuthnUpdateRequest {
     pub new_password: String
 }
 impl AuthnUpdateRequest {
-    pub(crate) fn valid(&self) -> Result<(), semweb_api::Error> {
+    pub(crate) fn valid(&self) -> Result<(), mattak::Error> {
         debug!("Checking length of password");
         if self.new_password.len() < 12 {
-            return Err(semweb_api::Error::InvalidInput("password less than 12 characters".to_string()))
+            return Err(mattak::Error::InvalidInput("password less than 12 characters".to_string()))
         }
         Ok(())
     }

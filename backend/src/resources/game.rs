@@ -1,7 +1,7 @@
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use chrono::NaiveDateTime;
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields}};
+use mattak::{condreq, hypermedia::{self, op, ActionType, IriTemplate, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 
@@ -70,7 +70,7 @@ pub(crate) struct EventGameListResponse {
 }
 
 impl EventGameListResponse {
-    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::PlayerData>>) -> Result<Self, semweb_api::Error> {
+    pub fn from_query(nested_at: &str, event_id: EventId, user_id: String, list: Vec<db::Game<GameId, EventId, UserId, db::PlayerData>>) -> Result<Self, mattak::Error> {
         let game_tmpl = RouteMap::Game.prefixed(nested_at).template()?;
         Ok(Self{
             resource_fields: ResourceFields::new(
@@ -129,7 +129,7 @@ pub(crate) struct GameItemResponse {
 }
 
 impl GameItemResponse {
-    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::PlayerData>) -> Result<Self, semweb_api::Error> {
+    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::PlayerData>) -> Result<Self, mattak::Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Game.prefixed(nested_at),
@@ -178,7 +178,7 @@ pub(crate) struct GameResponse {
 }
 
 impl GameResponse {
-    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, semweb_api::Error> {
+    pub fn from_query<E, U>(nested_at: &str, user_id: String, value: db::Game<GameId, E, U, db::InterestData>) -> Result<Self, mattak::Error> {
         Ok(Self{
             resource_fields: ResourceFields::new(
                 &RouteMap::Game.prefixed(nested_at),

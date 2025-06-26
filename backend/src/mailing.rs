@@ -8,7 +8,7 @@ use lettre::{
     AsyncTransport as _, Message,
     Tokio1Executor
 };
-use semweb_api::biscuits;
+use mattak::biscuits;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use sqlxmq::{job, CurrentJob, JobRegistry, JobRunnerHandle};

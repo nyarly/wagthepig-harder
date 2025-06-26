@@ -26,7 +26,7 @@ pub fn listable_derive(annotated_item: StdTokenStream) -> StdTokenStream {
     let (struct_name, vars, _) = parse(annotated_item);
 
     let expanded = quote! {
-        impl ::semweb_api::routing::Listable for #struct_name {
+        impl ::mattak::routing::Listable for #struct_name {
             fn list_vars(&self) -> Vec<String> {
                 vec![#(stringify!(#vars).to_string()),*]
             }

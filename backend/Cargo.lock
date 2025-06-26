@@ -238,6 +238,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-spa"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hyper-util",
+ "include_dir",
+ "notify",
+ "thiserror 1.0.63",
+ "tower-http 0.5.2",
+ "tower-livereload",
+ "tower-serve-static",
+ "tracing",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1616,6 +1631,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
+name = "mattak"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "base64ct",
+ "biscuit-auth",
+ "chrono",
+ "futures",
+ "futures-util",
+ "hyper",
+ "hyper-util",
+ "include_dir",
+ "iri-string",
+ "nom",
+ "notify",
+ "percent-encoding",
+ "pin-project-lite",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "thiserror 1.0.63",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "tower-livereload",
+ "tower-serve-static",
+ "tracing",
+ "tracing-test",
+]
+
+[[package]]
+name = "mattak_derives"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2377,47 +2432,6 @@ name = "semver"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
-
-[[package]]
-name = "semweb_api"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-extra",
- "base64ct",
- "biscuit-auth",
- "chrono",
- "futures",
- "futures-util",
- "hyper",
- "hyper-util",
- "include_dir",
- "iri-string",
- "nom",
- "notify",
- "percent-encoding",
- "pin-project-lite",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.10.8",
- "thiserror 1.0.63",
- "tower 0.4.13",
- "tower-http 0.5.2",
- "tower-livereload",
- "tower-serve-static",
- "tracing",
- "tracing-test",
-]
-
-[[package]]
-name = "semweb_api_derives"
-version = "0.1.0"
-dependencies = [
- "iri-string",
- "proc-macro2",
- "quote",
-]
 
 [[package]]
 name = "serde"
@@ -3470,6 +3484,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "axum-extra",
+ "axum-spa",
  "base64 0.22.1",
  "base64ct",
  "bcrypt",
@@ -3483,8 +3498,8 @@ dependencies = [
  "indoc",
  "iri-string",
  "lettre",
- "semweb_api",
- "semweb_api_derives",
+ "mattak",
+ "mattak_derives",
  "serde",
  "serde_json",
  "sha2 0.10.8",

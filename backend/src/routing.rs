@@ -1,6 +1,6 @@
 use axum::{response::IntoResponse, Json};
-use semweb_api::{hypermedia::{op, ActionType}, routing::{Entry, RouteTemplate}};
-use semweb_api_derives::{Context, Extract, Listable};
+use mattak::{hypermedia::{op, ActionType}, routing::{Entry, RouteTemplate}};
+use mattak_derives::{Context, Extract, Listable};
 use serde::Serialize;
 use serde_json::json;
 
@@ -9,7 +9,7 @@ use crate::db::{EventId, GameId, UserId};
 /*
 * Serious consideration:
 * All of the "*Locate" struct could themselves have a impl RouteTemplate
-* A trivial derive in semweb_api could implement the method - and check that the route and the
+* A trivial derive in mattak could implement the method - and check that the route and the
 * fields align?
 * Something like:
 *
@@ -21,7 +21,7 @@ pub(crate) struct EventGames {
 }
 ... with a compile time error if the template and the fields don't line up
 
-Something to add to semweb_api/mattok for next project
+Something to add to mattak/mattok for next project
 *
 */
 

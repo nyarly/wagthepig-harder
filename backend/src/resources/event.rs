@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use axum::{debug_handler, extract::{self, Path, State}, response::IntoResponse, Json};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use hyper::{header, StatusCode};
-use semweb_api::{condreq, hypermedia::{op, ActionType, IriTemplate, Link, ResourceFields}};
+use mattak::{condreq, hypermedia::{op, ActionType, IriTemplate, Link, ResourceFields}};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use tracing::debug;
@@ -27,7 +27,7 @@ pub(crate) struct EventListResponse {
 }
 
 impl EventListResponse {
-    pub fn from_query(nested_at: &str, list: Vec<Event<EventId>>) -> Result<Self, semweb_api::Error> {
+    pub fn from_query(nested_at: &str, list: Vec<Event<EventId>>) -> Result<Self, mattak::Error> {
         let event_route = RouteMap::Event.prefixed(nested_at);
         let event_tmpl = event_route.template()?;
 
@@ -72,7 +72,7 @@ pub(crate) struct EventResponse {
 }
 
 impl EventResponse {
-    pub(crate) fn from_query(nested_at: &str, value: Event<EventId>) -> Result<Self, semweb_api::Error> {
+    pub(crate) fn from_query(nested_at: &str, value: Event<EventId>) -> Result<Self, mattak::Error> {
         let mut event_var = HashMap::new();
         event_var.insert("event_id".to_string(), value.id.to_string());
         let usergames_tmpl = RouteMap::EventGames.prefixed(nested_at).partial_fill(event_var)?;

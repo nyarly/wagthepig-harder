@@ -1,18 +1,7 @@
-[workspace]
-members = [ "semweb_api","semweb_api_derives"]
-
-# per https://doc.rust-lang.org/cargo/reference/workspaces.html
-# Note: when a root package is present, you can only operate on it using --package and --workspace flags.
-#   wagthepig-backend is the "root package" of this workspace
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-
 [package]
 name = "wagthepig-backend"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,8 +9,9 @@ edition.workspace = true
 debug_embed = []
 
 [dependencies]
-semweb_api = { path = "semweb_api" }
-semweb_api_derives = { path = "semweb_api_derives" }
+mattak = { path = "../../mattak/mattak" }
+mattak_derives = { path = "../../mattak/mattak_derives/" }
+axum-spa = { path = "../../axum-spa/" }
 
 thiserror = "~1.0.63"
 tracing = "0.1"
