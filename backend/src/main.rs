@@ -1,4 +1,4 @@
-use std::{net::{IpAddr, SocketAddr}, sync::Arc, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{
     extract::{self}, http::StatusCode, middleware, response::{IntoResponse, Result}, routing::{get, post, put}, Router
@@ -7,11 +7,9 @@ use axum::{
 use bcrypt::BcryptError;
 use biscuit_auth::macros::authorizer;
 use clap::Parser;
-use governor::{clock::QuantaInstant, middleware::RateLimitingMiddleware};
 use lettre::{AsyncSmtpTransport, Tokio1Executor};
 use resources::authentication;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Pool, Postgres};
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::{KeyExtractor, PeerIpKeyExtractor, SmartIpKeyExtractor}, GovernorLayer};
 use tower_http::trace::TraceLayer;
 
 use tracing::{debug, info, warn};
@@ -19,7 +17,10 @@ use tracing_subscriber::{EnvFilter, prelude::*};
 
 use crate::routing::RouteMap;
 
-use mattak::{cachecontrol::CacheControlLayer, biscuits::{self, Authentication}, routing::route_config};
+use mattak::{cachecontrol::CacheControlLayer,
+    biscuits::{self, Authentication},
+    routing::route_config,
+    ratelimiting::{self, IpExtractor, GovernorConfigBuilder}};
 
 // app modules
 mod routing;
@@ -136,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = AppState{pool, auth: auth.clone()};
 
-    let rate_key = ConfigurableKeyExtractor::trust(config.trust_forwarded_header);
+    let rate_key = IpExtractor::trust(config.trust_forwarded_header);
 
     let app = Router::new()
         .nest("/api",
@@ -145,10 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .merge(secured_api_router(state.clone(), auth, rate_key))
         );
 
-    // XXX conditionally, include assets directly
-    let app = spa(app, &config)?;
-
-    let app = app
+    let app = spa(app, &config)?
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -178,11 +176,11 @@ async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
     routing::api_doc(nested_at.as_str())
 }
 
-fn root_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
+fn root_api_router(extractor: IpExtractor) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
     Router::new()
         .route(&path(RouteMap::Root), get(sitemap))
-        .layer(governor_setup("api-root", extractor, GovernorConfigBuilder::default()
+        .layer(ratelimiting::layer("api-root", extractor, GovernorConfigBuilder::default()
             .per_millisecond(20)
             .burst_size(60)
         ))
@@ -190,7 +188,7 @@ fn root_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
         // XXX key extractor that is either Authentication or SmartIp
 }
 
-fn open_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
+fn open_api_router(extractor: IpExtractor) -> Router<AppState> {
     let path = |rm| route_config(rm).axum_route();
 
     use resources::authentication;
@@ -203,13 +201,13 @@ fn open_api_router(extractor: ConfigurableKeyExtractor) -> Router<AppState> {
         .route(&path(Profile), put(authentication::register))
 
         .route(&path(PasswordReset), post(authentication::reset_password))
-        .layer(governor_setup("anonymous", extractor, GovernorConfigBuilder::default()
+        .layer(ratelimiting::layer("anonymous", extractor, GovernorConfigBuilder::default()
             .per_second(1)
             .burst_size(10)
         ))
 }
 
-fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor: ConfigurableKeyExtractor) -> Router<AppState> {
+fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor: IpExtractor) -> Router<AppState> {
     use resources::{event, game, profile, recommendation};
     use RouteMap::*;
 
@@ -250,7 +248,7 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor
         .route(&path(Recommend), post(recommendation::make))
 
         .layer(tower::ServiceBuilder::new()
-            .layer(governor_setup("authenticated", extractor, GovernorConfigBuilder::default()
+            .layer(ratelimiting::layer("authenticated", extractor, GovernorConfigBuilder::default()
                 .per_millisecond(20)
                 .burst_size(60)
             ))
@@ -271,72 +269,6 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor
             )))
         )
 }
-
-#[derive(Clone,Copy,Debug)]
-pub enum ConfigurableKeyExtractor {
-    PeerIp(PeerIpKeyExtractor),
-    RevProxy(SmartIpKeyExtractor),
-}
-
-impl ConfigurableKeyExtractor {
-    fn trust(yes: bool) -> Self {
-        if yes {
-            ConfigurableKeyExtractor::RevProxy(SmartIpKeyExtractor{})
-        } else {
-            ConfigurableKeyExtractor::PeerIp(PeerIpKeyExtractor{})
-        }
-    }
-}
-
-impl KeyExtractor for ConfigurableKeyExtractor {
-    type Key = IpAddr;
-
-    fn name(&self) -> &'static str {
-        match self {
-            ConfigurableKeyExtractor::PeerIp(ex) => ex.name(),
-            ConfigurableKeyExtractor::RevProxy(ex) => ex.name(),
-        }
-    }
-
-    fn extract<T>(
-        &self,
-        req: &axum::http::Request<T>,
-    ) -> Result<Self::Key, tower_governor::GovernorError> {
-        match self {
-            ConfigurableKeyExtractor::PeerIp(ex) => ex.extract(req),
-            ConfigurableKeyExtractor::RevProxy(ex) => ex.extract(req),
-        }
-    }
-}
-
-fn governor_setup<K,M>(name: &str, extractor: ConfigurableKeyExtractor, cfg_builder: &mut GovernorConfigBuilder<K,M>) -> GovernorLayer<ConfigurableKeyExtractor,M>
-where K: KeyExtractor + Sync + std::fmt::Debug,
-    M: RateLimitingMiddleware<QuantaInstant> + Send + Sync + 'static,
-    <K as KeyExtractor>::Key: Send + Sync + 'static
-{
-    let governor_conf = Arc::new(
-            cfg_builder
-            .key_extractor(extractor)
-            .finish()
-            .unwrap(),
-    );
-
-    tracing::debug!("{name} governor created: {governor_conf:?}");
-
-    let governor_limiter = governor_conf.limiter().clone();
-    let interval = Duration::from_secs(60);
-    // a separate background task to clean up
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(interval);
-            tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
-            governor_limiter.retain_recent();
-        }
-    });
-
-    GovernorLayer { config: governor_conf }
-}
-
 
 
 #[derive(thiserror::Error, Debug)]

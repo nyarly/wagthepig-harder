@@ -1641,6 +1641,7 @@ dependencies = [
  "chrono",
  "futures",
  "futures-util",
+ "governor",
  "hyper",
  "hyper-util",
  "include_dir",
@@ -1658,6 +1659,7 @@ dependencies = [
  "tower-http 0.5.2",
  "tower-livereload",
  "tower-serve-static",
+ "tower_governor",
  "tracing",
  "tracing-test",
 ]

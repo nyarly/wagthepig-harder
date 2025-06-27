@@ -21,7 +21,7 @@ pub(crate) struct EventGames {
 }
 ... with a compile time error if the template and the fields don't line up
 
-Something to add to mattak/mattok for next project
+Something to add to mattak for next project
 *
 */
 

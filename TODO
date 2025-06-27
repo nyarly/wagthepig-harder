@@ -1,7 +1,6 @@
 * Fork and strip for future projects
-  * Rename semweb_api - "mattak" (b/c axum-mattak)
-    - Consider moving SMTP stuff into mattak - used now just for auth
-    - Likewise sqlxmq
+  * Consider moving SMTP stuff into mattak - used now just for auth
+  * Likewise sqlxmq
   * Break out axum_spa crate - useful outside of semweb stuff
   * How to strip Elm/frontend work?
 
@@ -16,16 +15,17 @@ F/E
 
 == Future work
 
+=== Frontend
+
 * Rust based diecut for frontend splat
 * FE condreq support
 * At what level should we cache link walking? Browser should do some of it,
   especially if we set short TTLs on API responses, and that'll be reliable and easy.
   We _could_ do some in-app caching as we walk, and control that on a per-page level
 * General view "perspectives" - including multiuse queries
-* Pre compress frontend assets in prod deploy?
-* Pact for tests?
 * Halogen/Purescript FE?
-* In frontend, relationship between nick (= B/E Locator) and routes
+* relationship between nick (= B/E Locator) and routes
+* Pact for tests?
 * investigate elm-concurrent-task (enables JSON-LD and Biscuits in Elm)
 * asset fingerprinting; seems like will require a bundler
 * Client-side JSON-LD
@@ -37,31 +37,10 @@ F/E
   - check if time is in the next 60 seconds
 * Sophisticated 409 handling in F/E for conditional updates
   (automatic 3-way merge)
-* For the URITemplate/matchit "bridge"
-  - consider adding the ability to "trade" '//' for a limit of 1 pre-path
-    expression
-* Derive macro: Route that includes
-  - RouteTemplate
-  - Listable
-  - Context
-  - Extract
-  So that locators can be used as routes. Pattern might be just to have a
-  `resources` with all the code for a particular resource (family) to be in one
-  place, including their locator-route. Then `main` bundles them all up
-  into the Axum route map.
-* Compile error if the endpoint doesn't match fields
-  - datapoint: have seen errors that were confusing when URITemplate and
-    Locator struct didn't align it would be great if that were impossible
-  - the considerations here are the locator and the route string - the locator
-    fixes the name and types of fields, but not the route...
+* add JSON-LD tooling - at least validate our API
 
-Pre-ITP, had a moment thinking through Locator as an extra thing...
-- if using traits instead of enum, then Locator can simply become Route
-- since using traits on the enum anyway, we aren't getting a static dispatch advantage anymore.
-- simple derive for the RouteTemplate might also validate fields
-- (all this discussed in comment in src/routing.rs)
-
-
+=== Backend
+* Pre compress frontend assets in prod deploy?
 
 * Consider further enforcing DB logic in types - DBIds are per-row-type, but currently
   Event<GameId> would work :/
@@ -69,76 +48,4 @@ Pre-ITP, had a moment thinking through Locator as an extra thing...
   * If-Match & If-None-Match - check cache, and short circuit
   * If-Match & If-None-Match - check response/generated and empty bodies
 * actually write a JSON-LD @context
-* add JSON-LD tooling - at least validate our API
 * multipart emails with HTML and images for password resets and whatnot
-
-== Design Decisions
-
-Progressive JSON-LD - use JSON-LD compatible fields as we go,
-with the idea that we notionally have a @context.
-Maybe someday we do this for real and build things out.
-Minimize the amount of adjustment that takes.
-
-pJSON-LD - use "id" and "type" etc
-because "@id" requires extra serde macros to make work.
-In our "notional" @context, we could `id: @id` to "fix" it.
-
-Each B/E resource needs an IriTemplate field that describes how to get back there,
-plus some SKOS Notations with the fields for it.
-This lets the F/E embed the Notations into the browser address,
-and then (e.g.) if reloaded/URL shared, fill in the template with the notations
-to reload the data from the backend.
-Open question: how to address user-context data?
-(sharing the games for an event should show you your interests, not mine.)
-
-JSON-LD _technically_ doesn't allow typemaps of scalars - IOW, where it would be nice to be able to say
-notation: {
-  event: <id>,
-  user: <id>,
-}
-and have "event" and "user" be @contexted as datatype IRIs, JSON-LD doesn't expand that way.
-*For the time being* we'll do that _anyway_ and if at some point we come in the validated fold,
-we can adjust how we process SKOS notations as more verbose structures.
-
-It's tempting, always to set up macros or something for what feel like
-repetitive fields in the DB/HTTP DTOs. Some real wins with flattened sub-structs
-in the DB, since the underlying tables are going imply some repetition,
-making DB DTOs generic over Id types is a big win.
-But! especially on the HTTP side,
-generics and macros limit the flexibility of the API
-by making seemingly related resources advance in lock-step.
-In WTP we are seeing now a relationship between User and Profile
-(that is: other folks at this event, and your own data.)
-There's also relationships between every list/item pair.
-These make it tempting to build general List/Item responses,
-or #[derive(ListResponse)] or whatever.
-However, every time I've considered that, it seems to me that every
-remaining part of the similar-looking resources are a point of variability.
-Breaking down elements that should be made automatic
-from those that should allow human expression in their variation
-is a key part of the design here, and needs to be considered carefully.
-
-In general: the DB side of things
-can be templated/automated to the degree it makes sense.
-Overdoing it will be felt quickly, and the concern is completely about
-making ergonomic queries of the database.
-
-HTTP DTOs should err on the side of repetition.
-Duplicating code now leaves room for variation later.
-Interactions with the client are going to be the most painful to unpick.
-
-Routing remains an area of interest.
-
-
-HTTP DTOs: a dilemma - do the DTOs get told `nested_at`, which feels a little out of scope,
-or do we hand them their routing::Entries to work with.
-Either could be made to work, but certainly lists would have to be given their item Entry as well....
-and then any other relationship would have to be provided by the consumer,
-ultimately coupling the evolution of a Resource to its consumers.
-`nested_at`, on the other hand, is the only piece of information
-that Resources (currently) require to determine routing for themselves,
-which is huge.
-It's possible, in future, that there would be more required,
-in which case a RouteContext might be needed instead. Still: a single Ctx instead
-of a bundle of `routing::Entry`s feels preferable - especially since
-there's no theoretical limit on that bundle, up to the whole route map.
