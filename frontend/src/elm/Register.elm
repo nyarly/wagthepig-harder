@@ -100,7 +100,7 @@ put model =
         _ =
             Debug.log "reg model" model
     in
-    HM.chain Auth.unauthenticated
+    HM.chain
         [ HM.browse [ "profile" ] (HM.ByType "CreateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", model.email ) ])
         ]
         []

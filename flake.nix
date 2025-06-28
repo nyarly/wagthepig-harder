@@ -32,6 +32,7 @@
             elmPackages.elm
             elmPackages.elm-test-rs
             elmPackages.elm-live
+            elmPackages.elm-doc-preview
             lightningcss
             pax-rs
 

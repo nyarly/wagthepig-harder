@@ -208,14 +208,14 @@ putGame creds etag res =
                 , resMsg = resultDispatch ErrGetGame (\_ -> CreatedGame)
                 , startAt = aff
                 , browsePlan = []
-                , creds = creds
+                , headers = Auth.credHeader creds
                 }
 
 
 fetchByNick : Auth.Cred -> Int -> V.Nick -> Cmd Msg
 fetchByNick creds event_id nick =
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
         , startAt = apiRoot
@@ -226,7 +226,7 @@ fetchByNick creds event_id nick =
 fetchFromUrl : Auth.Cred -> Int -> HM.Uri -> Cmd Msg
 fetchFromUrl creds _ url =
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
         , startAt = HM.link HM.GET url
@@ -255,5 +255,5 @@ roundTrip makeMsg update cred event_id nick =
         , makeMsg = makeMsg
         , browsePlan = browseToFetch (nickToVars cred event_id nick)
         , updateRes = updateRz
-        , creds = cred
+        , headers = Auth.credHeader cred
         }

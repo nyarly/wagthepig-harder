@@ -22,11 +22,10 @@ import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
-import Retries exposing (Tried, entryUpdater)
 import Task
 import Time
 import Toast
-import Updaters exposing (Updater, noChange)
+import Updaters exposing (Tried, Updater, entryUpdater, noChange)
 import ViewUtil as Eww
 
 
@@ -279,7 +278,7 @@ putEvent creds model =
                 , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
                 , startAt = aff
                 , browsePlan = [] -- List AffordanceExtractor
-                , creds = creds -- Auth.Cred
+                , headers = Auth.credHeader creds -- Auth.Cred
                 }
 
         Nothing ->
@@ -289,7 +288,7 @@ putEvent creds model =
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot

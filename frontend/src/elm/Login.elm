@@ -162,7 +162,7 @@ login email password =
                     ]
                 )
     in
-    HM.chain Auth.unauthenticated
+    HM.chain
         [ HM.browse [ "authenticate" ] (ByType "LoginAction") |> HM.fillIn (Dict.fromList [ ( "user_id", email ) ])
         ]
         []
@@ -173,10 +173,10 @@ login email password =
 
 logout : Auth.Cred -> Cmd Msg
 logout cred =
-    HM.chain cred
+    HM.chain
         [ HM.browse [ "authenticate" ] (ByType "LogoutAction") |> HM.fillIn (Dict.fromList [ ( "user_id", Auth.accountID cred ) ])
         ]
-        []
+        (Auth.credHeader cred)
         emptyBody
         emptyResponse
         LoggedOut

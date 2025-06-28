@@ -107,10 +107,10 @@ updatePassword creds email password =
             Http.jsonBody
                 (E.object [ ( "new_password", E.string password ) ])
     in
-    HM.chain creds
+    HM.chain
         [ HM.browse [ "authenticate" ] (ByType "UpdateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", email ) ])
         ]
-        []
+        (Auth.credHeader creds)
         reqBody
         emptyResponse
         AuthResponse

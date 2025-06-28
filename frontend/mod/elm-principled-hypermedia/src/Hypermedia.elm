@@ -35,7 +35,6 @@ module Hypermedia exposing
 
 -- Not sure about these anymore
 
-import Auth
 import Dict exposing (Dict)
 import Http exposing (Resolver)
 import Json.Decode as D exposing (Decoder, decodeString)
@@ -159,48 +158,48 @@ type alias ResToMsg x a msg =
     Result x a -> msg
 
 
+{-| Pass a list of linkExtractors to nose, along with the handling for the final link
 
-{-
-   Pass a list of linkExtractors to nose, along with the handling for the final link
-     HM.chain creds [
-       HM.browse ["events"] (HM.ByType "ViewAction")
-     ] Http.emptyBody modelRes handleGetResult
+    HM.chain creds
+        [ HM.browse [ "events" ] (HM.ByType "ViewAction")
+        ]
+        Http.emptyBody
+        modelRes
+        handleGetResult
 
 -}
-
-
-chain : Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
+chain : List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
 chain =
     chainFrom (link GET "/api")
 
 
-chainFrom : Affordance -> Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chainFrom start cred extractors headers body makeRes toMsg =
+chainFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
+chainFrom start extractors headers body makeRes toMsg =
     let
         plan =
-            browseFrom start cred extractors headers body makeRes
+            browseFrom start extractors headers body makeRes
     in
     Task.attempt toMsg plan
 
 
-browseFrom : Affordance -> Auth.Cred -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> Task Http.Error a
-browseFrom start cred extractors headers body makeRes =
+browseFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> Task Http.Error a
+browseFrom start extractors headers body makeRes =
     let
         nextHop ex task =
-            task |> andThen (follow cred [] Http.emptyBody ex)
+            task |> andThen (follow headers Http.emptyBody ex)
     in
     List.foldl nextHop (Task.succeed start) extractors
-        |> andThen (follow cred headers body makeRes)
+        |> andThen (follow headers body makeRes)
 
 
-request : Auth.Cred -> Method -> String -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
-request maybeCred method url body makeRes toMsg =
+request : Method -> String -> List Http.Header -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
+request method url headers body makeRes toMsg =
     Task.attempt toMsg
-        (follow maybeCred [] body (\r -> makeRes r.body) (link method url))
+        (follow headers body (\r -> makeRes r.body) (link method url))
 
 
-follow : Auth.Cred -> List Http.Header -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
-follow maybeCred headers body makeRes aff =
+follow : List Http.Header -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
+follow headers body makeRes aff =
     Http.task
         (Debug.log "hop"
             { method = methodName aff.method
@@ -208,7 +207,7 @@ follow maybeCred headers body makeRes aff =
             , body = body
             , timeout = Nothing
             , resolver = baseResolver makeRes
-            , headers = Auth.credHeader maybeCred ++ headers
+            , headers = headers
             }
         )
 
@@ -421,33 +420,33 @@ methodDecoder =
             )
 
 
-jsonRequest : Auth.Cred -> Method -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-jsonRequest maybeCred method url body decoder toMsg =
+jsonRequest : Method -> String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+jsonRequest method url headers body decoder toMsg =
     let
         toRes =
             \b -> Result.mapError D.errorToString (D.decodeString decoder b)
     in
-    request maybeCred method url body toRes toMsg
+    request method url headers body toRes toMsg
 
 
-get : Auth.Cred -> String -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-get maybeCred url decoder toMsg =
-    jsonRequest maybeCred GET url Http.emptyBody decoder toMsg
+get : String -> List Http.Header -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+get url headers decoder toMsg =
+    jsonRequest GET url headers Http.emptyBody decoder toMsg
 
 
-put : Auth.Cred -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-put maybeCred url body decoder toMsg =
-    jsonRequest maybeCred PUT url body decoder toMsg
+put : String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+put url headers body decoder toMsg =
+    jsonRequest PUT url headers body decoder toMsg
 
 
-post : Auth.Cred -> String -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-post maybeCred url body decoder toMsg =
-    jsonRequest maybeCred POST url body decoder toMsg
+post : String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+post url headers body decoder toMsg =
+    jsonRequest POST url headers body decoder toMsg
 
 
-delete : Auth.Cred -> String -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-delete maybeCred url decoder toMsg =
-    jsonRequest maybeCred DELETE url Http.emptyBody decoder toMsg
+delete : String -> List Http.Header -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
+delete url headers decoder toMsg =
+    jsonRequest DELETE url headers Http.emptyBody decoder toMsg
 
 
 baseRzToRes : ResponseToResult a -> RzToRes Http.Error a

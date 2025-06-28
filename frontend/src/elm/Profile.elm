@@ -226,10 +226,10 @@ submitPasswordUpdate model =
                     ]
                 )
     in
-    HM.chain model.creds
+    HM.chain
         [ HM.browse [ "authenticate" ] (ByType "UpdateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", email ) ])
         ]
-        []
+        (Auth.credHeader model.creds)
         reqBody
         emptyResponse
         AuthResponse
@@ -259,7 +259,7 @@ putProfile creds model =
                 , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
                 , startAt = aff
                 , browsePlan = [] -- List AffordanceExtractor
-                , creds = creds -- Auth.Cred
+                , headers = Auth.credHeader creds -- Auth.Cred
                 }
 
         Nothing ->
@@ -270,7 +270,7 @@ fetchByCreds : Auth.Cred -> Cmd Msg
 fetchByCreds creds =
     --Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile creds (Auth.accountID creds)
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
         , startAt = apiRoot
@@ -281,7 +281,7 @@ fetchByCreds creds =
 fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
 fetchFromUrl creds url =
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
         , startAt = HM.link HM.GET url

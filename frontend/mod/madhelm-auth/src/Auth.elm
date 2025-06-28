@@ -1,4 +1,17 @@
-module Auth exposing (Cred, accountID, credExtractor, credHeader, fragmentParser, loadCred, loggedIn, logout, storageField, storeCred, testSuite, unauthenticated)
+module Auth exposing
+    ( Cred
+    , accountID
+    , credExtractor
+    , credHeader
+    , fragmentParser
+    , loadCred
+    , loggedIn
+    , logout
+    , storageField
+    , storeCred
+    , testSuite
+    , unauthenticated
+    )
 
 -- testing
 

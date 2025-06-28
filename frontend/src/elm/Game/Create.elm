@@ -132,5 +132,5 @@ putGame creds model =
         , resMsg = resultDispatch ErrGetGame (\_ -> CreatedGame)
         , startAt = apiRoot
         , browsePlan = browseToCreate (nickToVars creds model.event_id)
-        , creds = creds
+        , headers = Auth.credHeader creds
         }

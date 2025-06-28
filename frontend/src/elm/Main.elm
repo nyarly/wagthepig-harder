@@ -113,10 +113,6 @@ type alias Updater model msg =
     model -> ( model, Cmd msg )
 
 
-
--- [ requestUpdatePath (\m -> Router.WhatShouldWePlay m.nick.eventId (Just newsort)) ]
-
-
 onNav : Router.Target -> Updater Model Msg
 onNav target model =
     ( model

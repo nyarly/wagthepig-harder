@@ -13,7 +13,7 @@ import Json.Decode as D
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time
-import Updaters exposing (Updater, noChange)
+import Updaters exposing (Updater)
 
 
 type alias TableSorting =
@@ -208,10 +208,10 @@ eventShowButton event =
 
 fetch : Auth.Cred -> Cmd Msg
 fetch creds =
-    HM.chain creds
+    HM.chain
         [ HM.browse [ "events" ] (HM.ByType "ViewAction")
         ]
-        []
+        (Auth.credHeader creds)
         Http.emptyBody
         (HM.decodeBody decoder)
         handleGetResult

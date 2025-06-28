@@ -26,12 +26,11 @@ import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
-import Retries exposing (Tried, entryUpdater)
 import Router exposing (GameSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
 import Time
 import Toast
-import Updaters exposing (Updater, noChange)
+import Updaters exposing (Tried, Updater, entryUpdater, noChange)
 import ViewUtil as Ew
 
 
@@ -629,7 +628,7 @@ fetchOtherPlayers creds nick aff =
         handle =
             handleResponse { onResult = GotOtherPlayers nick, onErr = ErrOtherPlayers }
     in
-    HM.chainFrom aff creds [] [] Http.emptyBody (HM.decodeBody otherPlayersDecoder) handle
+    HM.chainFrom aff [] (Auth.credHeader creds) Http.emptyBody (HM.decodeBody otherPlayersDecoder) handle
 
 
 fetchGamesList : Auth.Cred -> Affordance -> Cmd Msg
@@ -641,7 +640,7 @@ fetchGamesList creds tmpl =
         handle =
             handleResponse { onResult = GotGameList, onErr = ErrGameList }
     in
-    HM.chainFrom (HM.fill credvars tmpl) creds [] [] Http.emptyBody (HM.decodeBody gameListDecoder) handle
+    HM.chainFrom (HM.fill credvars tmpl) [] (Auth.credHeader creds) Http.emptyBody (HM.decodeBody gameListDecoder) handle
 
 
 fetchBGGData : List Game -> Cmd Msg
@@ -652,7 +651,7 @@ fetchBGGData gameList =
 fetchByNick : Auth.Cred -> Int -> Cmd Msg
 fetchByNick creds id =
     Up.retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = decoder
         , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
         , startAt = apiRoot

@@ -18,7 +18,7 @@ environment:
   - ADMIN_EMAIL=nobody@nowhere.org
   - SMTP_CERT=../devsupport/tls/smtp/cert.crt
 
-unifiendbackend: &unifiedbackend
+unifiedbackend: &unifiedbackend
   live-elm-make:
     working_dir: frontend/src/
     command: watchexec -w elm/ elm make elm/Main.elm --output=../dist/js/main.js --debug
@@ -62,3 +62,12 @@ processes:
   css-bundle:
     working_dir: frontend/
     command: "watchexec -w src/css/ lightningcss --bundle --sourcemap --output-file dist/css/index.css src/css/main.css"
+  copy-assets:
+    working_dir: frontend/
+    command: "watchexec -w src/static/assets/ rsync -av src/static/assets/ dist/assets/"
+  copy-html:
+    working_dir: frontend/
+    command: "watchexec -w src/static/html/ rsync -av src/static/html/ dist/html/"
+  copy-ports:
+    working_dir: frontend/
+    command: "watchexec -w src/static/js/ports/ rsync -av src/static/js/ports dist/js/ports/"

@@ -1,0 +1,25 @@
+{
+  "type": "package",
+  "name": "nyarly/elm-principled-hypermedia",
+  "summary": "Consume Hydra/JSON-LD APIs in a principled way",
+  "license": "MPL-2.0",
+  "version": "0.1.0",
+  "exposed-modules": [
+    "Hypermedia",
+    "ResourceUpdate"
+  ],
+  "source-directories": [
+    "src",
+    "../madhelm-auth/src"
+  ],
+  "elm-version": "0.19.0 <= v < 0.20.0",
+  "dependencies": {
+    "elm/url": "1.0.0 <= v < 2.0.0",
+    "ericgj/elm-uri-template": "1.0.1 <= v < 2.0.0",
+    "elm/json": "1.1.3 <= v < 2.0.0",
+    "NoRedInk/elm-json-decode-pipeline": "1.0.1 <= v < 2.0.0",
+    "elm/http": "2.0.0 <= v < 3.0.0",
+    "elm/core": "1.0.5 <= v < 2.0.0"
+  },
+  "test-dependencies": {}
+}

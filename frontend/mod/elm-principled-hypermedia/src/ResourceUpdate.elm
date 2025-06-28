@@ -12,7 +12,6 @@ module ResourceUpdate exposing
     , update
     )
 
-import Auth
 import Dict
 import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
@@ -132,18 +131,18 @@ type alias Create s msg =
     , resMsg : ResToMsg HM.Error () msg
     , startAt : Affordance
     , browsePlan : List AffordanceExtractor
-    , creds : Auth.Cred
+    , headers : List Http.Header
     }
 
 
 create : Create s msg -> Cmd msg
-create { creds, resource, etag, encode, resMsg, startAt, browsePlan } =
+create { headers, resource, etag, encode, resMsg, startAt, browsePlan } =
     let
         etagH =
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
         trip =
-            HM.browseFrom startAt creds browsePlan etagH (resource |> encode >> Http.jsonBody) emptyResponse
+            HM.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) emptyResponse
     in
     Task.attempt resMsg trip
 
@@ -157,17 +156,15 @@ type alias Retrieve r msg =
     , resMsg : ResToMsg HM.Error ( Etag, r ) msg
     , startAt : Affordance
     , browsePlan : List AffordanceExtractor
-    , creds : Auth.Cred
+    , headers : List Http.Header
     }
 
 
 retrieve : Retrieve r msg -> Cmd msg
-retrieve { creds, decoder, resMsg, startAt, browsePlan } =
+retrieve { headers, decoder, resMsg, startAt, browsePlan } =
     let
         trip =
-            HM.browseFrom startAt creds browsePlan [] Http.emptyBody (modelRes decoder)
-
-        -- HM.chain creds browsePlan [] (resource |> encode >> Http.jsonBody) (putResponse decoder) (handlePutResult makeMsg)
+            HM.browseFrom startAt browsePlan headers Http.emptyBody (modelRes decoder)
     in
     Task.attempt resMsg trip
 
@@ -184,24 +181,24 @@ type alias Update s r msg =
     , resMsg : ResToMsg HM.Error ( Etag, r ) msg
     , startAt : Affordance
     , browsePlan : List AffordanceExtractor
-    , creds : Auth.Cred
+    , headers : List Http.Header
     }
 
 
 update : Update s r msg -> Cmd msg
-update { creds, resource, etag, encode, decoder, resMsg, startAt, browsePlan } =
+update { headers, resource, etag, encode, decoder, resMsg, startAt, browsePlan } =
     let
         etagH =
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
         trip =
-            HM.browseFrom startAt creds browsePlan etagH (resource |> encode >> Http.jsonBody) (putResponse decoder)
+            HM.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
                 |> Task.andThen followHop
 
         followHop rep =
             case rep of
                 Hop url ->
-                    HM.browseFrom (HM.link HM.GET url) creds [] [] Http.emptyBody (landPutResponse decoder)
+                    HM.browseFrom (HM.link HM.GET url) [] headers Http.emptyBody (landPutResponse decoder)
 
                 Got e res ->
                     Task.succeed ( e, res )
@@ -217,15 +214,15 @@ type alias Delete msg =
     { resMsg : ResToMsg HM.Error () msg
     , startAt : Affordance
     , browsePlan : List AffordanceExtractor
-    , creds : Auth.Cred
+    , headers : List Http.Header
     }
 
 
 delete : Delete msg -> Cmd msg
-delete { creds, resMsg, startAt, browsePlan } =
+delete { headers, resMsg, startAt, browsePlan } =
     let
         trip =
-            HM.browseFrom startAt creds browsePlan [] Http.emptyBody emptyResponse
+            HM.browseFrom startAt browsePlan headers Http.emptyBody emptyResponse
     in
     Task.attempt resMsg trip
 
@@ -236,12 +233,12 @@ type alias RoundTrip r msg =
     , makeMsg : MakeMsg Http.Error r msg
     , browsePlan : List AffordanceExtractor
     , updateRes : r -> Result Http.Error ( r, Affordance )
-    , creds : Auth.Cred
+    , headers : List Http.Header
     }
 
 
 roundTrip : RoundTrip rz msg -> Cmd msg
-roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
+roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, headers } =
     let
         doUpdate ( e, r ) =
             case updateRes r of
@@ -255,11 +252,11 @@ roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, creds } =
             handlePutResult makeMsg
 
         trip =
-            HM.browseFrom (HM.link HM.GET "/api") creds browsePlan [] HM.emptyBody (modelRes decoder)
+            HM.browseFrom (HM.link HM.GET "/api") browsePlan headers HM.emptyBody (modelRes decoder)
                 |> Task.andThen doUpdate
                 |> Task.andThen
                     (\( etag, resource, aff ) ->
-                        HM.browseFrom aff creds [] (etagHeader etag) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                        HM.browseFrom aff [] (etagHeader etag ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
                     )
     in
     Task.attempt toMsg trip

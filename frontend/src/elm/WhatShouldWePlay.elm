@@ -24,11 +24,10 @@ import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
 import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlayersDecoder, playerDecoder, playerName)
 import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
-import Retries exposing (Tried)
 import Router exposing (ReccoSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybes, sortingHeader)
 import Toast
-import Updaters exposing (Updater, noChange)
+import Updaters exposing (Tried, Updater, noChange)
 import ViewUtil as Ew
 
 
@@ -186,7 +185,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
                 retryUpdater m =
                     ( { m | creds = creds }, Cmd.none )
             in
-            Retries.entryUpdater iface fetchUpdater retryUpdater updaters nick
+            Updaters.entryUpdater iface fetchUpdater retryUpdater updaters nick
 
         SelectUsers selectedIds ->
             localUpdate (\m -> ( { m | selectedIds = selectedIds }, Cmd.none ))
@@ -571,7 +570,7 @@ fetchEventPlayers creds nick =
             Dict.fromList [ ( "event_id", String.fromInt nick.eventId ) ]
     in
     retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = D.field "users" (D.list playerDecoder)
         , resMsg = resultDispatch ErrGetPlayers (\( _, ps ) -> GotPlayers ps)
         , startAt = apiRoot
@@ -589,14 +588,14 @@ sendRequest model =
         , resMsg = resultDispatch ErrGetRecco (\( _, r ) -> GotRecco r)
         , startAt = apiRoot
         , browsePlan = browseToPost (nickToVars model.creds model.nick)
-        , creds = model.creds
+        , headers = Auth.credHeader model.creds
         }
 
 
 fetchOtherPlayers : Auth.Cred -> Affordance -> Cmd Msg
 fetchOtherPlayers creds from =
     retrieve
-        { creds = creds
+        { headers = Auth.credHeader creds
         , decoder = otherPlayersDecoder
         , resMsg = resultDispatch ErrOtherPlayers (\( _, o ) -> GotOtherPlayers from.uri o)
         , startAt = from
