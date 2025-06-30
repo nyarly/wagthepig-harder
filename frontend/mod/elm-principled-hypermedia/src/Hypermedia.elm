@@ -1,34 +1,26 @@
 module Hypermedia exposing
     ( Method(..)
+    , methodName
     , Uri
     , Headers
     , Body
     , Status
     , Response
-    , Kind
     , Affordance
-    , OperationSelector(..)
-    , affordanceListDecoder
-    , selectAffordance
+    , Kind
     , link
     , browse
-    , browseFrom
-    , chain
-    , chainFrom
-    , decodeBody
+    , OperationSelector(..)
+    , selectAffordance
+    , affordanceListDecoder
     , TemplateVars
     , fill
     , fillIn
-    , get
-    , post
-    , put
-    , delete
     , Error
     , decodeMaybe
     , encodeMaybe
     , emptyBody
     , emptyResponse
-    -- re-exports so that consumers don't always have to bring in Http
     )
 
 {-| Definitations to support RESTful Hydra JSON-LD interfaces.
@@ -43,6 +35,7 @@ Resources via an operation(s) property.
 # REST primitives
 
 @docs Method
+@docs methodName
 @docs Uri
 @docs Headers
 @docs Body
@@ -60,21 +53,13 @@ it's what let's you know that there's an interface you can interact with.
 We also sometimes mark them with a JSON-LD @type attribute,
 which gives some information about what to expect from the interface.
 
-@docs Kind
 @docs Affordance
-@docs OperationSelector
-@docs affordanceListDecoder
-@docs selectAffordance
+@docs Kind
 @docs link
-
-
-## Browsing
-
 @docs browse
-@docs browseFrom
-@docs chain
-@docs chainFrom
-@docs decodeBody
+@docs OperationSelector
+@docs selectAffordance
+@docs affordanceListDecoder
 
 
 ## URI Templates
@@ -87,16 +72,6 @@ search for arbitrary terms with a "?q=term" URL parameter.
 @docs TemplateVars
 @docs fill
 @docs fillIn
-
-
-## Simple requests
-
-Rarely, you may want to make a quick GET or PUT.
-
-@docs get
-@docs post
-@docs put
-@docs delete
 
 
 # Conveniences and Utilities
@@ -114,11 +89,10 @@ Types re-exported from this module so that consumers can avoid importing Http di
 -- Not sure about these anymore
 
 import Dict exposing (Dict)
-import Http exposing (Resolver)
+import Http
 import Json.Decode as D exposing (Decoder, decodeString)
 import Json.Decode.Pipeline as DP
 import Json.Encode as E
-import Task exposing (Task, andThen)
 import Url.Interpolate
 
 
@@ -183,6 +157,8 @@ type alias Operation =
     }
 
 
+{-| Return a String version of a Method
+-}
 methodName : Method -> String
 methodName method =
     case method of
@@ -205,7 +181,7 @@ type alias Uri =
     String
 
 
-{-| JSON-LD @type attributes
+{-| JSON-LD Hydra Operation @type attributes, like "ViewAction", "FindAction" or "UpdateAction."
 -}
 type alias Kind =
     String
@@ -246,89 +222,19 @@ type alias ResponseToResult a =
     Response -> Result String a
 
 
-type alias BodyToRes x a =
-    String -> Result x a
+{-| The most basic HATEOS browsing function:
+given a `List String` that serves as a path into an object in a response,
+and the OperationSelector to pick an Operation,
+returns a function to extract an affordance.
 
+Use this function, together with `fill`and `fillIn` to
+construct a "browse plan": a list of AffordanceExtractors that
+functions like `LinkFollowing.chain` or `ResourceUpdate.update` require
 
-type alias RzToRes x a =
-    Http.Response String -> Result x a
-
-
-type alias ResToMsg x a msg =
-    Result x a -> msg
-
-
-{-| Pass a list of linkExtractors to nose, along with the handling for the final link
-
-    HM.chain creds
-        [ HM.browse [ "events" ] (HM.ByType "ViewAction")
-        ]
-        Http.emptyBody
-        modelRes
-        handleGetResult
-
--}
-chain : List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chain =
-    chainFrom (link GET "/api")
-
-
-{-| Like `chain` but allows you to start from an arbitrary point
--}
-chainFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
-chainFrom start extractors headers body makeRes toMsg =
-    let
-        plan =
-            browseFrom start extractors headers body makeRes
-    in
-    Task.attempt toMsg plan
-
-
-{-| Given a start point and a list of AffordanceExtractors,
-this function will fetch the first resource, and then follow links as directed,
-finally performing whatever action the makeRes function describes.
-
-    browseFrom start extractors headers body makeRes =
-
--}
-browseFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> Task Http.Error a
-browseFrom start extractors headers body makeRes =
-    let
-        nextHop ex task =
-            task |> andThen (follow headers Http.emptyBody ex)
-    in
-    List.foldl nextHop (Task.succeed start) extractors
-        |> andThen (follow headers body makeRes)
-
-
-{-| Make a generic request, with method, URI, headers and body defined
--}
-request : Method -> String -> List Http.Header -> Http.Body -> BodyToRes String a -> ResToMsg Http.Error a msg -> Cmd msg
-request method url headers body makeRes toMsg =
-    Task.attempt toMsg
-        (follow headers body (\r -> makeRes r.body) (link method url))
-
-
-{-| follow one "hop" of a browse chain
--}
-follow : List Http.Header -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
-follow headers body makeRes aff =
-    Http.task
-        (Debug.log "hop"
-            { method = methodName aff.method
-            , url = aff.uri
-            , body = body
-            , timeout = Nothing
-            , resolver = baseResolver makeRes
-            , headers = headers
-            }
-        )
-
-
-{-| The most basic HATEOS browsing function - given a list of String to find an object in a response,
-and the OperationSelector to pick an Operation, returns a function to extract an affordance.
-
-    browse at sel response =
+    -- browse at sel response =
+    [ HM.browse [ "events" ] (ByType "ViewAction")
+    , HM.browse [ "eventById" ] (ByType "FindAction") |> HM.fillIn vars
+    ]
 
 -}
 browse : List String -> OperationSelector -> AffordanceExtractor
@@ -383,37 +289,6 @@ fill vars aff =
     { aff | uri = Url.Interpolate.interpolate aff.uri vars }
 
 
-{-| convenience to decode the body of a HTTP response
--}
-decodeBody : D.Decoder resource -> { a | body : String } -> Result String resource
-decodeBody decoder res =
-    res.body
-        |> D.decodeString decoder
-        |> Result.mapError D.errorToString
-
-
-linkByName : String -> AffordanceExtractor
-linkByName =
-    doByName GET
-
-
-doByName : Method -> String -> AffordanceExtractor
-doByName method name response =
-    decodeString (D.dict D.value) response.body
-        |> Result.mapError D.errorToString
-        |> Result.andThen
-            (\links ->
-                case Dict.get name links of
-                    Just lv ->
-                        D.decodeValue D.string lv
-                            |> Result.mapError D.errorToString
-                            |> Result.map (\l -> link method l)
-
-                    Nothing ->
-                        Err (String.concat [ "No ", name, " link!" ])
-            )
-
-
 {-| Represents _how_ an operation is to be selected from a resource. Prefer `ByType`
 -}
 type OperationSelector
@@ -459,6 +334,9 @@ selectAffordance sel affordances =
 
 
 {-| Convenience decoders for extracting Affordances from API responses
+
+    D.map (HM.selectAffordance (ByType "FindAction")) HM.affordanceListDecoder
+
 -}
 affordanceListDecoder : Decoder (List Affordance)
 affordanceListDecoder =
@@ -518,68 +396,3 @@ methodDecoder =
                     _ ->
                         D.fail <| String.concat [ "trying to decode ", m, " as an HTTP method" ]
             )
-
-
-jsonRequest : Method -> String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-jsonRequest method url headers body decoder toMsg =
-    let
-        toRes =
-            \b -> Result.mapError D.errorToString (D.decodeString decoder b)
-    in
-    request method url headers body toRes toMsg
-
-
-{-| convenience for a quick JSON GET request
--}
-get : String -> List Http.Header -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-get url headers decoder toMsg =
-    jsonRequest GET url headers Http.emptyBody decoder toMsg
-
-
-{-| convenience for a quick JSON PUT request
--}
-put : String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-put url headers body decoder toMsg =
-    jsonRequest PUT url headers body decoder toMsg
-
-
-{-| convenience for a quick JSON POST request
--}
-post : String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-post url headers body decoder toMsg =
-    jsonRequest POST url headers body decoder toMsg
-
-
-{-| convenience for a quick JSON DELETE request
--}
-delete : String -> List Http.Header -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
-delete url headers decoder toMsg =
-    jsonRequest DELETE url headers Http.emptyBody decoder toMsg
-
-
-baseRzToRes : ResponseToResult a -> RzToRes Http.Error a
-baseRzToRes extractValue =
-    \response ->
-        case Debug.log "response" response of
-            Http.BadUrl_ url ->
-                Err (Http.BadUrl url)
-
-            Http.Timeout_ ->
-                Err Http.Timeout
-
-            Http.NetworkError_ ->
-                Err Http.NetworkError
-
-            -- Http.BadStatus means that we cannot extract knowledge from non-2xx responses
-            -- Or we could build a Response and pass it to extractValue in both cases;
-            -- would need to review existing uses
-            Http.BadStatus_ metadata _ ->
-                Err (Http.BadStatus metadata.statusCode)
-
-            Http.GoodStatus_ metadata body ->
-                Result.mapError Http.BadBody (Debug.log "extractValue" (extractValue (Response metadata.statusCode metadata.headers body)))
-
-
-baseResolver : ResponseToResult value -> Resolver Http.Error value
-baseResolver extractValue =
-    Http.stringResolver <| baseRzToRes extractValue

@@ -4,8 +4,6 @@ module ResourceUpdate exposing
     , update
     , delete
     , roundTrip
-    , MakeMsg
-    , Representation(..)
     , Etag
     , apiRoot
     , resultDispatch
@@ -17,10 +15,11 @@ module ResourceUpdate exposing
 We want to be able to
 
   - create a resource from whole cloth, and browse to "where to put it"
-      - then either load the server's response
-      - or fetch the response from the Location returned
-  - browse to a resource based on a "nickname" stored in a FE route
-  - edit and update (via a local affordance) a resource we have "in hand"
+    then, depending on the server's response, either decode the body of the response,
+    or fetch the response from the Location returned, and decode that.
+  - browse to a resource based on a "nickname" stored in a front-end route
+  - edit and update (via a local affordance) a resource we have "in hand," i.e. already loaded,
+    without having to browse all the way from the API root again.
 
 The core of this module are four functions: `create`, `retrieve`, `update` and `delete`.
 What differentiates these from the usual is two things:
@@ -55,13 +54,15 @@ It happens that the primary HTTP verbs encapsulate each of the four cases that a
 @docs retrieve
 @docs update
 @docs delete
+
+
+## An extra function
+
 @docs roundTrip
 
 
 ## Details Used by the Operation Functions
 
-@docs MakeMsg
-@docs Representation
 @docs Etag
 @docs apiRoot
 @docs resultDispatch
@@ -74,6 +75,7 @@ import Http
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
 import Json.Decode as D
 import Json.Encode as E
+import LocalUtilities as Utes
 import Task
 
 
@@ -91,7 +93,7 @@ import Task
 
    you'll want to define a few adaptors:
 
-   makeMsg : Auth.Cred -> Up.Representation Resource -> Msg -- going to be a case
+   makeMsg : Auth.Cred -> ResourceUpdate.Representation Resource -> Msg -- going to be a case
    nickToVars : nick -> Dict.Dict String String
    browseToIt : HM.TemplateVars -> List (Response -> Result String Affordance)
 
@@ -100,21 +102,13 @@ import Task
    makeMsg like....
    makeMsg cred rep =
      case rep of
-       Up.Loc aff -> Entered cred (Url aff)
-       Up.Res res out -> GotThing res out
-       Up.Error err -> ErrGetThing err
+       ResourceUpdate.Loc aff -> Entered cred (Url aff)
+       ResourceUpdate.Res res out -> GotThing res out
+       ResourceUpdate.Error err -> ErrGetThing err
 
    makeMsg = (then creds)
 -}
 {- The encodes the response from creating/updating a resource -}
-
-
-{-| A response from the server - a location, the etag of the resource, or an error
--}
-type Representation e r
-    = Loc Affordance
-    | Res Etag r
-    | Error e
 
 
 {-| Represents an Etag as used in conditional requests
@@ -133,17 +127,14 @@ etagHeader etag =
             []
 
 
-{-| Consumers of this module need to define a function of this shape.
--}
-type alias MakeMsg e r msg =
-    Representation e r -> msg
-
-
 type alias ResToMsg e r msg =
     Result e r -> msg
 
 
-{-| The default API root. A convenience for clients of servers that use this default.
+{-| The default API root: `/api`. A convenience for clients of servers that use this default.
+
+Properly, we should interrogate headers for the Hydra root. One day...
+
 -}
 apiRoot : Affordance
 apiRoot =
@@ -152,8 +143,12 @@ apiRoot =
 
 {-| Quick production of a ResMsg
 
+    Msg
+      = ErrGetResource e
+      | GotResource ( Etag, Resource )
+
     resMsg =
-        resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
+        resultDispatch ErrGetEvent GotEvent
 
 -}
 resultDispatch : (error -> a) -> (value -> a) -> Result error value -> a
@@ -162,7 +157,7 @@ resultDispatch fromErr fromOk =
 
 
 {-| Slighly more involved version of resultDispatch,
-that allows you to soncer the request when
+that allows you to inspect the request when
 producing errors.
 -}
 taggedResultDispatch : (req -> error -> msg) -> (req -> value -> msg) -> req -> Result error value -> msg
@@ -206,7 +201,7 @@ create { headers, resource, etag, encode, resMsg, startAt, browsePlan } =
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
         trip =
-            HM.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) emptyResponse
+            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) emptyResponse
     in
     Task.attempt resMsg trip
 
@@ -235,7 +230,7 @@ retrieve : Retrieve r msg -> Cmd msg
 retrieve { headers, decoder, resMsg, startAt, browsePlan } =
     let
         trip =
-            HM.browseFrom startAt browsePlan headers Http.emptyBody (modelRes decoder)
+            Utes.browseFrom startAt browsePlan headers Http.emptyBody (modelRes decoder)
     in
     Task.attempt resMsg trip
 
@@ -254,7 +249,7 @@ type alias Update s r msg =
 
 {-| Send data to the server and expect data in response
 
-    Up.update
+    ResourceUpdate.update
         { resource = model.resource -- s
         , etag = Just model.etag -- Maybe Etag
         , encode = encodeEvent -- s -> E.Value
@@ -273,18 +268,20 @@ update { headers, resource, etag, encode, decoder, resMsg, startAt, browsePlan }
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
         trip =
-            HM.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
-                |> Task.andThen followHop
-
-        followHop rep =
-            case rep of
-                Hop url ->
-                    HM.browseFrom (HM.link HM.GET url) [] headers Http.emptyBody (landPutResponse decoder)
-
-                Got e res ->
-                    Task.succeed ( e, res )
+            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                |> Task.andThen (followHop headers decoder)
     in
     Task.attempt resMsg trip
+
+
+followHop : List Http.Header -> D.Decoder r -> HopOrResource r -> Task.Task Http.Error ( Etag, r )
+followHop headers decoder rep =
+    case rep of
+        Hop url ->
+            Utes.browseFrom (HM.link HM.GET url) [] headers Http.emptyBody (landPutResponse decoder)
+
+        Got e res ->
+            Task.succeed ( e, res )
 
 
 type alias Delete msg =
@@ -309,7 +306,7 @@ delete : Delete msg -> Cmd msg
 delete { headers, resMsg, startAt, browsePlan } =
     let
         trip =
-            HM.browseFrom startAt browsePlan headers Http.emptyBody emptyResponse
+            Utes.browseFrom startAt browsePlan headers Http.emptyBody emptyResponse
     in
     Task.attempt resMsg trip
 
@@ -317,7 +314,7 @@ delete { headers, resMsg, startAt, browsePlan } =
 type alias RoundTrip r msg =
     { encode : r -> E.Value
     , decoder : D.Decoder r
-    , makeMsg : MakeMsg Http.Error r msg
+    , resMsg : ResToMsg HM.Error ( Etag, r ) msg
     , browsePlan : List AffordanceExtractor
     , updateRes : r -> Result Http.Error ( r, Affordance )
     , headers : List Http.Header
@@ -331,7 +328,10 @@ updateRes is
     updateRes : r -> Result Http.Error ( r, Affordance )
 
 and takes the decoded response and produces an updated resource and an extracted affordance to PUT the update to.
-Neatly, this all takes place in one Task chain.
+This all takes place in one neat Task chain.
+
+It's useful in cases were you might want to modify related resources e.g. with a "Like" button,
+where the saving of state should be almost invisible to the user.
 
     updateRz lr =
         let
@@ -344,10 +344,10 @@ Neatly, this all takes place in one Task chain.
 
             Nothing ->
                 Err (Http.BadStatus 429)
-    Up.roundTrip
+    ResourceUpdate.roundTrip
         { encode = encoder
         , decoder = decoder
-        , makeMsg = makeMsg
+        , resMsg = resMsg
         , browsePlan = browseToFetch (nickToVars cred event_id nick)
         , updateRes = updateRz
         , headers = Auth.credHeader cred
@@ -355,7 +355,7 @@ Neatly, this all takes place in one Task chain.
 
 -}
 roundTrip : RoundTrip rz msg -> Cmd msg
-roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, headers } =
+roundTrip { encode, decoder, resMsg, browsePlan, updateRes, headers } =
     let
         doUpdate ( e, r ) =
             case updateRes r of
@@ -365,18 +365,16 @@ roundTrip { encode, decoder, makeMsg, browsePlan, updateRes, headers } =
                 Err x ->
                     Task.fail x
 
-        toMsg =
-            handlePutResult makeMsg
-
         trip =
-            HM.browseFrom (HM.link HM.GET "/api") browsePlan headers HM.emptyBody (modelRes decoder)
+            Utes.browseFrom (HM.link HM.GET "/api") browsePlan headers HM.emptyBody (modelRes decoder)
                 |> Task.andThen doUpdate
                 |> Task.andThen
                     (\( etag, resource, aff ) ->
-                        HM.browseFrom aff [] (etagHeader etag ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                        Utes.browseFrom aff [] (etagHeader etag ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                            |> Task.andThen (followHop headers decoder)
                     )
     in
-    Task.attempt toMsg trip
+    Task.attempt resMsg trip
 
 
 type HopOrResource r
@@ -448,17 +446,3 @@ landPutResponse decoder res =
 
         other ->
             Err ("Unexpected status sending resource: " ++ String.fromInt other)
-
-
-handlePutResult : MakeMsg e r msg -> Result e (HopOrResource r) -> msg
-handlePutResult makeMsg res =
-    makeMsg <|
-        case res of
-            Ok (Hop url) ->
-                Loc (HM.link GET url)
-
-            Ok (Got etag rs) ->
-                Res etag rs
-
-            Err err ->
-                Error err

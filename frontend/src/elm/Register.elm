@@ -14,6 +14,7 @@ import Html.Attributes.Extra exposing (attributeMaybe)
 import Html.Events exposing (onSubmit)
 import Http
 import Hypermedia as HM exposing (Method(..), OperationSelector(..), emptyResponse)
+import LinkFollowing as HM
 import Json.Encode as E
 import Updaters exposing (Updater)
 import ViewUtil as Eww

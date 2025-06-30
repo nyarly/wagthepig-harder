@@ -6,7 +6,8 @@
   "version": "0.1.0",
   "exposed-modules": [
     "Hypermedia",
-    "ResourceUpdate"
+    "ResourceUpdate",
+    "LinkFollowing"
   ],
   "source-directories": [
     "src",

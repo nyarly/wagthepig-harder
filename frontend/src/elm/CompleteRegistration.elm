@@ -9,6 +9,7 @@ import Html.Events exposing (onSubmit)
 import Html.Extra as Html exposing (viewIf)
 import Http
 import Hypermedia as HM exposing (OperationSelector(..))
+import LinkFollowing as HM
 import Json.Encode as E
 import Router exposing (Target(..))
 import Updaters exposing (Updater)

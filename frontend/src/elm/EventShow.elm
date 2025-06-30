@@ -24,6 +24,7 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Iso8601
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
+import LinkFollowing as HM
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
 import Router exposing (GameSortBy(..))
@@ -582,13 +583,10 @@ updateGame { doUpdate, successMsg, failMsg } val creds event_id game_nick =
     let
         mkMsg rep =
             case rep of
-                Up.Loc _ ->
+                Ok _ ->
                     successMsg val game_nick
 
-                Up.Res _ _ ->
-                    successMsg val game_nick
-
-                Up.Error e ->
+                Err e ->
                     failMsg e
     in
     Game.Edit.roundTrip mkMsg (doUpdate val) creds event_id game_nick

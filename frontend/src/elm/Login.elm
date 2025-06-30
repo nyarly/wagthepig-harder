@@ -8,6 +8,7 @@ import Html.Events exposing (onClick, onSubmit)
 import Http exposing (Error(..))
 import Hypermedia as HM exposing (OperationSelector(..), emptyBody, emptyResponse)
 import Json.Encode as E
+import LinkFollowing as HM
 import Router exposing (Target(..))
 import Toast
 import Updaters exposing (Updater)

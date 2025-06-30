@@ -10,6 +10,7 @@ import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
 import Iso8601
 import Json.Decode as D
+import LinkFollowing as HM
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time

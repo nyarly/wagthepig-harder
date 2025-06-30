@@ -18,6 +18,7 @@ import Html.Events exposing (onSubmit)
 import Html.Extra exposing (viewIf)
 import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, OperationSelector(..), emptyResponse)
+import LinkFollowing as HM
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)

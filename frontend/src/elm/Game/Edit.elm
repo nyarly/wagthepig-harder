@@ -21,7 +21,7 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
-import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
+import ResourceUpdate as Up exposing (Etag, apiRoot, resultDispatch)
 import Router
 import Toast
 import Updaters exposing (Updater, childUpdate)
@@ -234,8 +234,8 @@ fetchFromUrl creds _ url =
         }
 
 
-roundTrip : Up.MakeMsg Http.Error LoadedResource msg -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
-roundTrip makeMsg update cred event_id nick =
+roundTrip : (Result Http.Error ( Etag, LoadedResource ) -> msg) -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
+roundTrip resMsg update cred event_id nick =
     let
         updateRz lr =
             let
@@ -252,7 +252,7 @@ roundTrip makeMsg update cred event_id nick =
     Up.roundTrip
         { encode = encoder
         , decoder = decoder
-        , makeMsg = makeMsg
+        , resMsg = resMsg
         , browsePlan = browseToFetch (nickToVars cred event_id nick)
         , updateRes = updateRz
         , headers = Auth.credHeader cred
