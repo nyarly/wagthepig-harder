@@ -70,4 +70,4 @@ processes:
     command: "watchexec -w src/static/html/ rsync -av src/static/html/ dist/html/"
   copy-ports:
     working_dir: frontend/
-    command: "watchexec -w src/static/js/ports/ rsync -av src/static/js/ports dist/js/ports/"
+    command: "watchexec -w src/static/js/ports/ rsync -av src/static/js/ports/ dist/js/ports/"

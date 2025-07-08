@@ -1,10 +1,10 @@
 {
   "type": "application",
   "source-directories": [
-    "../mod/elm-principled-hypermedia/src",
-    "../mod/elm-updaters/src",
-    "../mod/madhelm-auth/src",
-    "../mod/madhelm-viewutils/src",
+    "elm-mod/elm-principled-hypermedia/src",
+    "elm-mod/elm-updaters/src",
+    "elm-mod/madhelm-auth/src",
+    "elm-mod/madhelm-viewutils/src",
     "elm"
   ],
   "elm-version": "0.19.1",
