@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into events (\"name\", \"date\", \"where\", \"description\") values ($1, $2, $3, $4) returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamp",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76cd55aad33496b4243896e27fc648bb16402ddd7dfd3ea5039037c50e1c96fc"
+}

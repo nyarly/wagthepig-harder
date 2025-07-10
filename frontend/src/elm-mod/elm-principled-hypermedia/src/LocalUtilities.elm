@@ -30,15 +30,13 @@ browseFrom start extractors headers body makeRes =
 follow : List Http.Header -> Http.Body -> ResponseToResult a -> Affordance -> Task Http.Error a
 follow headers body makeRes aff =
     Http.task
-        (Debug.log "hop"
-            { method = methodName aff.method
-            , url = aff.uri
-            , body = body
-            , timeout = Nothing
-            , resolver = baseResolver makeRes
-            , headers = headers
-            }
-        )
+        { method = methodName aff.method
+        , url = aff.uri
+        , body = body
+        , timeout = Nothing
+        , resolver = baseResolver makeRes
+        , headers = headers
+        }
 
 
 baseResolver : ResponseToResult value -> Resolver Http.Error value
@@ -49,7 +47,7 @@ baseResolver extractValue =
 baseRzToRes : ResponseToResult a -> RzToRes Http.Error a
 baseRzToRes extractValue =
     \response ->
-        case Debug.log "response" response of
+        case response of
             Http.BadUrl_ url ->
                 Err (Http.BadUrl url)
 
@@ -66,4 +64,4 @@ baseRzToRes extractValue =
                 Err (Http.BadStatus metadata.statusCode)
 
             Http.GoodStatus_ metadata body ->
-                Result.mapError Http.BadBody (Debug.log "extractValue" (extractValue (Response metadata.statusCode metadata.headers body)))
+                Result.mapError Http.BadBody (extractValue (Response metadata.statusCode metadata.headers body))

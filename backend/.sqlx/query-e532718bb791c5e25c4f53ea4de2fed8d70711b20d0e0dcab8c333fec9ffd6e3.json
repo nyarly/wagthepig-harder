@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into interests\n                    (\"game_id\", \"notes\", \"can_teach\", \"user_id\")\n                    values ($1, $2, $3, (select id from users where email = $4))\n                on conflict (game_id, user_id) do update set\n                    (\"notes\", \"can_teach\") =\n                    ($2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e532718bb791c5e25c4f53ea4de2fed8d70711b20d0e0dcab8c333fec9ffd6e3"
+}

@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into users\n            (\"email\", \"name\", \"bgg_username\", \"encrypted_password\")\n            values ($1, $2, $3, 'empty password cannot log in') returning *",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "encrypted_password",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reset_password_token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "reset_password_sent_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "remember_created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "bgg_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "e86e78f9f7335cd2e79521910d4c3518769e20234cbe2c183b2be4f9e39bac96"
+}

@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update revocations set \"revoked\" = $2  where username = $1 returning *",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "revoked",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "clienthint",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "54462ac59f41960b155b2440a4b1fd234c50831f876a331b5d56aaf678e2757c"
+}

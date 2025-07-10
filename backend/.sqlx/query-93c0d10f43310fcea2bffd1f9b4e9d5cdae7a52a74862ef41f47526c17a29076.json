@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": " select * from revocations where revoked is not null and $1 < expires",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "revoked",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "clienthint",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "93c0d10f43310fcea2bffd1f9b4e9d5cdae7a52a74862ef41f47526c17a29076"
+}

@@ -31,7 +31,7 @@ clear name =
 loadAll : Value -> Dict String Value
 loadAll localValues =
     D.decodeValue (D.dict D.value) localValues
-        |> Result.mapError (\e -> Debug.log (D.errorToString e))
+        |> Result.mapError (\e -> D.errorToString e)
         |> Result.withDefault Dict.empty
 
 

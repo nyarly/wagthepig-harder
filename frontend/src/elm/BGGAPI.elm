@@ -122,7 +122,7 @@ shotgunGames : (a -> Maybe String) -> (a -> Result Error BGGThing -> msg) -> Lis
 shotgunGames getId mkMsg list =
     let
         fetchForItem game =
-            case getId (Debug.log "bgg-data-for" game) of
+            case getId game of
                 Just id ->
                     requestBGGItem (mkMsg game) id
 

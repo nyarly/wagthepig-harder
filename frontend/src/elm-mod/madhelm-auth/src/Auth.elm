@@ -71,7 +71,6 @@ loadCred : String -> Cred
 loadCred value =
     D.decodeString credDecoder value
         |> Result.mapError D.errorToString
-        |> Debug.log "loaded cred"
         |> Result.toMaybe
         |> Cred
 
@@ -185,4 +184,4 @@ dummyFlags =
             d
 
         Err msg ->
-            Debug.todo (D.errorToString msg)
+            D.errorToString msg

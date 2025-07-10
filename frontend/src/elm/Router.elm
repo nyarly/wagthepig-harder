@@ -152,7 +152,7 @@ reccoSortDict =
 
 routeToTarget : Url -> Maybe Target
 routeToTarget url =
-    Debug.log "route-to" (parse router (Debug.log "log-from" url))
+    parse router url
 
 
 

@@ -279,7 +279,7 @@ fillIn : TemplateVars -> AffordanceExtractor -> AffordanceExtractor
 fillIn vars affex =
     \r ->
         affex r
-            |> Result.map (\aff -> { aff | uri = Debug.log "fillIn" (Url.Interpolate.interpolate (Debug.log "aff.uri" aff.uri) (Debug.log "fill vars" vars)) })
+            |> Result.map (\aff -> { aff | uri = Url.Interpolate.interpolate aff.uri vars })
 
 
 {-| fill is appropriate for using at the head of a `chainFrom`, where the first request has to be constructed.

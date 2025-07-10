@@ -152,7 +152,7 @@ view : Model -> Maybe TableSorting -> List (Html Msg)
 view model maybeSort =
     let
         sorting =
-            sortDefault (Debug.log "event-sort" maybeSort)
+            sortDefault maybeSort
 
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting

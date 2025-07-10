@@ -426,7 +426,7 @@ gamesView : Model -> Maybe GameSorting -> List (Html Msg)
 gamesView model maybeSort =
     let
         sorting =
-            sortDefault (Debug.log "game-sort" maybeSort)
+            sortDefault maybeSort
 
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting

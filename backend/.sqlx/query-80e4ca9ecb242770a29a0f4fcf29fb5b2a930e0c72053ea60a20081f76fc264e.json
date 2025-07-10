@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from revocations where $1 > expires",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80e4ca9ecb242770a29a0f4fcf29fb5b2a930e0c72053ea60a20081f76fc264e"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into revocations\n                (\"expires\", \"username\", \"data\")\n            select $1 as expires, $2 as username, unnest($3::text[])\n            returning id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f6da295b74e76c68b59ed76f465500e08e62cbc30aae4162486855cb7283eba4"
+}

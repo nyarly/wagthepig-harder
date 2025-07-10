@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into games\n                (\"name\", \"min_players\", \"max_players\", \"bgg_link\",\n                \"duration_secs\", \"bgg_id\", \"pitch\", \"event_id\",  \"suggestor_id\")\n                values ($1, $2, $3, $4,\n                $5, $6, $7, $8, (select id from users where email = $9))\n                returning id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Int4",
+        "Varchar",
+        "Text",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5a6278dfdc6b48bf088882b4bfd7df9323907f8e86f7e4f1c3868820181807dc"
+}

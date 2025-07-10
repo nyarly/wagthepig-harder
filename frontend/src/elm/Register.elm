@@ -97,10 +97,6 @@ updaters { localUpdate } msg =
 
 put : Model -> Cmd Msg
 put model =
-    let
-        _ =
-            Debug.log "reg model" model
-    in
     HM.chain
         [ HM.browse [ "profile" ] (HM.ByType "CreateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", model.email ) ])
         ]

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select users.*\n            from users\n            join interests on interests.user_id = users.id\n            join games on interests.game_id = games.id\n            where interests.game_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "encrypted_password",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "reset_password_token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "reset_password_sent_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "remember_created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "bgg_username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "ee576494e0ed5a4b2c3f876325940e7a95ef3bcf3db9b6304f9cee1857a73e79"
+}

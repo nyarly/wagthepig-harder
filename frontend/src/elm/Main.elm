@@ -231,7 +231,7 @@ update msg model =
                     in
                     case parse of
                         Nothing ->
-                            Debug.log "elm passed empty href, wtf?" ( model, Cmd.none )
+                            ( model, Cmd.none )
 
                         Just _ ->
                             ( model, Nav.load href )
@@ -316,12 +316,12 @@ loadIntoModel key value model =
 
 routeToPage : Url.Url -> Model -> ( Model, Cmd Msg )
 routeToPage url model =
-    case ( Debug.log "model.url.path" model.url.path == Debug.log "url.path" url.path, Router.routeToTarget url ) of
+    case ( model.url.path == url.path, Router.routeToTarget url ) of
         -- If we route to the same page again, do nothing
         -- Debatable: query params might be significant, and only the page can know that
         -- XXX therefore, consider adding a Pages.queryUpdate to handle that case
         ( True, Just target ) ->
-            Debug.log "just updating page url" ( { model | page = target }, Cmd.none )
+            ( { model | page = target }, Cmd.none )
 
         ( False, Just target ) ->
             let

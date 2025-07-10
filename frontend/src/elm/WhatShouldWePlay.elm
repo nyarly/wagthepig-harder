@@ -406,7 +406,7 @@ reccoView : Model -> List Recco -> Maybe ( ReccoSortBy, SortOrder ) -> List (Htm
 reccoView model list maybeSort =
     let
         sorting =
-            sortDefault (Debug.log "game-sort" maybeSort)
+            sortDefault maybeSort
 
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting
@@ -429,7 +429,7 @@ reccoView model list maybeSort =
         activePlayers =
             case model.players of
                 Just players ->
-                    List.filter (\p -> List.member p.id (Debug.log "filter-against" activeIds)) (Debug.log "filtering" players)
+                    List.filter (\p -> List.member p.id activeIds) players
 
                 Nothing ->
                     []

@@ -94,7 +94,7 @@ view target models =
         wrapMsg msg htmls =
             List.map (Html.map msg) htmls
     in
-    case Debug.log "view-target" target of
+    case target of
         Router.CredentialedArrival _ _ ->
             []
 

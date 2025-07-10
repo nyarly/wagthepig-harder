@@ -395,7 +395,7 @@ modelRes : D.Decoder r -> { a | body : String, headers : HM.Headers } -> Result 
 modelRes decoder res =
     let
         etag =
-            Dict.get "etag" (Debug.log "headers" res.headers)
+            Dict.get "etag" res.headers
     in
     res.body
         |> D.decodeString decoder

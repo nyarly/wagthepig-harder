@@ -2,7 +2,7 @@
   description = "wagthepig is a web app to help with the What Are We Going to Play Game";
   inputs = {
     #nixpkgs.url = "github:nixos/nixpkgs/24.05";
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
     mkElmDerivation.url = "github:jeslie0/mkElmDerivation";
   };
@@ -18,7 +18,7 @@
       let
         pkgs = (
           import "${nixpkgs}" {
-            overlays = [ mkElmDerivation.overlay ];
+            overlays = [ mkElmDerivation.overlays.mkElmDerivation ];
             inherit system;
           }
         );
@@ -68,7 +68,7 @@
               '';
             };
 
-            wag-the-pig = pkgs.buildRustPackage rec {
+            wag-the-pig = pkgs.rustPlatform.buildRustPackage rec {
               crateName = "wag-the-pig";
 
               src = ./backend;
@@ -80,9 +80,9 @@
                 "migrations"
               ];
 
-              cargoHash = "sha256-A10110001101001100011111100001110101010001A=";
+              cargoHash = "sha256-Njd1ONwa2h7WjkBBYz64KvAKSdDm+OzogXQyFzUvGIo=";
 
-              nativeBuildInputs = runDeps;
+              nativeBuildInputs = buildDeps;
 
               buildInputs = buildDeps;
 
