@@ -92,6 +92,7 @@
               '';
 
               postInstall = ''
+                mkdir -p $migrations
                 cp migrations/* $migrations
               '';
 
