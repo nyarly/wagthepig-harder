@@ -1,15 +1,15 @@
 {
-config,
-lib,
-pkgs,
-...
+  config,
+  lib,
+  pkgs,
+  ...
 }:
 lib.mkIf config.services.wagthepig.enable (
   let
     cfg = config.services.wagthepig;
     package = cfg.package;
   in
-    {
+  {
     users = {
       users = {
         "${cfg.user}" = {
@@ -59,14 +59,14 @@ lib.mkIf config.services.wagthepig.enable (
         SQL
 
         pushd ${package.migrations};
-        ${pkgs.sqlx} migrate run
+        ${pkgs.sqlx} migrate run --source .
         popd
-        '';
+      '';
 
       script = ''
         export SMTP_PASSWORD=$(cat ${cfg.smtp.passwordPath})
         ${package}/bin/wagthepig-backend
-        '';
+      '';
     };
   }
 )
