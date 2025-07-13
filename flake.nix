@@ -1,7 +1,6 @@
 {
   description = "wagthepig is a web app to help with the What Are We Going to Play Game";
   inputs = {
-    #nixpkgs.url = "github:nixos/nixpkgs/24.05";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
     mkElmDerivation.url = "github:jeslie0/mkElmDerivation";

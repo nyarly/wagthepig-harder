@@ -5,23 +5,20 @@ self:
   ...
 }:
 let
-  inherit (lib) mkOption mkEnableOption;
+  inherit (lib) mkOption mkEnableOption mkPackageOption;
   inherit (lib.types)
     str
     submodule
-    package
     port
     bool
     attrsOf
+    nullOr
     ;
 in
 {
   services.wag-the-pig = {
     enable = mkEnableOption { name = "wagthepig"; };
-    package = mkOption {
-      type = package;
-      default = self.packages.wag-the-pig;
-    };
+    package = mkPackageOption self.packages "wag-the-pig" { };
     user = mkOption {
       type = str;
       default = "wagthepig";
@@ -30,13 +27,22 @@ in
       type = str;
       default = "wagthepig";
     };
-    statePath = mkOption {
-      type = str;
-      default = "/var/lib/wagthepig";
-    };
     adminEmail = mkOption {
       type = str;
       example = "admin@wagthepig.com";
+    };
+    listen = mkOption {
+      description = "the address and port to listen on";
+      type = submodule {
+        host = {
+          type = str;
+          default = "127.0.0.1";
+        };
+        port = {
+          type = port;
+          default = 3000;
+        };
+      };
     };
     canonDomain = mkOption {
       type = str;
@@ -97,8 +103,9 @@ in
         passwordPath = mkOption {
           type = str;
         };
+        # have to make this optional...
         certPath = mkOption {
-          type = str;
+          type = nullOr str;
           description = "the path to find the SMTP certificate";
         };
       };
