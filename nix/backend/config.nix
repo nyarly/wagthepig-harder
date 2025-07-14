@@ -35,54 +35,67 @@ lib.mkIf config.services.wag-the-pig.enable (
       };
     };
 
-    systemd.services.wag-the-pig = {
-      after = [
-        "network.target"
-        "postgresql.service"
-      ];
-      wants = [ ];
+    systemd.services.wag-the-pig =
+      let
+        preStart =
+          (pkgs.writeShellScriptBin "wagthepig-prestart" ''
+            set -e
 
-      wantedBy = [ "multi-user.target" ];
+            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
+            do $$
+            begin
+              create role ${cfg.database.user};
+              exception when duplicate_object then raise notice '%, skipping', sqlerrm using errcode = SQLSTATE;
+            end
+            $$;
+            SQL
 
-      stateDirectory = "wag-the-pig";
+            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL || echo "already exists"
+            create database ${cfg.database.name} with owner ${cfg.database.user};
+            SQL
 
-      environment =
-        {
-          LOCAL_ADDR = "${cfg.listen.host}:${toString cfg.listen.port}";
-          CANON_DOMAIN = cfg.canonDomain;
-          TRUST_FORWARDED_HEADER = toString cfg.trustForwarded;
-          AUTH_KEYPAIR = "%S/wag-the-pig/backend.keypair";
-          ADMIN_EMAIL = cfg.adminEmail;
-          SMTP_HOST = cfg.smtp.host;
-          SMTP_PORT = toString cfg.smtp.port;
-          SMTP_USERNAME = cfg.smtp.username;
-        }
-        // cfg.extraEnvironment
-        // maybeSMTPCert;
+            ${dbURL}
+            ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
+          '').overrideAttrs
+            (_: {
+              name = "unit-script-wagthepig-prestart";
+            });
+      in
+      {
+        after = [
+          "network.target"
+          "postgresql.service"
+        ];
+        wants = [ ];
 
-      preStart = ''
-        ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
-        do $$
-        begin
-          create role ${cfg.database.user};
-          exception when duplicate_object then raise notice '%, skipping', sqlerrm using errcode = SQLSTATE;
-        end
-        $$;
-        SQL
+        wantedBy = [ "multi-user.target" ];
 
-        ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL || echo "already exists"
-        create database ${cfg.database.name} with owner ${cfg.database.user};
-        SQL
+        serviceConfig = {
+          StateDirectory = "wag-the-pig";
+          User = cfg.user;
+          Group = cfg.group;
+          ExecPreStart = [ "!${lib.getExe preStart}" ];
+        };
 
-        ${dbURL}
-        ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
-      '';
+        environment =
+          {
+            LOCAL_ADDR = "${cfg.listen.host}:${toString cfg.listen.port}";
+            CANON_DOMAIN = cfg.canonDomain;
+            TRUST_FORWARDED_HEADER = toString cfg.trustForwarded;
+            AUTH_KEYPAIR = "%S/wag-the-pig/backend.keypair";
+            ADMIN_EMAIL = cfg.adminEmail;
+            SMTP_HOST = cfg.smtp.host;
+            SMTP_PORT = toString cfg.smtp.port;
+            SMTP_USERNAME = cfg.smtp.username;
+          }
+          // cfg.extraEnvironment
+          // maybeSMTPCert;
 
-      script = ''
-        ${dbURL}
-        export SMTP_PASSWORD=$(cat ${cfg.smtp.passwordPath})
-        ${package}/bin/wagthepig-backend
-      '';
-    };
+        script = ''
+          ${dbURL}
+          export SMTP_PASSWORD=$(cat ${cfg.smtp.passwordPath})
+          ${package}/bin/wagthepig-backend
+        '';
+      };
   }
 )
