@@ -1,11 +1,10 @@
-self:
+self-packages:
 {
   lib,
-  pkgs,
   ...
 }:
 let
-  inherit (lib) mkOption mkEnableOption mkPackageOption;
+  inherit (lib) mkOption mkEnableOption;
   inherit (lib.types)
     str
     submodule
@@ -13,12 +12,16 @@ let
     bool
     attrsOf
     nullOr
+    package
     ;
 in
 {
   services.wag-the-pig = {
     enable = mkEnableOption { name = "wagthepig"; };
-    package = mkPackageOption self.packages "wag-the-pig" { };
+    package = mkOption {
+      type = package;
+      default = self-packages.wag-the-pig;
+    };
     user = mkOption {
       type = str;
       default = "wagthepig";
@@ -30,19 +33,6 @@ in
     adminEmail = mkOption {
       type = str;
       example = "admin@wagthepig.com";
-    };
-    listen = mkOption {
-      description = "the address and port to listen on";
-      type = submodule {
-        host = {
-          type = str;
-          default = "127.0.0.1";
-        };
-        port = {
-          type = port;
-          default = 3000;
-        };
-      };
     };
     canonDomain = mkOption {
       type = str;
@@ -63,50 +53,77 @@ in
       type = attrsOf str;
       default = { };
     };
+    listen = mkOption {
+      description = "the address and port to listen on";
+
+      default = { };
+      type = submodule {
+        options = {
+          host = mkOption {
+            type = str;
+            default = "127.0.0.1";
+          };
+          port = mkOption {
+            type = port;
+            default = 3000;
+          };
+        };
+      };
+    };
     database = mkOption {
       description = "Configuration for the required PostgreSQL database.";
 
+      default = { };
       type = submodule {
-        user = mkOption {
-          type = str;
-          default = "wagthepig";
-        };
-        host = mkOption {
-          type = str;
-          default = "localhost";
-        };
-        port = mkOption {
-          type = port;
-          default = 5432;
-        };
-        name = mkOption {
-          type = str;
-          default = "wagthepig";
+        options = {
+          user = mkOption {
+            type = str;
+            default = "wagthepig";
+          };
+          host = mkOption {
+            type = str;
+            default = "localhost";
+          };
+          port = mkOption {
+            type = port;
+            default = 5432;
+          };
+          name = mkOption {
+            type = str;
+            default = "wagthepig";
+          };
+          passwordPath = mkOption {
+            type = nullOr str;
+            default = null;
+          };
         };
       };
     };
     smtp = mkOption {
       description = "configuration details for an SMTP MTA, used to send account updates etc with.";
       type = submodule {
-        host = mkOption {
-          type = str;
-          description = "the MTA host";
-        };
-        port = mkOption {
-          type = port;
-          default = 1025;
-        };
-        username = mkOption {
-          type = str;
-        };
-        # goes into SOPS
-        passwordPath = mkOption {
-          type = str;
-        };
-        # have to make this optional...
-        certPath = mkOption {
-          type = nullOr str;
-          description = "the path to find the SMTP certificate";
+        options = {
+          host = mkOption {
+            type = str;
+            description = "the MTA host";
+          };
+          port = mkOption {
+            type = port;
+            default = 1025;
+          };
+          username = mkOption {
+            type = str;
+          };
+          # goes into SOPS
+          passwordPath = mkOption {
+            type = str;
+          };
+          # have to make this optional...
+          certPath = mkOption {
+            type = nullOr str;
+            description = "the path to find the SMTP certificate";
+            default = null;
+          };
         };
       };
     };

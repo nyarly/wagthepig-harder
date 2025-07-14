@@ -106,10 +106,17 @@
               };
             };
           };
-        nixosModules.wag-the-pig = params: {
-          options = import nix/backend/options.nix self params;
-          config = import nix/backend/config.nix params;
-        };
+        nixosModules.wag-the-pig =
+          {
+            config,
+            lig,
+            pkgs,
+            ...
+          }@params:
+          {
+            options = import nix/backend/options.nix self.packages.${system} params;
+            config = import nix/backend/config.nix params;
+          };
         devShells.default = pkgs.mkShell {
           buildInputs =
             with pkgs;

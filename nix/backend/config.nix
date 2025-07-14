@@ -4,9 +4,9 @@
   pkgs,
   ...
 }:
-lib.mkIf config.services.wagthepig.enable (
+lib.mkIf config.services.wag-the-pig.enable (
   let
-    cfg = config.services.wagthepig;
+    cfg = config.services.wag-the-pig;
     package = cfg.package;
     maybeSMTPCert =
       if cfg.smtp.certPath != null then
@@ -17,7 +17,7 @@ lib.mkIf config.services.wagthepig.enable (
         { };
     dbPass = if cfg.database.passwordPath == null then "" else ":$(cat ${cfg.database.passwordPath})";
 
-    dbURL = "export DATABASE_URL=postgres:///${cfg.database.user}${dbPass}@${cfg.database.host}:${cfg.database.port}/${cfg.database.name}";
+    dbURL = "export DATABASE_URL=postgres:///${cfg.database.user}${dbPass}@${cfg.database.host}:${toString cfg.database.port}/${cfg.database.name}";
   in
   {
     users = {
@@ -26,7 +26,6 @@ lib.mkIf config.services.wagthepig.enable (
           name = cfg.user;
           group = cfg.group;
           extraGroups = [ "keys" ];
-          home = "${cfg.statePath}";
           isSystemUser = true;
         };
       };
@@ -36,7 +35,7 @@ lib.mkIf config.services.wagthepig.enable (
       };
     };
 
-    systemd.services.wagthepig = {
+    systemd.services.wag-the-pig = {
       after = [
         "network.target"
         "postgresql.service"
@@ -47,29 +46,29 @@ lib.mkIf config.services.wagthepig.enable (
 
       environment =
         {
-          LOCAL_ADDR = "${cfg.listen.host}:${cfg.listen.port}";
+          LOCAL_ADDR = "${cfg.listen.host}:${toString cfg.listen.port}";
           CANON_DOMAIN = cfg.canonDomain;
-          TRUST_FORWARDED_HEADER = cfg.trustForwarded;
-          AUTH_KEYPAIR = "%S/wagthepig/backend.keypair";
+          TRUST_FORWARDED_HEADER = toString cfg.trustForwarded;
+          AUTH_KEYPAIR = "%S/wag-the-pig/backend.keypair";
           ADMIN_EMAIL = cfg.adminEmail;
           SMTP_HOST = cfg.smtp.host;
-          SMTP_PORT = cfg.smtp.port;
+          SMTP_PORT = toString cfg.smtp.port;
           SMTP_USERNAME = cfg.smtp.username;
         }
         // cfg.extraEnvironment
         // maybeSMTPCert;
 
       preStart = ''
-        mkdir -p %S/wagthepig
-        chown ${cfg.user}:${cfg.group} -R %S/wagthepig
+        mkdir -p %S/wag-the-pig
+        chown ${cfg.user}:${cfg.group} -R %S/wag-the-pig
 
-        ${pkgs.psql} -h cfg.database.host -p cfg.database.port -U postgres <<SQL
+        ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
         create user if not exists ${cfg.database.user};
         create database if not exists ${cfg.database.name} with owner ${cfg.database.user};
         SQL
 
         ${dbURL}
-        ${pkgs.sqlx} migrate run --source ${package.migrations}
+        ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
       '';
 
       script = ''
