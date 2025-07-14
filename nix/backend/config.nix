@@ -17,7 +17,7 @@ lib.mkIf config.services.wag-the-pig.enable (
         { };
     dbPass = if cfg.database.passwordPath == null then "" else ":$(cat ${cfg.database.passwordPath})";
 
-    dbURL = "export DATABASE_URL=postgres:///${cfg.database.user}${dbPass}@${cfg.database.host}:${toString cfg.database.port}/${cfg.database.name}";
+    dbURL = "export DATABASE_URL=postgres://${cfg.database.user}${dbPass}@${cfg.database.host}:${toString cfg.database.port}/${cfg.database.name}";
   in
   {
     users = {
@@ -44,6 +44,8 @@ lib.mkIf config.services.wag-the-pig.enable (
 
       wantedBy = [ "multi-user.target" ];
 
+      stateDirectory = "wag-the-pig";
+
       environment =
         {
           LOCAL_ADDR = "${cfg.listen.host}:${toString cfg.listen.port}";
@@ -59,9 +61,6 @@ lib.mkIf config.services.wag-the-pig.enable (
         // maybeSMTPCert;
 
       preStart = ''
-        mkdir -p %S/wag-the-pig
-        chown ${cfg.user}:${cfg.group} -R %S/wag-the-pig
-
         ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
         do $$
         begin
