@@ -69,7 +69,10 @@ lib.mkIf config.services.wag-the-pig.enable (
           exception when duplicate_object then raise notice '%, skipping', sqlerrm using errcode = SQLSTATE;
         end
         $$;
-        create database if not exists ${cfg.database.name} with owner ${cfg.database.user};
+        SQL
+
+        ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL || echo "already exists"
+        create database ${cfg.database.name} with owner ${cfg.database.user};
         SQL
 
         ${dbURL}
