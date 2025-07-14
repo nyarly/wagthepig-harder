@@ -81,7 +81,7 @@ lib.mkIf config.services.wag-the-pig.enable (
           {
             LOCAL_ADDR = "${cfg.listen.host}:${toString cfg.listen.port}";
             CANON_DOMAIN = cfg.canonDomain;
-            TRUST_FORWARDED_HEADER = toString cfg.trustForwarded;
+            TRUST_FORWARDED_HEADER = lib.boolToString cfg.trustForwarded;
             AUTH_KEYPAIR = "%S/wag-the-pig/backend.keypair";
             ADMIN_EMAIL = cfg.adminEmail;
             SMTP_HOST = cfg.smtp.host;
