@@ -74,7 +74,7 @@ lib.mkIf config.services.wag-the-pig.enable (
           StateDirectory = "wag-the-pig";
           User = cfg.user;
           Group = cfg.group;
-          ExecPreStart = [ "!${lib.getExe preStart}" ];
+          ExecStartPre = [ "!${lib.getExe preStart}" ];
         };
 
         environment =
