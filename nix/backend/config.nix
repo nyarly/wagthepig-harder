@@ -41,7 +41,7 @@ lib.mkIf config.services.wag-the-pig.enable (
           (pkgs.writeShellScriptBin "wagthepig-prestart" ''
             set -e
 
-            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
+            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL'
             do $$
             begin
               create role ${cfg.database.user};
@@ -50,7 +50,7 @@ lib.mkIf config.services.wag-the-pig.enable (
             $$;
             SQL
 
-            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL || echo "already exists"
+            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL' || echo "already exists"
             create database ${cfg.database.name} with owner ${cfg.database.user};
             SQL
 
