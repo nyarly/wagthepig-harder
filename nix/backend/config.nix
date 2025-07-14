@@ -63,7 +63,6 @@ lib.mkIf config.services.wag-the-pig.enable (
         chown ${cfg.user}:${cfg.group} -R %S/wag-the-pig
 
         ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<SQL
-        create user if not exists ${cfg.database.user};
         do $$
         begin
           create role ${cfg.database.user};
