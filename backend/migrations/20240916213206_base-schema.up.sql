@@ -8,6 +8,33 @@ CREATE TABLE IF NOT EXISTS public.ar_internal_metadata (
 
 ALTER TABLE public.ar_internal_metadata OWNER TO wagthepig;
 
+CREATE TABLE IF NOT EXISTS public.users (
+    id bigint NOT NULL,
+    email character varying DEFAULT ''::character varying NOT NULL,
+    encrypted_password character varying DEFAULT ''::character varying NOT NULL,
+    reset_password_token character varying,
+    reset_password_sent_at timestamp without time zone,
+    remember_created_at timestamp without time zone,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL,
+    name character varying,
+    bgg_username character varying,
+    CONSTRAINT users_pkey PRIMARY KEY (id)
+);
+
+ALTER TABLE public.users OWNER TO wagthepig;
+
+CREATE SEQUENCE IF NOT EXISTS public.users_id_seq
+START WITH 1
+INCREMENT BY 1
+NO MINVALUE
+NO MAXVALUE
+CACHE 1;
+
+ALTER TABLE public.users_id_seq OWNER TO wagthepig;
+
+ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
 CREATE TABLE IF NOT EXISTS public.events (
     id bigint NOT NULL,
     name text,
@@ -96,33 +123,6 @@ CREATE TABLE IF NOT EXISTS public.schema_migrations (
 );
 
 ALTER TABLE public.schema_migrations OWNER TO wagthepig;
-
-CREATE TABLE IF NOT EXISTS public.users (
-    id bigint NOT NULL,
-    email character varying DEFAULT ''::character varying NOT NULL,
-    encrypted_password character varying DEFAULT ''::character varying NOT NULL,
-    reset_password_token character varying,
-    reset_password_sent_at timestamp without time zone,
-    remember_created_at timestamp without time zone,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL,
-    name character varying,
-    bgg_username character varying,
-    CONSTRAINT users_pkey PRIMARY KEY (id)
-);
-
-ALTER TABLE public.users OWNER TO wagthepig;
-
-CREATE SEQUENCE IF NOT EXISTS public.users_id_seq
-START WITH 1
-INCREMENT BY 1
-NO MINVALUE
-NO MAXVALUE
-CACHE 1;
-
-ALTER TABLE public.users_id_seq OWNER TO wagthepig;
-
-ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.events_id_seq'::regclass);
 

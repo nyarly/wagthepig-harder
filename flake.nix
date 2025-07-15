@@ -137,7 +137,7 @@
 
               process-compose
               watchexec
-              postgresql
+              postgresql_15
               sqlx-cli
               biscuit-cli
               mailpit

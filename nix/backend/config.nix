@@ -38,25 +38,28 @@ lib.mkIf config.services.wag-the-pig.enable (
     systemd.services.wag-the-pig =
       let
         preStart =
-          (pkgs.writeShellScriptBin "wagthepig-prestart" ''
-            set -e
+          (pkgs.writeShellScriptBin "wagthepig-prestart"
+            #bash
+            ''
+              set -e
 
-            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL'
-            do $$
-            begin
-              create role ${cfg.database.user};
-              exception when duplicate_object then raise notice '%, skipping', sqlerrm using errcode = SQLSTATE;
-            end
-            $$;
-            SQL
+              ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL'
+              do $$
+              begin
+                create role ${cfg.database.user};
+                exception when duplicate_object then raise notice '%, skipping', sqlerrm using errcode = SQLSTATE;
+              end
+              $$;
+              SQL
 
-            ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL' || echo "already exists"
-            create database ${cfg.database.name} with owner ${cfg.database.user};
-            SQL
+              ${pkgs.postgresql}/bin/psql -h ${cfg.database.host} -p ${toString cfg.database.port} -U postgres <<'SQL' || echo "already exists"
+              create database ${cfg.database.name} with owner ${cfg.database.user};
+              SQL
 
-            ${dbURL}
-            ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
-          '').overrideAttrs
+              ${dbURL}
+              ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
+            ''
+          ).overrideAttrs
             (_: {
               name = "unit-script-wagthepig-prestart";
             });
