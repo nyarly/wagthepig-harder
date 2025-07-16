@@ -2,7 +2,7 @@ module Events exposing (Model, Msg(..), init, updaters, view)
 
 import Auth
 import Event
-import Html exposing (Html, a, button, h1, table, td, text, th, thead, tr)
+import Html exposing (Html, a, button, div, h1, table, td, text, th, thead, tr)
 import Html.Attributes exposing (class, colspan, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
@@ -161,7 +161,7 @@ view model maybeSort =
             TableSort.sort sortWith sorting events
     in
     [ h1 [] [ text "Events" ]
-    , createEventButton model.resource
+    , div [ class "tools" ] [ createEventButton model.resource ]
     , table []
         [ thead []
             [ sortingHeader "Name" [ class "name" ] EventName

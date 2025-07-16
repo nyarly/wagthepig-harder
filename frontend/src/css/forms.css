@@ -15,7 +15,7 @@ form {
     label {
       font-weight: bolder;
       flex: 0 0 auto;
-      width: 12em;
+      width: 8em;
       text-align: right;
       padding: 0 1em;
     }
@@ -32,5 +32,6 @@ form {
 
   button {
     width: 30%;
+    align-self: center;
   }
 }

@@ -243,7 +243,7 @@ update msg model =
             ( loadIntoModel key value model, Cmd.none )
 
         SignOut ->
-            ( { model | creds = Auth.unauthenticated }, Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds)) )
+            ( { model | page = Router.Landing, creds = Auth.unauthenticated }, Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds)) )
 
         UrlChanged url ->
             routeToPage url model
@@ -360,11 +360,7 @@ view model =
                 [ a [ href (Router.buildFromTarget Router.Landing) ]
                     [ img [ src "/assets/wagthepig-med.png" ] []
                     ]
-                , ul [ class "menu" ]
-                    [ headerButton "Profile" "/profile"
-                    , headerButton "Events" "/events"
-                    , authButton model
-                    ]
+                , ul [ class "menu" ] (menuView model)
                 ]
                 :: (Pages.view model.page model.pages
                         |> wrapMsg
@@ -379,6 +375,19 @@ view model =
             )
         ]
     }
+
+
+menuView : Model -> List (Html Msg)
+menuView model =
+    if Auth.loggedIn model.creds then
+        [ headerButton "Profile" "/profile"
+        , headerButton "Events" "/events"
+        , li [] [ button [ class "header", onClick SignOut ] [ text "Sign Out" ] ]
+        ]
+
+    else
+        [ headerButton "Log In" "/login"
+        ]
 
 
 toastConfig : Toast.Config Msg
@@ -428,15 +437,6 @@ viewToast attributes toastInfo =
 stripToastInfo : Toast.Info c -> Toast.Info ()
 stripToastInfo info =
     Toast.Info info.id info.phase info.interaction ()
-
-
-authButton : Model -> Html Msg
-authButton model =
-    if Auth.loggedIn model.creds then
-        li [] [ button [ class "header", onClick SignOut ] [ text "Sign Out" ] ]
-
-    else
-        headerButton "Log In" "/login"
 
 
 headerButton : String -> String -> Html Msg

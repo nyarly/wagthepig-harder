@@ -15,7 +15,7 @@ import Dict
 import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
 import Game.View as G exposing (bggLink)
-import Html exposing (Html, a, button, dd, dl, dt, h3, img, li, p, span, table, td, text, th, thead, tr, ul)
+import Html exposing (Html, a, button, dd, div, dl, dt, h3, img, li, p, span, table, td, text, th, thead, tr, ul)
 import Html.Attributes exposing (class, href, src)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
@@ -413,9 +413,11 @@ eventView model =
                     ++ defPair "Time" (Event.formatTime ev)
                     ++ defPair "Location" ev.location
                 )
-            , a [ class "button", href (Router.buildFromTarget (Router.EventEdit ev.nick)) ] [ text "Edit Event" ]
-            , a [ class "button", href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
-            , a [ class "button", href (Router.buildFromTarget (Router.WhatShouldWePlay ev.nick Nothing)) ] [ text "What Should We Play?!" ]
+            , div [ class "tools" ]
+                [ a [ class "button", href (Router.buildFromTarget (Router.EventEdit ev.nick)) ] [ text "Edit Event" ]
+                , a [ class "button", href (Router.buildFromTarget (Router.CreateGame ev.nick)) ] [ text "Add a Game" ]
+                , a [ class "button", href (Router.buildFromTarget (Router.WhatShouldWePlay ev.nick Nothing)) ] [ text "What Should We Play?!" ]
+                ]
             ]
 
         Nothing ->

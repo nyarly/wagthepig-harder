@@ -1650,9 +1650,9 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "mattak"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56352c115e672eab69d991e43de6bc18d297dd36dadbe199052aafe59a45f654"
+checksum = "6dd2e4cc02b9baf9df6b57b832829cbcc2278822894f0859197cafa5f8f4982e"
 dependencies = [
  "axum",
  "axum-extra",

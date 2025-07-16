@@ -11,6 +11,7 @@
   --button-background-color: #009fc7;
   --table-even-row-color: #e7e7e7;
   --body-background-color: white;
+  --body-margin: 32px;
 }
 
 * {
@@ -30,11 +31,11 @@ body {
   background-color: var(--body-background-color);
   color: var(--main-text-color);
   font-family: verdana, arial, helvetica, sans-serif;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 18px;
-  margin: 32px;
-  border: 1px dotted grey;
-  /* distinguish the new page while migrating */
+  margin: var(--body-margin);
+  /* border: 1px dotted grey;
+  distinguish the new page while migrating */
 }
 
 nav {
@@ -45,8 +46,14 @@ nav {
 .footer {
   margin: 2em;
   text-align: center;
+  margin-top: auto;
 }
 
+.page {
+  min-height: calc(100vh - 2*var(--body-margin));
+  display: flex;
+  flex-flow: column nowrap;
+}
 
 .menu {
   margin: 0;
@@ -122,4 +129,17 @@ a.button span, button span {
   padding: 0 1em;
   display: inline-block;
   vertical-align: middle;
+}
+
+.account {
+  display: flex;
+  justify-content: center;
+}
+
+h1 {
+  text-align: center;
+}
+
+.need-reg {
+  text-align: right;
 }

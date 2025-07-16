@@ -3,7 +3,7 @@ module Login exposing (Model, Msg(..), Toast, init, logout, nextPageUpdater, upd
 import Auth
 import Dict
 import Html exposing (..)
-import Html.Attributes exposing (type_)
+import Html.Attributes exposing (class, type_)
 import Html.Events exposing (onClick, onSubmit)
 import Http exposing (Error(..))
 import Hypermedia as HM exposing (OperationSelector(..), emptyBody, emptyResponse)
@@ -25,7 +25,7 @@ type alias Model =
 
 init : Model
 init =
-    Model "" "" None Router.Landing
+    Model "" "" None (Router.Events Nothing)
 
 
 type Msg
@@ -56,9 +56,10 @@ view model =
         , Eww.inputPair [ type_ "password" ] "Password" model.password ChangePassword
         , button [ type_ "submit" ] [ text "Log in" ]
         ]
-    , p []
-        [ text "Don't have an account? No problem!"
-        , a [ onClick WantsReg ] [ text "Sign up here" ]
+    , div [ class "need-reg" ]
+        [ p [ class "need-reg" ]
+            [ text "Don't have an account? No problem!" ]
+        , a [ class "button", onClick WantsReg ] [ text "Sign up here" ]
         ]
     ]
 
@@ -77,7 +78,6 @@ type alias Interface base model msg =
 nextPageUpdater :
     { iface
         | localUpdate : Updater Model Msg -> Updater model msg
-        , sendToast : Toast -> Updater model msg
     }
     -> Router.Target
     -> Updater model msg
