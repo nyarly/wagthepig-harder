@@ -367,9 +367,9 @@ view model =
                    )
                 ++ [ Toast.render viewToast model.toastTray toastConfig
                    , div [ class "footer" ]
-                        [ a [ href "https://github.com/nyarly/wagthepig" ] [ text "Contribute!" ]
+                        [ a [ href "https://github.com/nyarly/wagthepig-harder" ] [ text "Contribute!" ]
                         , text " "
-                        , a [ href "https://github.com/nyarly/wagthepig/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
+                        , a [ href "https://github.com/nyarly/wagthepig/issues-harder" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
                         ]
                    ]
             )
