@@ -243,7 +243,12 @@ update msg model =
             ( loadIntoModel key value model, Cmd.none )
 
         SignOut ->
-            ( { model | page = Router.Landing, creds = Auth.unauthenticated }, Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds)) )
+            ( { model | creds = Auth.unauthenticated }
+            , Cmd.batch
+                [ Cmd.map PageMsg (Cmd.map Pages.LoginMsg (Login.logout model.creds))
+                , Nav.pushUrl model.key (Router.buildFromTarget Router.Landing)
+                ]
+            )
 
         UrlChanged url ->
             routeToPage url model
@@ -316,21 +321,26 @@ loadIntoModel key value model =
 
 routeToPage : Url.Url -> Model -> ( Model, Cmd Msg )
 routeToPage url model =
-    case ( model.url.path == url.path, Router.routeToTarget url ) of
+    case ( model.url.path == url.path, Router.routeToTarget url, Auth.loggedIn model.creds ) of
         -- If we route to the same page again, do nothing
         -- Debatable: query params might be significant, and only the page can know that
         -- XXX therefore, consider adding a Pages.queryUpdate to handle that case
-        ( True, Just target ) ->
+        ( _, Just Router.Landing, True ) ->
+            ( model
+            , Nav.pushUrl model.key (Router.buildFromTarget (Router.Events Nothing))
+            )
+
+        ( True, Just target, _ ) ->
             ( { model | page = target }, Cmd.none )
 
-        ( False, Just target ) ->
+        ( False, Just target, _ ) ->
             let
                 submsg =
                     Pages.pageNavMsg target model.creds
             in
             Pages.updaters interface submsg { model | page = target }
 
-        ( _, Nothing ) ->
+        ( _, Nothing, _ ) ->
             ( model, Nav.pushUrl model.key "/" )
 
 
