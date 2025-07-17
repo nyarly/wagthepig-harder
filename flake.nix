@@ -79,7 +79,7 @@
                 "migrations"
               ];
 
-              cargoHash = "sha256-Njd1ONwa2h7WjkBBYz64KvAKSdDm+OzogXQyFzUvGIo=";
+              cargoHash = "sha256-AkdsFb7M6zonKumyrJCD40xH0wFyCZY/FJd4w14Afyg=";
 
               nativeBuildInputs = buildDeps;
 
