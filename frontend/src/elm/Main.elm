@@ -369,7 +369,7 @@ view model =
                    , div [ class "footer" ]
                         [ a [ href "https://github.com/nyarly/wagthepig-harder" ] [ text "Contribute!" ]
                         , text " "
-                        , a [ href "https://github.com/nyarly/wagthepig/issues-harder" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
+                        , a [ href "https://github.com/nyarly/wagthepig-harder/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
                         ]
                    ]
             )
