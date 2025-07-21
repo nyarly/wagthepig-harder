@@ -184,9 +184,9 @@ view showInterest model =
         dnum =
             withDefault 0
     in
-    [ div [ class "field" ]
+    [ div [ class "field search" ]
         (Eww.bareInputPair [] "Name" (dstr game.name) ChangeName
-            ++ [ button [ type_ "button", onClick SearchName, Eww.disabledMaybe game.name ] [ text "Search" ] ]
+            ++ [ button [ type_ "button", onClick SearchName, Eww.disabledMaybe game.name ] [ Eww.svgIcon "search" ] ]
         )
     , searchResults foundGames
     , Eww.inputPair [] "MinPlayers" (String.fromInt (dnum game.minPlayers)) (numMsg ChangeMinPlayers)

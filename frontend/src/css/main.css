@@ -50,6 +50,8 @@ nav {
 }
 
 .page {
+  max-width: 1480px;
+  margin: 0 auto;
   min-height: calc(100vh - 2*var(--body-margin));
   display: flex;
   flex-flow: column nowrap;

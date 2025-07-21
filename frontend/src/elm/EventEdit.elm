@@ -13,7 +13,7 @@ module EventEdit exposing
 import Auth
 import Event exposing (browseToEvent, nickToVars)
 import Html exposing (Html, button, div, form, p, text)
-import Html.Attributes exposing (class, disabled, id, type_)
+import Html.Attributes exposing (class, disabled, id, step, type_, value)
 import Html.Attributes.Extra as Attr
 import Html.Events exposing (onClick, onSubmit)
 import Http exposing (Error(..))
@@ -137,7 +137,7 @@ view model =
     in
     [ form [ onSubmit Submit ]
         [ Eww.inputPair [] "Name" ev.name ChangeName
-        , Eww.inputPair [ type_ "datetime-local" ] "Time" (Iso8601.fromTime ev.time |> String.dropRight 1) ChangeTime
+        , Eww.inputPair [ type_ "datetime-local", step "60", value (timeWithMinutes ev.time) ] "Time" (Iso8601.fromTime ev.time |> String.dropRight 1) ChangeTime
         , Eww.inputPair [] "Location" ev.location ChangeLocation
         , div [ class "actions" ]
             [ button
@@ -152,6 +152,12 @@ view model =
             ]
         ]
     ]
+
+
+timeWithMinutes : Time.Posix -> String
+timeWithMinutes time =
+    Iso8601.fromTime time
+        |> String.dropRight 8
 
 
 viewToast : Toast.Info Toast -> List (Html Msg)
