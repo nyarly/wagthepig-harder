@@ -131,6 +131,7 @@
               elmPackages.elm
               elmPackages.elm-test-rs
               elmPackages.elm-live
+              elmPackages.elm-review
               elmPackages.elm-doc-preview
               lightningcss
               elm2nix
