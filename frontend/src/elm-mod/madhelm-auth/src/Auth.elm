@@ -175,6 +175,7 @@ testSuite =
 dummyFlags : String
 dummyFlags =
     let
+        data : Result D.Error String
         data =
             D.decodeString D.value "\"{\\\"accountID\\\": \\\"user@example.com\\\", \\\"token\\\": \\\"FAKETOKEN\\\"}\""
                 |> Result.andThen (D.decodeValue D.string)

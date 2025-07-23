@@ -1,6 +1,11 @@
 module Game.Edit exposing
-    ( Model
+    ( EventId
+    , GameId
+    , Interface
+    , LoadedResource
+    , Model
     , Msg(..)
+    , Resource
     , init
     , roundTrip
     , updaters
@@ -9,9 +14,8 @@ module Game.Edit exposing
     )
 
 import Auth
-import BGGAPI exposing (BGGGame(..))
+import BGGAPI exposing (BGGGame)
 import Dict
-import Game.Create exposing (putGame)
 import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
@@ -24,7 +28,7 @@ import Json.Encode as E
 import ResourceUpdate as Up exposing (Etag, apiRoot, resultDispatch)
 import Router
 import Toast
-import Updaters exposing (Updater, childUpdate)
+import Updaters exposing (Updater)
 
 
 type alias EventId =
@@ -60,7 +64,6 @@ type alias LoadedResource =
 
 type Msg
     = Entered Auth.Cred EventId GameId
-    | LoadLoc Affordance
     | Submit
     | CreatedGame
     | GotGame Up.Etag LoadedResource
@@ -141,11 +144,12 @@ updaters { requestNav, localUpdate, lowerModel, handleError, sendToast } msg =
         Entered creds ev i ->
             localUpdate (\m -> ( { m | event_id = ev, creds = creds }, fetchByNick creds ev (V.Nick i (Auth.accountID creds)) ))
 
-        LoadLoc aff ->
-            localUpdate (\m -> ( m, fetchFromUrl m.creds m.event_id aff.uri ))
-
         GameMsg gmsg ->
             let
+                interface :
+                    { localUpdate : (LoadedResource -> ( LoadedResource, Cmd V.Msg )) -> model -> ( model, Cmd msg )
+                    , sendToast : V.Toast -> model -> ( model, Cmd msg )
+                    }
                 interface =
                     { localUpdate = localUpdate << childUpdate
                     , sendToast = sendToast
@@ -223,22 +227,13 @@ fetchByNick creds event_id nick =
         }
 
 
-fetchFromUrl : Auth.Cred -> Int -> HM.Uri -> Cmd Msg
-fetchFromUrl creds _ url =
-    Up.retrieve
-        { headers = Auth.credHeader creds
-        , decoder = decoder
-        , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
-        , startAt = HM.link HM.GET url
-        , browsePlan = []
-        }
-
-
 roundTrip : (Result Http.Error ( Etag, LoadedResource ) -> msg) -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
 roundTrip resMsg update cred event_id nick =
     let
+        updateRz : { a | resource : V.Game, update : Maybe Affordance } -> Result Error ( { c | resource : V.Game }, Affordance )
         updateRz lr =
             let
+                rz : V.Game
                 rz =
                     update lr.resource
             in

@@ -41,16 +41,20 @@ config =
     , NoDebug.TodoOrToString.rule
         |> Rule.ignoreErrorsForDirectories [ "tests/" ]
     , NoExposingEverything.rule
+        |> Rule.ignoreErrorsForFiles [ "elm-mod/elm-principled-hypermedia/src/LocalUtilities.elm" ]
     , NoImportingEverything.rule []
     , NoMissingTypeAnnotation.rule
     , NoMissingTypeAnnotationInLetIn.rule
     , NoMissingTypeExpose.rule
+        |> Rule.ignoreErrorsForDirectories [ "elm-mod/" ]
     , NoSimpleLetBody.rule
     , NoPrematureLetComputation.rule
     , NoUnused.CustomTypeConstructors.rule []
+        |> Rule.ignoreErrorsForDirectories [ "elm-mod/" ]
     , NoUnused.CustomTypeConstructorArgs.rule
     , NoUnused.Dependencies.rule
     , NoUnused.Exports.rule
+        |> Rule.ignoreErrorsForDirectories [ "elm-mod/" ]
     , NoUnused.Parameters.rule
     , NoUnused.Patterns.rule
     , NoUnused.Variables.rule

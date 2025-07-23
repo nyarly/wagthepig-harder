@@ -2,7 +2,7 @@ module BGGAPI exposing
     ( BGGGame(..)
     , BGGThing
     , Error(..)
-    , requestBGGItem
+    , GameResult
     , requestBGGSearch
     , shotgunGames
     )
@@ -14,8 +14,8 @@ import Xml.Decode exposing (Decoder, andMap, decodeString, fail, intAttr, leakyL
 
 
 type Error
-    = GetErr Http.Error
-    | DecodeErr String
+    = GetErr
+    | DecodeErr
 
 
 type BGGGame
@@ -79,11 +79,11 @@ parseBggResult decodes msg res =
                     Ok decoded ->
                         Ok decoded
 
-                    Err err ->
-                        Err (DecodeErr err)
+                    Err _ ->
+                        Err DecodeErr
 
-            Err err ->
-                Err (GetErr err)
+            Err _ ->
+                Err GetErr
         )
 
 
@@ -121,6 +121,7 @@ primaryNameDecoder =
 shotgunGames : (a -> Maybe String) -> (a -> Result Error BGGThing -> msg) -> List a -> Cmd msg
 shotgunGames getId mkMsg list =
     let
+        fetchForItem : a -> Cmd msg
         fetchForItem game =
             case getId game of
                 Just id ->
@@ -145,11 +146,14 @@ decodeXmlEntities : String -> String
 decodeXmlEntities s =
     let
         -- 0xFFFD -> <?>
+        unrecognized : number
         unrecognized =
             65533
 
+        decodeEntity : { a | submatches : List (Maybe String), match : String } -> String
         decodeEntity m =
             let
+                firstSub : String
                 firstSub =
                     List.head m.submatches |> Maybe.withDefault (Just "") |> Maybe.withDefault ""
             in

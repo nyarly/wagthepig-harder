@@ -19,6 +19,7 @@ inputPair attrs name v event =
 bareInputPair : List (Attribute msg) -> String -> String -> (String -> msg) -> List (Html msg)
 bareInputPair attrs name v event =
     let
+        pid : String
         pid =
             String.toLower name
     in
@@ -30,6 +31,7 @@ bareInputPair attrs name v event =
 checkbox : List (Attribute msg) -> String -> Bool -> (Bool -> msg) -> Html msg
 checkbox attrs name tf event =
     let
+        pid : String
         pid =
             String.toLower name
     in

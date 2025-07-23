@@ -6,7 +6,9 @@ module Hypermedia exposing
     , Body
     , Status
     , Response
+    , ResponseToResult
     , Affordance
+    , AffordanceExtractor
     , Kind
     , link
     , browse
@@ -41,6 +43,7 @@ Resources via an operation(s) property.
 @docs Body
 @docs Status
 @docs Response
+@docs ResponseToResult
 
 
 # Affordance Based Browsing
@@ -54,6 +57,7 @@ We also sometimes mark them with a JSON-LD @type attribute,
 which gives some information about what to expect from the interface.
 
 @docs Affordance
+@docs AffordanceExtractor
 @docs Kind
 @docs link
 @docs browse
@@ -214,10 +218,14 @@ type alias Response =
     }
 
 
+{-| Extracts an Affordance from a response
+-}
 type alias AffordanceExtractor =
     ResponseToResult Affordance
 
 
+{-| Converts an HTTP response into a Result
+-}
 type alias ResponseToResult a =
     Response -> Result String a
 

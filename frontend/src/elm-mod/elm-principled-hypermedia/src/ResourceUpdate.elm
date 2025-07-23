@@ -72,7 +72,7 @@ It happens that the primary HTTP verbs encapsulate each of the four cases that a
 
 import Dict
 import Http
-import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
+import Hypermedia as HM exposing (Affordance, Response)
 import Json.Decode as D
 import Json.Encode as E
 import LocalUtilities as Utes
@@ -197,11 +197,13 @@ type alias Create s msg =
 create : Create s msg -> Cmd msg
 create { headers, resource, etag, encode, resMsg, startAt, browsePlan } =
     let
+        etagH : List Http.Header
         etagH =
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
+        trip : Task.Task Http.Error ()
         trip =
-            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) emptyResponse
+            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode |> Http.jsonBody) emptyResponse
     in
     Task.attempt resMsg trip
 
@@ -229,6 +231,7 @@ type alias Retrieve r msg =
 retrieve : Retrieve r msg -> Cmd msg
 retrieve { headers, decoder, resMsg, startAt, browsePlan } =
     let
+        trip : Task.Task Http.Error ( Etag, r )
         trip =
             Utes.browseFrom startAt browsePlan headers Http.emptyBody (modelRes decoder)
     in
@@ -264,9 +267,11 @@ type alias Update s r msg =
 update : Update s r msg -> Cmd msg
 update { headers, resource, etag, encode, decoder, resMsg, startAt, browsePlan } =
     let
+        etagH : List Http.Header
         etagH =
             Maybe.withDefault [] (Maybe.map etagHeader etag)
 
+        trip : Task.Task Http.Error ( Etag, r )
         trip =
             Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
                 |> Task.andThen (followHop headers decoder)
@@ -305,6 +310,7 @@ type alias Delete msg =
 delete : Delete msg -> Cmd msg
 delete { headers, resMsg, startAt, browsePlan } =
     let
+        trip : Task.Task Http.Error ()
         trip =
             Utes.browseFrom startAt browsePlan headers Http.emptyBody emptyResponse
     in
@@ -357,6 +363,7 @@ where the saving of state should be almost invisible to the user.
 roundTrip : RoundTrip rz msg -> Cmd msg
 roundTrip { encode, decoder, resMsg, browsePlan, updateRes, headers } =
     let
+        doUpdate : ( a, rz ) -> Task.Task Http.Error ( a, rz, Affordance )
         doUpdate ( e, r ) =
             case updateRes r of
                 Ok ( new, aff ) ->
@@ -365,6 +372,7 @@ roundTrip { encode, decoder, resMsg, browsePlan, updateRes, headers } =
                 Err x ->
                     Task.fail x
 
+        trip : Task.Task Http.Error ( Etag, rz )
         trip =
             Utes.browseFrom (HM.link HM.GET "/api") browsePlan headers HM.emptyBody (modelRes decoder)
                 |> Task.andThen doUpdate

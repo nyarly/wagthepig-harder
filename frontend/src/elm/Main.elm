@@ -11,9 +11,9 @@ import Auth
 import Browser
 import Browser.Navigation as Nav
 import Dict
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
+import Html exposing (Html, a, button, div, img, li, nav, p, s, text, ul)
+import Html.Attributes exposing (class, href, src)
+import Html.Events exposing (onClick)
 import Http exposing (Error(..))
 import Hypermedia exposing (Error)
 import Json.Encode exposing (Value)
@@ -88,9 +88,11 @@ init flags url key =
 
              |> Tuple.mapSecond (\c -> Cmd.batch [ c, Cmd.map ToastMsg toastCmd ])
         -}
+        startingTray : Toast.Tray content
         startingTray =
             Toast.tray
 
+        baseModel : Model
         baseModel =
             Model
                 key
@@ -100,9 +102,11 @@ init flags url key =
                 Auth.unauthenticated
                 startingTray
 
+        fromStore : Dict.Dict String Value
         fromStore =
             State.loadAll flags
 
+        model : Model
         model =
             Dict.foldl loadIntoModel baseModel fromStore
     in
@@ -335,6 +339,7 @@ routeToPage url model =
 
         ( False, Just target, _ ) ->
             let
+                submsg : Pages.Msg
                 submsg =
                     Pages.pageNavMsg target model.creds
             in
@@ -360,6 +365,7 @@ subscriptions _ =
 view : Model -> Browser.Document Msg
 view model =
     let
+        wrapMsg : List (Html Pages.Msg) -> List (Html Msg)
         wrapMsg =
             List.map (Html.map PageMsg)
     in
@@ -415,6 +421,7 @@ viewToast attributes toastInfo =
         unwrapToast info content =
             Toast.Info info.id info.phase info.interaction content
 
+        wrapHtml : List (Html Pages.Msg) -> List (Html Msg)
         wrapHtml =
             List.map (Html.map PageMsg)
     in

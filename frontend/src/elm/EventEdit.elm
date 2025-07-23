@@ -1,7 +1,9 @@
 module EventEdit exposing
     ( Bookmark(..)
+    , Interface
     , Model
     , Msg(..)
+    , Resource
     , Toast
     , forCreate
     , init
@@ -13,10 +15,10 @@ module EventEdit exposing
 import Auth
 import Event exposing (browseToEvent, nickToVars)
 import Html exposing (Html, button, div, form, p, text)
-import Html.Attributes exposing (class, disabled, id, step, type_, value)
+import Html.Attributes exposing (class, disabled, step, type_, value)
 import Html.Attributes.Extra as Attr
 import Html.Events exposing (onClick, onSubmit)
-import Http exposing (Error(..))
+import Http exposing (Error)
 import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..))
 import Iso8601
 import Json.Decode as D
@@ -132,6 +134,7 @@ type Msg
 view : Model -> List (Html Msg)
 view model =
     let
+        ev : Resource
         ev =
             model.resource
     in
@@ -186,9 +189,11 @@ type alias Interface base model msg =
 updaters : Interface base model msg -> Msg -> Updater model msg
 updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
     let
+        updateRes : (Resource -> Resource) -> model -> ( model, Cmd msg )
         updateRes f =
             localUpdate (\m -> ( { m | resource = f m.resource }, Cmd.none ))
 
+        justTried : { a | resource : { b | nick : c } } -> Maybe (Tried Msg c)
         justTried model =
             Just (Tried msg model.resource.nick)
     in
@@ -201,6 +206,7 @@ updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
 
                 Nickname id ->
                     let
+                        fetchUpdater : Model -> ( Model, Cmd Msg )
                         fetchUpdater m =
                             ( { m | creds = creds, retry = justTried m }
                             , fetchByNick creds id
@@ -255,6 +261,7 @@ maybeRetry :
     -> Updater model msg
 maybeRetry { sendToast, lowerModel } model =
     let
+        toast : Toast
         toast =
             case (lowerModel model).retry of
                 Just r ->

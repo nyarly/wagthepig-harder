@@ -95,9 +95,11 @@ changeSort by ( s, order ) =
 sort : (b -> item -> item -> Order) -> ( b, SortOrder ) -> List item -> List item
 sort sorter ( by, order ) list =
     let
+        sortf : item -> item -> Order
         sortf =
             sorter by
 
+        base : List item
         base =
             List.sortWith sortf list
     in
@@ -151,6 +153,7 @@ sortMaybes sortJust ml mr =
 compareMaybeBools : Maybe Bool -> Maybe Bool -> Order
 compareMaybeBools =
     let
+        compareBools : Bool -> Bool -> Order
         compareBools l r =
             case ( l, r ) of
                 ( True, False ) ->
@@ -159,7 +162,7 @@ compareMaybeBools =
                 ( False, True ) ->
                     LT
 
-                ( _, _ ) ->
+                _ ->
                     EQ
     in
     sortMaybes compareBools

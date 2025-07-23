@@ -1,4 +1,4 @@
-module Events exposing (Model, Msg(..), init, updaters, view)
+module Events exposing (Interface, Model, Msg(..), Resource, TableSorting, init, updaters, view)
 
 import Auth
 import Event
@@ -7,14 +7,14 @@ import Html.Attributes exposing (class, colspan, href)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Http exposing (Error)
-import Hypermedia as HM exposing (Affordance, OperationSelector(..), Uri)
+import Hypermedia as HM exposing (Affordance, Uri)
 import Iso8601
 import Json.Decode as D
 import LinkFollowing as HM
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time
-import Updaters exposing (Updater)
+import Updaters exposing (Updater, compose)
 
 
 type alias TableSorting =
@@ -115,8 +115,14 @@ updaters :
     -> Updater model msg
 updaters { localUpdate, requestCreateEvent, requestUpdatePath, handleError } msg =
     case msg of
-        Entered creds _ ->
-            localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
+        Entered creds sort ->
+            case sort of
+                Just _ ->
+                    compose (localUpdate (\model -> ( { model | creds = creds }, fetch creds )))
+                        (requestUpdatePath (Router.Events sort))
+
+                Nothing ->
+                    localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
 
         GotEvents new ->
             localUpdate (\m -> ( { m | resource = new }, Cmd.none ))
@@ -142,6 +148,7 @@ sortWith by l r =
 
         Date ->
             let
+                millis : Event -> Int
                 millis =
                     \e -> e.time |> Time.posixToMillis
             in
@@ -151,12 +158,15 @@ sortWith by l r =
 view : Model -> Maybe TableSorting -> List (Html Msg)
 view model maybeSort =
     let
+        sorting : ( EventSortBy, SortOrder )
         sorting =
             sortDefault maybeSort
 
+        sortingHeader : String -> List (Html.Attribute Msg) -> EventSortBy -> Html Msg
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting
 
+        sortEvents : List Event -> List Event
         sortEvents events =
             TableSort.sort sortWith sorting events
     in

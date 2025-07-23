@@ -169,18 +169,23 @@ type Toast
 view : Bool -> GameAndSearch gas -> List (Html Msg)
 view showInterest model =
     let
+        game : Game
         game =
             model.resource
 
+        foundGames : List BGGGame
         foundGames =
             model.bggSearchResults
 
+        numMsg : (Int -> a) -> String -> a
         numMsg msg v =
             msg (withDefault 0 (String.toInt v))
 
+        dstr : Maybe String -> String
         dstr =
             withDefault ""
 
+        dnum : Maybe number -> number
         dnum =
             withDefault 0
     in
@@ -203,9 +208,11 @@ view showInterest model =
 bggLink : { game | name : Maybe String, bggID : Maybe String } -> Html msg
 bggLink { name, bggID } =
     let
+        nameHTML : Html msg
         nameHTML =
             text (Maybe.withDefault "(name missing)" name)
 
+        makeLink : String -> Html msg
         makeLink id =
             a [ href ("https://boardgamegeek.com/boardgame/" ++ id) ] [ nameHTML ]
     in
@@ -262,95 +269,6 @@ interestedInput showInterest g =
         HtmlExtra.nothing
 
 
-gameUpdaters : (Updater Game Msg -> Updater model msg) -> Msg -> Updater model msg
-gameUpdaters gameLocalUpdate msg =
-    case msg of
-        ChangeName n ->
-            gameLocalUpdate (\m -> ( { m | name = Just n }, Cmd.none ))
-
-        ChangeMinPlayers v ->
-            gameLocalUpdate (\m -> ( { m | minPlayers = Just v }, Cmd.none ))
-
-        ChangeMaxPlayers v ->
-            gameLocalUpdate (\m -> ( { m | maxPlayers = Just v }, Cmd.none ))
-
-        ChangeDurationSecs l ->
-            gameLocalUpdate (\m -> ( { m | durationSecs = Just l }, Cmd.none ))
-
-        ChangeBggID i ->
-            gameLocalUpdate (\m -> ( { m | bggID = Just i }, Cmd.none ))
-
-        ChangePitch p ->
-            gameLocalUpdate (\m -> ( { m | pitch = Just p }, Cmd.none ))
-
-        ChangeInterested i ->
-            gameLocalUpdate (\m -> ( { m | interested = Just i }, Cmd.none ))
-
-        ChangeCanTeach t ->
-            gameLocalUpdate (\m -> ( { m | canTeach = Just t }, Cmd.none ))
-
-        ChangeNotes n ->
-            gameLocalUpdate (\m -> ( { m | notes = Just n }, Cmd.none ))
-
-        Pick thing ->
-            gameLocalUpdate
-                (\m ->
-                    ( { m
-                        | name = Just thing.name
-                        , bggID = Just thing.bggId
-                        , minPlayers = Just thing.minPlayers
-                        , maxPlayers = Just thing.maxPlayers
-                        , durationSecs = Just (thing.durationMinutes * 60)
-                      }
-                    , Cmd.none
-                    )
-                )
-
-        _ ->
-            Updaters.noChange
-
-
-searchUpdaters :
-    { iface
-        | searchLocalUpdate : Updater (List BGGGame) Msg -> Updater model msg
-        , sendToast : Toast -> Updater model msg
-    }
-    -> Msg
-    -> Updater model msg
-searchUpdaters { searchLocalUpdate, sendToast } msg =
-    case msg of
-        Pick thing ->
-            let
-                onlyPicked g =
-                    case g of
-                        SearchResult _ ->
-                            False
-
-                        Thing t ->
-                            t.bggId == thing.bggId
-            in
-            searchLocalUpdate (\m -> ( List.filter onlyPicked m, Cmd.none ))
-
-        BGGSearchResult r ->
-            case r of
-                Ok l ->
-                    searchLocalUpdate (\_ -> ( l, shotgunGames l ))
-
-                Err _ ->
-                    sendToast Unknown
-
-        BGGThingResult r ->
-            case r of
-                Ok newGame ->
-                    searchLocalUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
-
-                Err _ ->
-                    sendToast Unknown
-
-        _ ->
-            Updaters.noChange
-
-
 type alias Interface base gas model msg =
     { base
         | localUpdate : Updater (GameAndSearch gas) Msg -> Updater model msg
@@ -361,9 +279,11 @@ type alias Interface base gas model msg =
 updaters : Interface base gas model msg -> Msg -> Updater model msg
 updaters { localUpdate, sendToast } msg =
     let
+        gameLocalUpdate : Updater Game Msg -> model -> ( model, Cmd msg )
         gameLocalUpdate =
             localUpdate << childUpdate .resource (\m -> \g -> { m | resource = g }) identity
 
+        searchLocalUpdate : Updater (List BGGGame) Msg -> model -> ( model, Cmd msg )
         searchLocalUpdate =
             localUpdate << childUpdate .bggSearchResults (\m -> \g -> { m | bggSearchResults = g }) identity
     in
@@ -397,6 +317,7 @@ updaters { localUpdate, sendToast } msg =
 
         Pick thing ->
             let
+                onlyPicked : BGGGame -> Bool
                 onlyPicked g =
                     case g of
                         SearchResult _ ->
@@ -444,14 +365,6 @@ updaters { localUpdate, sendToast } msg =
                 )
 
 
-
-{-
-   Updaters.compose
-       (searchUpdaters { searchLocalUpdate = searchLocalUpdate, sendToast = sendToast } msg)
-       (gameUpdaters gameLocalUpdate msg)
--}
-
-
 viewToast : Toast.Info Toast -> List (Html Msg)
 viewToast toastInfo =
     case toastInfo.content of
@@ -462,6 +375,7 @@ viewToast toastInfo =
 shotgunGames : List BGGGame -> Cmd Msg
 shotgunGames list =
     let
+        getID : BGGGame -> Maybe String
         getID sres =
             case sres of
                 SearchResult res ->
@@ -476,6 +390,7 @@ shotgunGames list =
 enrichGame : List BGGGame -> BGGThing -> List BGGGame
 enrichGame list newGame =
     let
+        swapGame : BGGGame -> BGGGame
         swapGame oldGame =
             case oldGame of
                 SearchResult res ->

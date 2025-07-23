@@ -2,7 +2,7 @@ module Login exposing (Model, Msg(..), Toast, init, logout, nextPageUpdater, upd
 
 import Auth
 import Dict
-import Html exposing (..)
+import Html exposing (Html, a, button, div, form, h1, p, text)
 import Html.Attributes exposing (class, type_)
 import Html.Events exposing (onClick, onSubmit)
 import Http exposing (Error(..))
@@ -41,7 +41,7 @@ type Msg
 type AuthResponse
     = None
     | Success Auth.Cred
-    | Failed Http.Error
+    | Failed
 
 
 type Toast
@@ -86,7 +86,7 @@ nextPageUpdater { localUpdate } target =
 
 
 updaters : Interface base model msg -> Msg -> Updater model msg
-updaters ({ localUpdate, installNewCred, requestNav, lowerModel } as iface) msg =
+updaters ({ localUpdate, installNewCred, requestNav, lowerModel, handleError } as iface) msg =
     case msg of
         Entered ->
             Updaters.noChange
@@ -111,14 +111,21 @@ updaters ({ localUpdate, installNewCred, requestNav, lowerModel } as iface) msg 
 
                 Err err ->
                     Updaters.compose
-                        (localUpdate (\m -> ( { m | fromServer = Failed err, password = "" }, Cmd.none )))
+                        (localUpdate (\m -> ( { m | fromServer = Failed, password = "" }, Cmd.none )))
                         (handleServerError iface err)
 
         WantsReg ->
             requestNav Router.Register
 
-        LoggedOut _ ->
-            localUpdate (\m -> ( m, Auth.logout ))
+        LoggedOut res ->
+            case res of
+                Ok () ->
+                    localUpdate (\m -> ( m, Auth.logout ))
+
+                Err err ->
+                    Updaters.compose
+                        (localUpdate (\m -> ( m, Auth.logout )))
+                        (handleError err)
 
 
 handleServerError :
@@ -155,6 +162,7 @@ viewToast toastInfo =
 login : String -> String -> Cmd Msg
 login email password =
     let
+        reqBody : Http.Body
         reqBody =
             Http.jsonBody
                 (E.object

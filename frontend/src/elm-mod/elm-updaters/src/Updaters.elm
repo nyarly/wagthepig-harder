@@ -95,9 +95,11 @@ which is what this function is for. Generally, prefer pairwise use of `compose`
 composeList : List (Updater model msg) -> Updater model msg
 composeList updaters model =
     let
+        acc : ( model, List cmd )
         acc =
             ( model, [] )
 
+        reduce : Updater model msg -> ( model, List (Cmd msg) ) -> ( model, List (Cmd msg) )
         reduce updater ( mod, clist ) =
             let
                 ( newmod, cmd ) =
@@ -156,6 +158,7 @@ entryUpdater :
     -> Updater model msg
 entryUpdater ({ lowerModel, localUpdate } as iface) fetchUpdater retryUpdater updater nick model =
     let
+        doFetch : model -> ( model, Cmd msg )
         doFetch =
             localUpdate fetchUpdater
     in

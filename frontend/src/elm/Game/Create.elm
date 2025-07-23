@@ -1,14 +1,26 @@
-module Game.Create exposing (..)
+module Game.Create exposing
+    ( EventId
+    , Interface
+    , Model
+    , Msg(..)
+    , browseToCreate
+    , init
+    , nickToVars
+    , putGame
+    , updaters
+    , view
+    , viewToast
+    )
 
 import Auth
-import BGGAPI exposing (BGGGame(..))
+import BGGAPI exposing (BGGGame)
 import Dict
 import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
 import Html.Attributes exposing (class, href)
 import Html.Events exposing (onSubmit)
 import Http exposing (Error)
-import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
+import Hypermedia as HM exposing (Affordance, OperationSelector(..), Response)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
 import Router
 import Toast
@@ -77,16 +89,22 @@ type alias Interface base model msg =
 updaters : Interface base model msg -> Msg -> Updater model msg
 updaters { localUpdate, lowerModel, requestNav, sendToast, handleError } msg =
     let
+        updateRes : (V.Game -> V.Game) -> Model -> Model
         updateRes f m =
             { m | resource = f m.resource }
-
-        gameInterface =
-            { localUpdate = localUpdate << childUpdate identity (\_ -> identity) GameMsg
-            , sendToast = sendToast
-            }
     in
     case msg of
         GameMsg gmsg ->
+            let
+                gameInterface :
+                    { localUpdate : Updater Model V.Msg -> model -> ( model, Cmd msg )
+                    , sendToast : V.Toast -> model -> ( model, Cmd msg )
+                    }
+                gameInterface =
+                    { localUpdate = localUpdate << childUpdate identity (\_ -> identity) GameMsg
+                    , sendToast = sendToast
+                    }
+            in
             V.updaters gameInterface gmsg
 
         Entered creds ev ->

@@ -1,17 +1,17 @@
-module CompleteRegistration exposing (Model, Msg(..), init, updaters, view)
+module CompleteRegistration exposing (FromServer, Interface, Model, Msg(..), init, updaters, view)
 
 import Auth
 import Dict
-import Html exposing (..)
+import Html exposing (Html, form, h1, span, text)
 import Html.Attributes exposing (class, type_)
 import Html.Attributes.Extra exposing (attributeIf)
 import Html.Events exposing (onSubmit)
-import Html.Extra as Html exposing (viewIf)
+import Html.Extra exposing (viewIf)
 import Http
 import Hypermedia as HM exposing (OperationSelector(..))
-import LinkFollowing as HM
 import Json.Encode as E
-import Router exposing (Target(..))
+import LinkFollowing as HM
+import Router
 import Updaters exposing (Updater)
 import ViewUtil as Eww
 
@@ -41,7 +41,7 @@ type Msg
 type FromServer
     = None
     | Success
-    | Failed Http.Error -- XXX a 4xx response is only captured like that
+    | Failed -- XXX a 4xx response is only captured like that
 
 
 
@@ -52,9 +52,11 @@ type FromServer
 view : Model -> List (Html Msg)
 view model =
     let
+        passwordsMatch : Bool
         passwordsMatch =
             model.password == model.passwordAgain
 
+        passwordInputAttrs : List (Html.Attribute msg)
         passwordInputAttrs =
             [ type_ "password", attributeIf (not passwordsMatch) (class "input-problem") ]
     in
@@ -97,13 +99,14 @@ updaters { localUpdate, requestNav } msg =
                     Updaters.compose (localUpdate (\m -> ( { m | fromServer = Success }, Cmd.none )))
                         (requestNav Router.Login)
 
-                Err err ->
-                    localUpdate (\m -> ( { m | fromServer = Failed err }, Cmd.none ))
+                Err _ ->
+                    localUpdate (\m -> ( { m | fromServer = Failed }, Cmd.none ))
 
 
 updatePassword : Auth.Cred -> String -> String -> Cmd Msg
 updatePassword creds email password =
     let
+        reqBody : Http.Body
         reqBody =
             Http.jsonBody
                 (E.object [ ( "new_password", E.string password ) ])

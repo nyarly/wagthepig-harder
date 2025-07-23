@@ -1,7 +1,7 @@
-module Event exposing (..)
+module Event exposing (browseToEvent, formatTime, nickToVars)
 
 import Dict
-import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..), Response)
+import Hypermedia as HM exposing (Affordance, OperationSelector(..), Response)
 import Time
 
 

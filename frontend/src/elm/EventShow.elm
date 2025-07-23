@@ -1,7 +1,11 @@
 module EventShow exposing
     ( Bookmark(..)
+    , GameList
+    , GameSorting
+    , Interface
     , Model
     , Msg(..)
+    , Resource
     , Toast
     , init
     , updaters
@@ -28,7 +32,7 @@ import LinkFollowing as HM
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
 import Router exposing (GameSortBy(..))
-import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes, sortingHeader)
+import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes)
 import Time
 import Toast
 import Updaters exposing (Tried, Updater, entryUpdater, noChange)
@@ -153,7 +157,6 @@ mustHave emsg =
 
 type Bookmark
     = Nickname Int
-    | None
 
 
 type Msg
@@ -173,7 +176,7 @@ type Msg
     | ErrOtherPlayers HM.Error
     | ErrGetEvent HM.Error
     | ErrGameList HM.Error
-    | ErrGetBGGData BGGAPI.Error
+    | ErrGetBGGData
     | Retry Msg
 
 
@@ -195,6 +198,7 @@ type alias Interface base model msg =
 updaters : Interface base model msg -> Msg -> Updater model msg
 updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, sendToast } as iface) msg =
     let
+        justTried : Model -> Maybe (Tried Msg Int)
         justTried model =
             Maybe.map (\r -> Tried msg r.nick) model.resource
     in
@@ -203,6 +207,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
             case loc of
                 Nickname id ->
                     let
+                        fetchUpdater : Model -> ( Model, Cmd Msg )
                         fetchUpdater m =
                             ( { m | creds = creds, retry = justTried m }
                             , fetchByNick creds id
@@ -212,9 +217,6 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
                             ( { m | creds = creds }, Cmd.none )
                     in
                     entryUpdater iface fetchUpdater retryUpdater updaters id
-
-                None ->
-                    localUpdate (\m -> ( { m | creds = creds }, Cmd.none ))
 
         ChangeSort newsort ->
             \model ->
@@ -261,9 +263,11 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
 
         CloseOtherPlayers nick ->
             let
+                closeGame : Game -> Game
                 closeGame game =
                     { game | whoElse = closeOtherPlayers game.whoElse }
 
+                updateGames : Updater Model Msg
                 updateGames m =
                     ( { m
                         | games = gameItemUpdate nick closeGame m.games
@@ -275,12 +279,15 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
 
         GetOtherPlayers nick aff ->
             let
+                closeGame : Game -> Game
                 closeGame game =
                     { game | whoElse = closeOtherPlayers game.whoElse }
 
+                closeAll : Maybe (List Game) -> Maybe (List Game)
                 closeAll games =
                     Maybe.map (List.map closeGame) games
 
+                fetchOthers : Model -> ( Model, Cmd Msg )
                 fetchOthers m =
                     ( { m
                         | games = closeAll m.games
@@ -327,7 +334,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
         ErrOtherPlayers err ->
             handleErrorWithRetry (maybeRetry iface) err
 
-        ErrGetBGGData _ ->
+        ErrGetBGGData ->
             \model ->
                 let
                     toast =
@@ -427,12 +434,15 @@ eventView model =
 gamesView : Model -> Maybe GameSorting -> List (Html Msg)
 gamesView model maybeSort =
     let
+        sorting : ( GameSortBy, SortOrder )
         sorting =
             sortDefault maybeSort
 
+        sortingHeader : String -> List (Html.Attribute Msg) -> GameSortBy -> Html Msg
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting
 
+        sort : List Game -> List Game
         sort l =
             TableSort.sort sortWith sorting l
     in
@@ -463,6 +473,7 @@ gamesView model maybeSort =
 makeGameRow : Int -> Game -> ( String, Html Msg )
 makeGameRow event_id game =
     let
+        checkbox : Bool -> Html msg
         checkbox bool =
             if bool then
                 Ew.svgIcon "checkbox-checked"
@@ -489,11 +500,13 @@ makeGameRow event_id game =
         , td [ class "pitch" ] [ text (Maybe.withDefault "" game.pitch) ]
         , td [ class "me" ]
             [ let
+                current : Bool
                 current =
                     Maybe.withDefault True game.interested
               in
               button [ class "interest", onClick (UpdateGameInterest (not current) event_id game.nick) ] [ span [] [ text "Interested" ], checkbox current ]
             , let
+                current : Bool
                 current =
                     Maybe.withDefault True game.canTeach
               in
@@ -583,6 +596,7 @@ updateGame :
     -> Cmd Msg
 updateGame { doUpdate, successMsg, failMsg } val creds event_id game_nick =
     let
+        mkMsg : Result Error value -> Msg
         mkMsg rep =
             case rep of
                 Ok _ ->
@@ -625,6 +639,7 @@ handleResponse { onResult, onErr } res =
 fetchOtherPlayers : Auth.Cred -> G.Nick -> Affordance -> Cmd Msg
 fetchOtherPlayers creds nick aff =
     let
+        handle : Result Error OtherPlayers -> Msg
         handle =
             handleResponse { onResult = GotOtherPlayers nick, onErr = ErrOtherPlayers }
     in
@@ -634,9 +649,11 @@ fetchOtherPlayers creds nick aff =
 fetchGamesList : Auth.Cred -> Affordance -> Cmd Msg
 fetchGamesList creds tmpl =
     let
+        credvars : Dict.Dict String String
         credvars =
             Dict.fromList [ ( "user_id", Auth.accountID creds ) ]
 
+        handle : Result Error GameList -> Msg
         handle =
             handleResponse { onResult = GotGameList, onErr = ErrGameList }
     in
@@ -645,7 +662,7 @@ fetchGamesList creds tmpl =
 
 fetchBGGData : List Game -> Cmd Msg
 fetchBGGData gameList =
-    BGGAPI.shotgunGames .bggID (taggedResultDispatch (\_ -> ErrGetBGGData) (\game -> GotBGGData game.nick)) gameList
+    BGGAPI.shotgunGames .bggID (taggedResultDispatch (\_ -> \_ -> ErrGetBGGData) (\game -> GotBGGData game.nick)) gameList
 
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg

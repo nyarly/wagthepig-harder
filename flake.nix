@@ -2,6 +2,8 @@
   description = "wagthepig is a web app to help with the What Are We Going to Play Game";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    # Until https://github.com/NixOS/nixpkgs/pull/414495
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     mkElmDerivation.url = "github:jeslie0/mkElmDerivation";
   };
@@ -9,6 +11,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       flake-utils,
       mkElmDerivation,
     }:
@@ -117,35 +120,46 @@
             options = import nix/backend/options.nix self.packages.${system} params;
             config = import nix/backend/config.nix params;
           };
-        devShells.default = pkgs.mkShell {
-          buildInputs =
-            with pkgs;
-            [
-              cargo
-              cargo-expand
-              rustc
-              rust-analyzer
-              clippy
+        devShells.default =
+          let
+            unstable-pkgs = (
+              import "${nixpkgs}" {
+                overlays = [ mkElmDerivation.overlays.mkElmDerivation ];
+                inherit system;
+              }
+            );
 
-              nodejs_latest
-              elmPackages.elm
-              elmPackages.elm-test-rs
-              elmPackages.elm-live
-              elmPackages.elm-review
-              elmPackages.elm-doc-preview
-              lightningcss
-              elm2nix
+            elm-pkgs = unstable-pkgs.elmPackages;
+          in
+          pkgs.mkShell {
+            buildInputs =
+              with pkgs;
+              [
+                cargo
+                cargo-expand
+                rustc
+                rust-analyzer
+                clippy
 
-              process-compose
-              watchexec
-              postgresql_15
-              sqlx-cli
-              biscuit-cli
-              mailpit
-              openssl
-            ]
-            ++ buildDeps;
-        };
+                nodejs_latest
+                elm-pkgs.elm
+                elm-pkgs.elm-test-rs
+                elm-pkgs.elm-live
+                elm-pkgs.elm-review
+                elm-pkgs.elm-doc-preview
+                lightningcss
+                elm2nix
+
+                process-compose
+                watchexec
+                postgresql_15
+                sqlx-cli
+                biscuit-cli
+                mailpit
+                openssl
+              ]
+              ++ buildDeps;
+          };
       }
     );
 }

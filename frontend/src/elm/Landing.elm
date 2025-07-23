@@ -1,7 +1,7 @@
-module Landing exposing (..)
+module Landing exposing (Model, Msg(..), view, viewLink)
 
-import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html exposing (Html, a, div, h1, p, text)
+import Html.Attributes exposing (class, href)
 import Router
 
 

@@ -35,18 +35,10 @@ Rarely, you may want to make a quick GET or PUT.
 -}
 
 import Http
-import Hypermedia as HM exposing (Affordance, Method(..), Response, link)
+import Hypermedia as HM exposing (Affordance, AffordanceExtractor, Method(..), ResponseToResult, link)
 import Json.Decode as D exposing (Decoder)
 import LocalUtilities exposing (browseFrom, follow)
 import Task
-
-
-type alias AffordanceExtractor =
-    ResponseToResult Affordance
-
-
-type alias ResponseToResult a =
-    Response -> Result String a
 
 
 type alias BodyToRes x a =
@@ -78,6 +70,7 @@ chain =
 chainFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> ResToMsg Http.Error a msg -> Cmd msg
 chainFrom start extractors headers body makeRes toMsg =
     let
+        plan : Task.Task Http.Error a
         plan =
             browseFrom start extractors headers body makeRes
     in
@@ -102,6 +95,7 @@ request method url headers body makeRes toMsg =
 jsonRequest : Method -> String -> List Http.Header -> Http.Body -> Decoder a -> ResToMsg Http.Error a msg -> Cmd msg
 jsonRequest method url headers body decoder toMsg =
     let
+        toRes : String -> Result String a
         toRes =
             \b -> Result.mapError D.errorToString (D.decodeString decoder b)
     in

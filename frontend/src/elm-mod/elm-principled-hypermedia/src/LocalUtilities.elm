@@ -1,16 +1,8 @@
 module LocalUtilities exposing (..)
 
 import Http exposing (Resolver)
-import Hypermedia exposing (Affordance, Method(..), Response, methodName)
+import Hypermedia exposing (Affordance, AffordanceExtractor, Response, ResponseToResult, methodName)
 import Task exposing (Task, andThen)
-
-
-type alias AffordanceExtractor =
-    ResponseToResult Affordance
-
-
-type alias ResponseToResult a =
-    Response -> Result String a
 
 
 type alias RzToRes x a =
@@ -20,6 +12,7 @@ type alias RzToRes x a =
 browseFrom : Affordance -> List AffordanceExtractor -> List Http.Header -> Http.Body -> ResponseToResult a -> Task Http.Error a
 browseFrom start extractors headers body makeRes =
     let
+        nextHop : AffordanceExtractor -> Task Http.Error Affordance -> Task Http.Error Affordance
         nextHop ex task =
             task |> andThen (follow headers Http.emptyBody ex)
     in
