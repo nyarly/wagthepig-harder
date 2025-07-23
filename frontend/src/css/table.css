@@ -53,10 +53,6 @@ td.thumbnail {
 }
 
 .events {
-  table {
-    margin: 0 5vw;
-  }
-
   thead, tr {
     grid-template-columns: repeat(5, 1fr)
   }

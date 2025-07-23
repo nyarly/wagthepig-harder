@@ -231,7 +231,7 @@ fetchByNick creds event_id nick =
 roundTrip : (Result Http.Error ( Etag, LoadedResource ) -> msg) -> (V.Game -> V.Game) -> Auth.Cred -> Int -> V.Nick -> Cmd msg
 roundTrip resMsg update cred event_id nick =
     let
-        updateRz : { a | resource : V.Game, update : Maybe Affordance } -> Result Error ( { c | resource : V.Game }, Affordance )
+        updateRz : LoadedResource -> Result Error ( LoadedResource, Affordance )
         updateRz lr =
             case lr.update of
                 Just aff ->

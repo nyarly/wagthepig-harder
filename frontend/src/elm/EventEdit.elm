@@ -24,6 +24,7 @@ import Iso8601
 import Json.Decode as D
 import Json.Encode as E
 import ResourceUpdate as Up exposing (apiRoot, resultDispatch)
+import Router
 import Task
 import Time
 import Toast
@@ -121,12 +122,13 @@ decoder =
 
 type Msg
     = Entered Auth.Cred Bookmark
+    | GotEvent Up.Etag Resource
     | TimeNow Time.Posix
     | ChangeName String
     | ChangeTime String
     | ChangeLocation String
     | Submit
-    | GotEvent Up.Etag Resource
+    | Submitted Up.Etag Resource
     | ErrGetEvent HM.Error
     | Retry Msg
 
@@ -179,6 +181,7 @@ viewToast toastInfo =
 type alias Interface base model msg =
     { base
         | localUpdate : Updater Model Msg -> Updater model msg
+        , requestNav : Router.Target -> Updater model msg
         , sendToast : Toast -> Updater model msg
         , lowerModel : model -> Model
         , relogin : Updater model msg
@@ -187,7 +190,7 @@ type alias Interface base model msg =
 
 
 updaters : Interface base model msg -> Msg -> Updater model msg
-updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
+updaters ({ localUpdate, requestNav, handleErrorWithRetry, sendToast } as iface) msg =
     let
         updateRes : (Resource -> Resource) -> model -> ( model, Cmd msg )
         updateRes f =
@@ -217,6 +220,9 @@ updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
                     in
                     entryUpdater iface fetchUpdater retryUpdater updaters id
 
+        GotEvent etag ev ->
+            localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none ))
+
         TimeNow t ->
             updateRes (\r -> { r | time = t })
 
@@ -238,8 +244,10 @@ updaters ({ localUpdate, handleErrorWithRetry, sendToast } as iface) msg =
         Submit ->
             localUpdate (\m -> ( { m | retry = justTried m }, putEvent m.creds m ))
 
-        GotEvent etag ev ->
-            localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none ))
+        Submitted etag ev ->
+            Updaters.compose
+                (localUpdate (\m -> ( { m | etag = etag, resource = ev, retry = Nothing }, Cmd.none )))
+                (requestNav (Router.EventShow ev.nick Nothing))
 
         ErrGetEvent err ->
             handleErrorWithRetry (maybeRetry iface) err
@@ -288,7 +296,7 @@ putEvent creds model =
                 , etag = Just model.etag -- Maybe Etag
                 , encode = encodeEvent -- s -> E.Value
                 , decoder = decoder -- D.Decoder r
-                , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> GotEvent etag ps)
+                , resMsg = resultDispatch ErrGetEvent (\( etag, ps ) -> Submitted etag ps)
                 , startAt = aff
                 , browsePlan = [] -- List AffordanceExtractor
                 , headers = Auth.credHeader creds -- Auth.Cred
