@@ -1,5 +1,6 @@
 module EventShow exposing
     ( Bookmark(..)
+    , Game
     , GameList
     , GameSorting
     , Interface
@@ -337,6 +338,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
         ErrGetBGGData ->
             \model ->
                 let
+                    toast : Toast
                     toast =
                         case (lowerModel model).retry of
                             Just r ->
@@ -364,6 +366,7 @@ maybeRetry :
     -> Updater model msg
 maybeRetry { sendToast, lowerModel } model =
     let
+        toast : Toast
         toast =
             case (lowerModel model).retry of
                 Just r ->
@@ -438,16 +441,17 @@ gamesView model maybeSort =
         sorting =
             sortDefault maybeSort
 
-        sortingHeader : String -> List (Html.Attribute Msg) -> GameSortBy -> Html Msg
-        sortingHeader =
-            TableSort.sortingHeader ChangeSort sorting
-
         sort : List Game -> List Game
         sort l =
             TableSort.sort sortWith sorting l
     in
     case ( model.resource, model.games ) of
         ( Just ev, Just list ) ->
+            let
+                sortingHeader : String -> List (Html.Attribute Msg) -> GameSortBy -> Html Msg
+                sortingHeader =
+                    TableSort.sortingHeader ChangeSort sorting
+            in
             [ table []
                 [ thead []
                     [ th [ class "thumbnail" ] []

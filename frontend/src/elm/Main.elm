@@ -420,10 +420,6 @@ viewToast attributes toastInfo =
     let
         unwrapToast info content =
             Toast.Info info.id info.phase info.interaction content
-
-        wrapHtml : List (Html Pages.Msg) -> List (Html Msg)
-        wrapHtml =
-            List.map (Html.map PageMsg)
     in
     div attributes
         ((case toastInfo.content of
@@ -444,6 +440,11 @@ viewToast attributes toastInfo =
                 [ text "something weird went wrong - reach out to the devs!" ]
 
             PageToast subToast ->
+                let
+                    wrapHtml : List (Html Pages.Msg) -> List (Html Msg)
+                    wrapHtml =
+                        List.map (Html.map PageMsg)
+                in
                 Pages.viewToast (unwrapToast toastInfo subToast)
                     |> wrapHtml
          )

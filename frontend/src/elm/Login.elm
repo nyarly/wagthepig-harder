@@ -1,4 +1,4 @@
-module Login exposing (Model, Msg(..), Toast, init, logout, nextPageUpdater, updaters, view, viewToast)
+module Login exposing (AuthResponse, Interface, Model, Msg(..), Toast, init, logout, nextPageUpdater, updaters, view, viewToast)
 
 import Auth
 import Dict
@@ -9,7 +9,7 @@ import Http exposing (Error(..))
 import Hypermedia as HM exposing (OperationSelector(..), emptyBody, emptyResponse)
 import Json.Encode as E
 import LinkFollowing as HM
-import Router exposing (Target(..))
+import Router
 import Toast
 import Updaters exposing (Updater)
 import ViewUtil as Eww
@@ -40,7 +40,7 @@ type Msg
 
 type AuthResponse
     = None
-    | Success Auth.Cred
+    | Success
     | Failed
 
 
@@ -104,7 +104,7 @@ updaters ({ localUpdate, installNewCred, requestNav, lowerModel, handleError } a
             case res of
                 Ok user ->
                     Updaters.composeList
-                        [ localUpdate (\m -> ( { m | fromServer = Success user, password = "" }, Cmd.none ))
+                        [ localUpdate (\m -> ( { m | fromServer = Success, password = "" }, Cmd.none ))
                         , installNewCred user
                         , \m -> requestNav (lowerModel m).nextPage m
                         ]

@@ -146,6 +146,7 @@
                 elm-pkgs.elm-test-rs
                 elm-pkgs.elm-live
                 elm-pkgs.elm-review
+                elm-pkgs.elm-format
                 elm-pkgs.elm-doc-preview
                 lightningcss
                 elm2nix

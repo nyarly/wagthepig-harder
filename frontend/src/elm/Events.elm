@@ -1,4 +1,4 @@
-module Events exposing (Interface, Model, Msg(..), Resource, TableSorting, init, updaters, view)
+module Events exposing (Event, EventId, EventNick, Interface, Model, Msg(..), Resource, TableSorting, init, updaters, view)
 
 import Auth
 import Event

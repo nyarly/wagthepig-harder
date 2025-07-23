@@ -3,10 +3,7 @@ module Game.Create exposing
     , Interface
     , Model
     , Msg(..)
-    , browseToCreate
     , init
-    , nickToVars
-    , putGame
     , updaters
     , view
     , viewToast

@@ -1,6 +1,7 @@
 module Game.View exposing
     ( Game
     , GameAndSearch
+    , Interface
     , Msg(..)
     , Nick
     , Toast
@@ -14,13 +15,12 @@ module Game.View exposing
     , viewToast
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch, shotgunGames)
+import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch)
 import Html exposing (Html, a, button, div, img, p, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, disabled, href, name, src, type_)
+import Html.Attributes exposing (class, disabled, href, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
-import Http exposing (Error(..))
-import Hypermedia exposing (Method(..), OperationSelector(..), decodeMaybe, encodeMaybe)
+import Hypermedia exposing (decodeMaybe, encodeMaybe)
 import Json.Decode as D
 import Json.Encode as E
 import Maybe exposing (withDefault)

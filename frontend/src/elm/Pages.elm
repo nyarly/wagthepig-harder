@@ -1,4 +1,4 @@
-module Pages exposing (Models, Msg(..), Toast, afterLoginUpdater, init, pageNavMsg, updaters, view, viewToast)
+module Pages exposing (Interface, Models, Msg(..), Toast, afterLoginUpdater, init, pageNavMsg, updaters, view, viewToast)
 
 import Auth
 import CompleteRegistration
@@ -12,7 +12,7 @@ import Html exposing (Html)
 import Hypermedia exposing (Affordance, Error)
 import Landing
 import Login
-import Profile exposing (Msg(..))
+import Profile
 import Register
 import Router exposing (Target(..))
 import Toast
@@ -91,6 +91,7 @@ init =
 view : Router.Target -> Models -> List (Html Msg)
 view target models =
     let
+        wrapMsg : (a -> msg) -> List (Html a) -> List (Html msg)
         wrapMsg msg htmls =
             List.map (Html.map msg) htmls
     in
@@ -153,6 +154,7 @@ viewToast toastInfo =
         unwrapToast info content =
             Toast.Info info.id info.phase info.interaction content
 
+        wrapHtml : (a -> msg) -> List (Html a) -> List (Html msg)
         wrapHtml pageMsg =
             List.map (Html.map pageMsg)
     in

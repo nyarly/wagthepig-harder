@@ -1,7 +1,11 @@
 module WhatShouldWePlay exposing
-    ( Model
+    ( EventPlayers
+    , Interface
+    , Model
     , Msg(..)
     , Nick
+    , Recco
+    , ReccoSorting
     , Toast
     , init
     , updaters
@@ -25,7 +29,7 @@ import Json.Encode as E
 import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlayersDecoder, playerDecoder, playerName)
 import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
 import Router exposing (ReccoSortBy(..))
-import TableSort exposing (SortOrder(..), compareMaybes, sortingHeader)
+import TableSort exposing (SortOrder(..), compareMaybes)
 import Toast
 import Updaters exposing (Tried, Updater, noChange)
 import ViewUtil as Ew

@@ -1,4 +1,4 @@
-module Tests exposing (..)
+module Tests exposing (pickARoute, routePair, suite)
 
 import Expect
 import Router exposing (..)

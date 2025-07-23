@@ -160,6 +160,7 @@ updaters { requestNav, localUpdate, lowerModel, handleError, sendToast } msg =
         Submit ->
             \model ->
                 let
+                    gmod : Model
                     gmod =
                         lowerModel model
                 in
@@ -232,13 +233,13 @@ roundTrip resMsg update cred event_id nick =
     let
         updateRz : { a | resource : V.Game, update : Maybe Affordance } -> Result Error ( { c | resource : V.Game }, Affordance )
         updateRz lr =
-            let
-                rz : V.Game
-                rz =
-                    update lr.resource
-            in
             case lr.update of
                 Just aff ->
+                    let
+                        rz : V.Game
+                        rz =
+                            update lr.resource
+                    in
                     Ok ( { lr | resource = rz }, aff )
 
                 Nothing ->

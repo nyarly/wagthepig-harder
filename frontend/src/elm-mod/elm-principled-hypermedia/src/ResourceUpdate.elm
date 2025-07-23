@@ -273,7 +273,7 @@ update { headers, resource, etag, encode, decoder, resMsg, startAt, browsePlan }
 
         trip : Task.Task Http.Error ( Etag, r )
         trip =
-            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+            Utes.browseFrom startAt browsePlan (etagH ++ headers) (resource |> encode |> Http.jsonBody) (putResponse decoder)
                 |> Task.andThen (followHop headers decoder)
     in
     Task.attempt resMsg trip
@@ -378,7 +378,7 @@ roundTrip { encode, decoder, resMsg, browsePlan, updateRes, headers } =
                 |> Task.andThen doUpdate
                 |> Task.andThen
                     (\( etag, resource, aff ) ->
-                        Utes.browseFrom aff [] (etagHeader etag ++ headers) (resource |> encode >> Http.jsonBody) (putResponse decoder)
+                        Utes.browseFrom aff [] (etagHeader etag ++ headers) (resource |> encode |> Http.jsonBody) (putResponse decoder)
                             |> Task.andThen (followHop headers decoder)
                     )
     in
@@ -401,13 +401,17 @@ gotFromTuple ( etag, r ) =
 
 modelRes : D.Decoder r -> { a | body : String, headers : HM.Headers } -> Result String ( Etag, r )
 modelRes decoder res =
-    let
-        etag =
-            Dict.get "etag" res.headers
-    in
     res.body
         |> D.decodeString decoder
-        |> Result.map (\r -> ( etag, r ))
+        |> Result.map
+            (\r ->
+                let
+                    etag : Maybe String
+                    etag =
+                        Dict.get "etag" res.headers
+                in
+                ( etag, r )
+            )
         |> Result.mapError D.errorToString
 
 

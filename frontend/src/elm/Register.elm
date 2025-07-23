@@ -1,21 +1,21 @@
 module Register exposing
-    ( Model
+    ( Interface
+    , Model
     , Msg(..)
     , init
     , updaters
     , view
     )
 
-import Auth
 import Dict
 import Html exposing (Html, button, form, text)
 import Html.Attributes exposing (disabled)
 import Html.Attributes.Extra exposing (attributeMaybe)
 import Html.Events exposing (onSubmit)
 import Http
-import Hypermedia as HM exposing (Method(..), OperationSelector(..), emptyResponse)
-import LinkFollowing as HM
+import Hypermedia as HM exposing (emptyResponse)
 import Json.Encode as E
+import LinkFollowing as HM
 import Updaters exposing (Updater)
 import ViewUtil as Eww
 
@@ -101,6 +101,6 @@ put model =
         [ HM.browse [ "profile" ] (HM.ByType "CreateAction") |> HM.fillIn (Dict.fromList [ ( "user_id", model.email ) ])
         ]
         []
-        (model |> encodeModel >> Http.jsonBody)
+        (model |> encodeModel |> Http.jsonBody)
         emptyResponse
         ServerResponse

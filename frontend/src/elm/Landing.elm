@@ -1,4 +1,4 @@
-module Landing exposing (Model, Msg(..), view, viewLink)
+module Landing exposing (Model, Msg(..), view)
 
 import Html exposing (Html, a, div, h1, p, text)
 import Html.Attributes exposing (class, href)
@@ -10,8 +10,7 @@ type alias Model =
 
 
 type Msg
-    = ClickedSomething
-    | Entered
+    = Entered
 
 
 view : Model -> List (Html Msg)
