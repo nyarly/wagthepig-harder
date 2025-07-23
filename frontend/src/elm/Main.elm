@@ -1,10 +1,6 @@
 module Main exposing
     ( Msg(..)
-    , init
     , main
-    , subscriptions
-    , update
-    , view
     )
 
 import Auth

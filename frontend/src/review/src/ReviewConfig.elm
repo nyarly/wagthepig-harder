@@ -59,7 +59,6 @@ config =
     , NoUnused.Exports.rule
         |> Rule.ignoreErrorsForDirectories [ "elm-mod/" ]
         |> Rule.ignoreErrorsForDirectories [ "tests/" ]
-        |> Rule.ignoreErrorsForFiles [ "elm/Main.elm" ]
     , NoUnused.Parameters.rule
     , NoUnused.Patterns.rule
     , NoUnused.Variables.rule
