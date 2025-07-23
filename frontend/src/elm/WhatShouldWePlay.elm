@@ -14,7 +14,7 @@ module WhatShouldWePlay exposing
     )
 
 import Auth
-import BGGAPI
+import BGGAPI exposing (BGGThing)
 import Dict
 import Event exposing (browseToEvent)
 import Html exposing (Html, a, button, div, form, h1, h3, img, label, li, option, p, select, span, table, td, text, th, thead, tr, ul)
@@ -63,6 +63,7 @@ type alias Recco =
 requestEncoder : Model -> E.Value
 requestEncoder model =
     let
+        playerIds : List Uri
         playerIds =
             case model.players of
                 Just ps ->
@@ -169,12 +170,15 @@ type alias Interface base model msg =
 updaters : Interface base model msg -> Msg -> Updater model msg
 updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, sendToast } as iface) msg =
     let
+        closeRecco : Recco -> Recco
         closeRecco recco =
             { recco | whoElse = closeOtherPlayers recco.whoElse }
 
+        closeAll : Maybe (List Recco) -> Maybe (List Recco)
         closeAll reccos =
             Maybe.map (List.map closeRecco) reccos
 
+        justTried : Model -> Maybe (Tried Msg Nick)
         justTried model =
             Just (Tried msg model.nick)
     in
@@ -254,6 +258,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
         ErrGetBGGData _ ->
             \model ->
                 let
+                    toast : Toast
                     toast =
                         case (lowerModel model).retry of
                             Just r ->
@@ -281,6 +286,7 @@ maybeRetry :
     -> Updater model msg
 maybeRetry { sendToast, lowerModel } model =
     let
+        toast : Toast
         toast =
             case (lowerModel model).retry of
                 Just r ->
@@ -310,6 +316,7 @@ reccoItemUpdate uri doUpdate reccos =
 meAndThem : Auth.Cred -> List Player -> ( Maybe Player, List Player )
 meAndThem creds users =
     let
+        myEmail : String
         myEmail =
             Auth.accountID creds
 
@@ -378,9 +385,11 @@ sortDefault =
 sortWith : ReccoSortBy -> Recco -> Recco -> Order
 sortWith by l r =
     let
+        cmpM : (Recco -> Maybe comparable) -> Order
         cmpM f =
             compareMaybes (f l) (f r)
 
+        cmp : (Recco -> comparable) -> Order
         cmp f =
             compare (f l) (f r)
     in
@@ -409,38 +418,47 @@ sortWith by l r =
 reccoView : Model -> List Recco -> Maybe ( ReccoSortBy, SortOrder ) -> List (Html Msg)
 reccoView model list maybeSort =
     let
+        sorting : ( ReccoSortBy, SortOrder )
         sorting =
             sortDefault maybeSort
 
+        sortingHeader : String -> List (Html.Attribute Msg) -> ReccoSortBy -> Html Msg
         sortingHeader =
             TableSort.sortingHeader ChangeSort sorting
 
+        sort : List Recco -> List Recco
         sort l =
             TableSort.sort sortWith sorting l
 
-        me =
-            Maybe.map (meAndThem model.creds) model.players
-                |> Maybe.andThen (\( m, _ ) -> m)
-
-        activeIds =
-            case me of
-                Just i ->
-                    i.id :: model.selectedIds
-
-                Nothing ->
-                    model.selectedIds
-
+        activePlayers : List { name : Maybe String, bgg_username : Maybe String, email : String, id : Uri }
         activePlayers =
             case model.players of
                 Just players ->
+                    let
+                        me : Maybe Player
+                        me =
+                            Maybe.map (meAndThem model.creds) model.players
+                                |> Maybe.andThen (\( m, _ ) -> m)
+
+                        activeIds : List Uri
+                        activeIds =
+                            case me of
+                                Just i ->
+                                    i.id :: model.selectedIds
+
+                                Nothing ->
+                                    model.selectedIds
+                    in
                     List.filter (\p -> List.member p.id activeIds) players
 
                 Nothing ->
                     []
 
+        playerNames : List String
         playerNames =
             List.map playerName activePlayers
 
+        playerJoined : String
         playerJoined =
             case ( model.extraCount, playerNames ) of
                 ( 0, [] ) ->
@@ -489,12 +507,15 @@ reccoView model list maybeSort =
 makeReccoRow : Recco -> ( String, Html Msg )
 makeReccoRow recco =
     let
+        sdef : Maybe String -> String
         sdef =
             Maybe.withDefault ""
 
+        ndef : Maybe number -> number
         ndef =
             Maybe.withDefault 0
 
+        nsdef : Maybe Int -> String
         nsdef mi =
             String.fromInt <| Maybe.withDefault 0 mi
     in
@@ -544,6 +565,7 @@ whoElseTD { whoElse, userLink, name } =
 bggGameData : List Recco -> Cmd Msg
 bggGameData list =
     let
+        xform : Recco -> BGGThing -> Msg
         xform rec bggData =
             GotBGGData rec.userLink.uri bggData.thumbnail
     in
@@ -570,6 +592,7 @@ nickToVars creds nick =
 fetchEventPlayers : Auth.Cred -> Nick -> Cmd Msg
 fetchEventPlayers creds nick =
     let
+        vars : Dict.Dict String String
         vars =
             Dict.fromList [ ( "event_id", String.fromInt nick.eventId ) ]
     in

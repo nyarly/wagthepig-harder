@@ -34,7 +34,6 @@ import ViewUtil as Eww
 
 type Bookmark
     = Creds
-    | Url Affordance
 
 
 type alias Model =
@@ -111,15 +110,19 @@ type Toast
 view : Model -> List (Html Msg)
 view model =
     let
+        passwordsMatch : Bool
         passwordsMatch =
             model.password.new == model.password.newAgain
 
+        passwordEmpty : Bool
         passwordEmpty =
             length model.password.new == 0
 
+        passwordLongEnough : Bool
         passwordLongEnough =
             length model.password.new >= 12
 
+        passwordInputAttrs : List (Html.Attribute msg)
         passwordInputAttrs =
             [ type_ "password", attributeIf (not passwordsMatch) (class "input-problem") ]
     in
@@ -159,9 +162,11 @@ type alias Interface base model msg =
 updaters : Interface base model msg -> Msg -> Updater model msg
 updaters { localUpdate, requestNav, handleError, sendToast } msg =
     let
+        updateProfile : (Profile -> Profile) -> model -> ( model, Cmd msg )
         updateProfile f =
             localUpdate (\m -> ( { m | profile = f m.profile }, Cmd.none ))
 
+        updatePassword : (Password -> Password) -> model -> ( model, Cmd msg )
         updatePassword f =
             localUpdate (\m -> ( { m | password = f m.password }, Cmd.none ))
     in
@@ -170,9 +175,6 @@ updaters { localUpdate, requestNav, handleError, sendToast } msg =
             case loc of
                 Creds ->
                     localUpdate (\m -> ( { m | creds = creds }, fetchByCreds creds ))
-
-                Url url ->
-                    localUpdate (\m -> ( { m | creds = creds }, fetchFromUrl creds url.uri ))
 
         ChangeName n ->
             updateProfile (\pf -> { pf | name = n })
@@ -216,12 +218,15 @@ updaters { localUpdate, requestNav, handleError, sendToast } msg =
 submitPasswordUpdate : Model -> Cmd Msg
 submitPasswordUpdate model =
     let
+        email : String
         email =
             model.profile.email
 
+        password : Password
         password =
             model.password
 
+        reqBody : Http.Body
         reqBody =
             Http.jsonBody
                 (E.object
@@ -279,15 +284,4 @@ fetchByCreds creds =
         , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
         , startAt = apiRoot
         , browsePlan = browseToProfile (nickToVars (Auth.accountID creds))
-        }
-
-
-fetchFromUrl : Auth.Cred -> HM.Uri -> Cmd Msg
-fetchFromUrl creds url =
-    Up.retrieve
-        { headers = Auth.credHeader creds
-        , decoder = decoder
-        , resMsg = resultDispatch ErrProfileGet (\( etag, ps ) -> GotProfile etag ps)
-        , startAt = HM.link HM.GET url
-        , browsePlan = []
         }

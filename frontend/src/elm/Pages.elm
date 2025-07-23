@@ -295,7 +295,7 @@ afterLoginUpdater iface target =
 
 
 updaters : Interface base model msg -> Msg -> Updater model msg
-updaters ({ lowerModel, installNewCred, requestNav } as iface) msg =
+updaters ({ installNewCred, requestNav } as iface) msg =
     let
         pageInterface =
             childInterface iface
