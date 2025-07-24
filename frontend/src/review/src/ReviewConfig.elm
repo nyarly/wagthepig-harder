@@ -64,5 +64,5 @@ config =
     , NoUnused.Patterns.rule
     , NoUnused.Variables.rule
     , Simplify.rule Simplify.defaults
-    -- , NoMissingTypeConstructor.rule
+    , NoMissingTypeConstructor.rule
     ]

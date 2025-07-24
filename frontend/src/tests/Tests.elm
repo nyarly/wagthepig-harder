@@ -12,6 +12,7 @@ import Url.Builder
 testedRouteTargets : List Target
 testedRouteTargets =
     let
+        lister : List Target -> List Target
         lister list =
             case list of
                 [] ->
@@ -71,26 +72,75 @@ eventSortArgs : EventSortBy -> ( Target, String, String )
 eventSortArgs sort =
     case sort of
         EventName ->
-            ( Events (Just ( EventName, Ascending )), "Events by name", "/events?table_sort=name&table_order=ascd" )
+            ( Events (Just ( sort, Ascending )), "Events by name", "/events?table_sort=name&table_order=ascd" )
 
         Date ->
-            ( Events (Just ( Date, Ascending )), "Events by date", "/events?table_sort=date&table_order=ascd" )
+            ( Events (Just ( sort, Ascending )), "Events by date", "/events?table_sort=date&table_order=ascd" )
 
         Location ->
-            ( Events (Just ( Location, Ascending )), "Events by location", "/events?table_sort=loc&table_order=ascd" )
+            ( Events (Just ( sort, Ascending )), "Events by location", "/events?table_sort=loc&table_order=ascd" )
 
+allReccoSortBy : List ReccoSortBy
+allReccoSortBy =
+    [ Length, Players, PresentInterested, PresentTeachers, ReccoName ]
+
+reccoSortArgs : ReccoSortBy -> ( Target, String, String )
+reccoSortArgs sort =
+  case sort of
+    Length ->
+      ( WhatShouldWePlay 1 (Just ( sort, Ascending )), "Reccs by length", "/whatshouldweplay/1?table_sort=length&table_order=ascd" )
+    Players ->
+      ( WhatShouldWePlay 1 (Just ( sort, Ascending )), "Reccs by players", "/whatshouldweplay/1?table_sort=player&table_order=ascd" )
+    PresentInterested ->
+      ( WhatShouldWePlay 1 (Just ( sort, Ascending )), "Reccs by interested", "/whatshouldweplay/1?table_sort=interest&table_order=ascd" )
+    PresentTeachers ->
+      ( WhatShouldWePlay 1 (Just ( sort, Ascending )), "Reccs by teachers", "/whatshouldweplay/1?table_sort=teachers&table_order=ascd" )
+    ReccoName ->
+      ( WhatShouldWePlay 1 (Just ( sort, Ascending )), "Reccs by name", "/whatshouldweplay/1?table_sort=name&table_order=ascd" )
+
+
+allGameSortBy : List GameSortBy
+allGameSortBy =
+    [ Duration, GameName, Interest, InterestCount, MaxPlayers, MinPlayers, TeacherCount ]
+
+
+gameSortArgs : GameSortBy -> ( Target, String, String )
+gameSortArgs sort =
+  case sort of
+    Duration ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by duration", "/games/1?table_sort=dur&table_order=ascd" )
+
+    GameName ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by name", "/games/1?table_sort=name&table_order=ascd" )
+
+    Interest ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by interest", "/games/1?table_sort=interest&table_order=ascd" )
+
+    InterestCount ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by interested", "/games/1?table_sort=numinterest&table_order=ascd" )
+
+    MaxPlayers ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by max", "/games/1?table_sort=maxplayer&table_order=ascd" )
+
+    MinPlayers ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by min", "/games/1?table_sort=minplayer&table_order=ascd" )
+
+    TeacherCount ->
+      ( EventShow 1 (Just ( sort, Ascending )), "Games by teachers", "/games/1?table_sort=numteacher&table_order=ascd" )
 
 suite : Test
 suite =
     describe "Routing"
         (List.map routePair
             ([ ( Events Nothing, "Events Nothing", "/events" )
-             , ( Events (Just ( EventName, Ascending )), "Events name,asc", "/events?table_sort=name&table_order=ascd" )
+             , ( Events (Just ( EventName, Descending )), "Events name,desc", "/events?table_sort=name&table_order=desc" )
              ]
                 ++ List.map
                     defaultRoutePairArgs
                     testedRouteTargets
                 ++ List.map eventSortArgs allEventSortBy
+                ++ List.map reccoSortArgs allReccoSortBy
+                ++ List.map gameSortArgs allGameSortBy
             )
         )
 
@@ -158,8 +208,15 @@ defaultRoutePairArgs target =
 routePair : ( Target, String, String ) -> Test
 routePair ( target, targetName, path ) =
     let
+        defaultUrl : Url
+        defaultUrl =
+            Url Url.Http "" Nothing "broken!" Nothing Nothing
+
+        url : Url
         url =
-            Url Url.Http "" Nothing path Nothing Nothing
+            Maybe.withDefault defaultUrl (Url.fromString ("http://example.com" ++ path))
+
+        -- Url Url.Http "" Nothing path Nothing Nothing
     in
     describe (path ++ " <-> " ++ targetName)
         [ test ("routes " ++ path ++ " to " ++ targetName) <|

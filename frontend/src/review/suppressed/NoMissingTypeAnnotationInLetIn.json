@@ -7,7 +7,6 @@
     { "count": 2, "filePath": "elm/Main.elm" },
     { "count": 2, "filePath": "elm/WhatShouldWePlay.elm" },
     { "count": 1, "filePath": "elm/EventEdit.elm" },
-    { "count": 1, "filePath": "elm/EventShow.elm" },
-    { "count": 1, "filePath": "tests/Tests.elm" }
+    { "count": 1, "filePath": "elm/EventShow.elm" }
   ]
 }

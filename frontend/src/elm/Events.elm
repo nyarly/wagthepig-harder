@@ -14,7 +14,7 @@ import LinkFollowing as HM
 import Router exposing (EventSortBy(..))
 import TableSort exposing (SortOrder(..))
 import Time
-import Updaters exposing (Updater, compose)
+import Updaters exposing (Updater)
 
 
 type alias TableSorting =
