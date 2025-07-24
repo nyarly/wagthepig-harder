@@ -19,7 +19,7 @@
       system:
       let
         pkgs = (
-          import "${nixpkgs}" {
+          import nixpkgs {
             overlays = [ mkElmDerivation.overlays.mkElmDerivation ];
             inherit system;
           }
@@ -123,7 +123,7 @@
         devShells.default =
           let
             unstable-pkgs = (
-              import "${nixpkgs}" {
+              import nixpkgs-unstable {
                 overlays = [ mkElmDerivation.overlays.mkElmDerivation ];
                 inherit system;
               }

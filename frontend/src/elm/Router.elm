@@ -4,7 +4,10 @@ module Router exposing
     , ReccoSortBy(..)
     , Target(..)
     , buildFromTarget
+    , eventSortToString
+    , gameSortToString
     , pageName
+    , reccoSortToString
     , routeToTarget
     )
 

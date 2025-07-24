@@ -82,7 +82,7 @@ nickDecoder =
 
 
 type Msg
-    = Entered Auth.Cred (Maybe TableSorting)
+    = Entered Auth.Cred
     | GotEvents Resource
     | ErrGetEvents Http.Error
     | CreateNewEvent Affordance
@@ -115,14 +115,8 @@ updaters :
     -> Updater model msg
 updaters { localUpdate, requestCreateEvent, requestUpdatePath, handleError } msg =
     case msg of
-        Entered creds sort ->
-            case sort of
-                Just _ ->
-                    compose (localUpdate (\model -> ( { model | creds = creds }, fetch creds )))
-                        (requestUpdatePath (Router.Events sort))
-
-                Nothing ->
-                    localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
+        Entered creds ->
+            localUpdate (\model -> ( { model | creds = creds }, fetch creds ))
 
         GotEvents new ->
             localUpdate (\m -> ( { m | resource = new }, Cmd.none ))

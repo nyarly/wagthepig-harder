@@ -190,8 +190,8 @@ pageNavMsg target creds =
         Router.Profile ->
             ProfileMsg (Profile.Entered creds Profile.Creds)
 
-        Router.Events sort ->
-            EventsMsg (Events.Entered creds sort)
+        Router.Events _ ->
+            EventsMsg (Events.Entered creds)
 
         Router.Register ->
             RegisterMsg Register.Entered
