@@ -599,8 +599,10 @@ impl Game<GameId, EventId, UserId, PlayerData> {
                 interests.notes
             from
                 games
-                left join interests on games.id = interests.game_id
-                join users on interests.user_id = users.id and email = $2
+                left join
+                    (interests
+                    join users on interests.user_id = users.id and email = $2)
+                 on games.id = interests.game_id
             where event_id = $1
             group by (games.id, interests.id)
             "#)
