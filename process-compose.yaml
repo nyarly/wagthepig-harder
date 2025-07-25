@@ -38,6 +38,13 @@ unifiedbackend: &unifiedbackend
   backend:
     environment:
     - RUST_LOG=trace,lettre=error,sqlxmq=error,mio=error
+    log_location: backend/dev-logs/backend.log
+    log_configuration:
+      disable_json: true
+      no_metadata: true
+      rotation:
+        max_size_mb: 5
+        max_backups: 2
     working_dir: backend/
     command: watchexec --no-vcs-ignore --on-busy-update restart --watch target/debug/ --filter {{.projectname}}-backend target/debug/{{.projectname}}-backend
     depends_on:

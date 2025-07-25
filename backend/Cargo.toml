@@ -47,3 +47,6 @@ clap = { version = "4.5.20", features = ["derive", "env"] }
 indoc = "2.0.5"
 tower_governor = { version = "0.5.0", features = ["tracing"] }
 governor = "0.8.0"
+
+[dev-dependencies]
+sqlx-pg-test-template = "0.1.2"

@@ -2771,6 +2771,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlx-pg-test-template"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c15c31cd119134fa05a6d73de508ea1600b7b7d3425d0adda8572350c93293a8"
+dependencies = [
+ "sqlx-pg-test-template-macros",
+ "sqlx-pg-test-template-runner",
+]
+
+[[package]]
+name = "sqlx-pg-test-template-macros"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad39ceb95e9bc5781b13c8635852f0e5083ce6c2d747729bf56fbbab94548627"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "sqlx-pg-test-template-runner"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63a9bb3f7b224870a2127d0032beb25451b0cf4db541c1f92113ffe32de84bd7"
+dependencies = [
+ "sqlx",
+ "thiserror 2.0.9",
+]
+
+[[package]]
 name = "sqlx-postgres"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3494,6 +3525,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.8",
  "sqlx",
+ "sqlx-pg-test-template",
  "sqlxmq",
  "thiserror 1.0.63",
  "tokio",

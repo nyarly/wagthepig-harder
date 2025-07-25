@@ -576,9 +576,12 @@ impl Game<GameId, EventId, UserId, InterestData> {
                 (interests.id is not null) as interested,
                 (coalesce (interests.can_teach, false)) as can_teach,
                 interests.notes
-            from games
-                left join interests on games.id = interests.game_id
-                join users on interests.user_id = users.id and email = $2
+            from
+                games
+                left join
+                    (interests
+                    join users on interests.user_id = users.id and email = $2)
+                on games.id = interests.game_id
             where games.id = $1"#)
             .bind( game_id.id() )
             .bind( user_id )
@@ -633,5 +636,19 @@ impl<E, U> Game<GameId, E, U, InterestData> {
             }).execute(db)
             .map_ok(|_| ())
             .map_err(Error::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use sqlx::Pool;
+
+    #[sqlx_pg_test_template::test(template = "wtp_empty_template")]
+    async fn test_add_user(pool: Pool<Postgres>) {
+        let testy = User::create(&pool, "test@mctesterson.net", "Testy McTesterson", "testy").await.unwrap();
+        let also_testy = User::by_email(&pool, testy.email).await.unwrap();
+        assert_eq!(testy.id, also_testy.id);
     }
 }
