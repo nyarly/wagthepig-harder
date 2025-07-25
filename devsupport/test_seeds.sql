@@ -1,0 +1,1 @@
+INSERT INTO public.events VALUES (1, 'BGG 2018', '2018-11-13 12:00:00', 'Hyatt Regency, Dallas', '2018-09-27 22:21:46.764623', '2018-09-27 22:21:46.764623', NULL);
