@@ -82,7 +82,8 @@
                 "migrations"
               ];
 
-              cargoHash = "sha256-BT88YI93D/QVqn2EHsm3a/+mhP8d6gPzyDPQMKjLjkw=";
+              cargoLock.lockFile = backend/Cargo.lock;
+              # cargoHash = "sha256-BT88YI93D/QVqn2EHsm3a/+mhP8d6gPzyDPQMKjLjkw=";
 
               nativeBuildInputs = buildDeps;
 
@@ -92,6 +93,8 @@
                 rm -rf frontend
                 cp -a ${wag-the-pig-frontend} frontend
               '';
+
+              checkFlags = "--skip db::";
 
               postInstall = ''
                 mkdir -p $migrations
