@@ -594,20 +594,22 @@ impl Game<GameId, EventId, UserId, PlayerData> {
     pub fn get_all_for_event_and_user<'a>(db: impl Executor<'a, Database = Postgres> + 'a, event_id: EventId, email: String)
     -> impl Future<Output = Result<Vec<Self>, Error>> + 'a {
         sqlx::query_as(
-            r#"select games.*,
-                count('games.id') as interest_level,
-                count('games.id') FILTER (WHERE interests.can_teach is true) as teachers,
-                (interests.id is not null) as interested,
-                (coalesce (interests.can_teach, false)) as can_teach,
-                interests.notes
+            r#"
+            select games.*,
+                count(games.id) as interest_level,
+                count(games.id) FILTER (WHERE interests.can_teach is true) as teachers,
+                (my_interest.id is not null) as interested,
+                (coalesce (my_interest.can_teach, false)) as can_teach,
+                my_interest.notes
             from
                 games
                 left join
-                    (interests
-                    join users on interests.user_id = users.id and email = $2)
-                 on games.id = interests.game_id
+                (interests as my_interest
+                join users on my_interest.user_id = users.id and email = $2)
+                on games.id = my_interest.game_id
+                join interests on games.id = interests.game_id
             where event_id = $1
-            group by (games.id, interests.id)
+            group by (games.id, my_interest.id)
             "#)
             .bind(event_id.id())
             .bind(email)
@@ -650,5 +652,63 @@ mod tests {
         let testy = User::create(&pool, "test@mctesterson.net", "Testy McTesterson", "testy").await.unwrap();
         let also_testy = User::by_email(&pool, testy.email).await.unwrap();
         assert_eq!(testy.id, also_testy.id);
+    }
+
+    #[sqlx_pg_test_template::test(template = "wtp_empty_template")]
+    async fn test_join_in_on_a_game(pool: Pool<Postgres>) {
+        let one = User::create(&pool, "one@example.com", "User One", "one").await.unwrap();
+        let two = User::create(&pool, "two@example.com", "User Two", "two").await.unwrap();
+        let event_id = Event{
+            id: NoId,
+            name: Some("event".into()),
+            date: None,
+            r#where: Some("location".into()),
+            description: Some("its great".into()),
+            ..Event::default()
+        }.add_new(&pool).await.unwrap();
+
+        let default_game = Game::<NoId, NoId, NoId, Omit>::default();
+
+        let game_one = Game {
+            data: GameData{ name: Some("game_one".into()), ..GameData::default() },
+            ..default_game
+        }.with_event_id(event_id);
+        let id_one = game_one.add_new(&pool, one.email.clone()).await.unwrap();
+        let game_one = game_one.with_id(id_one).with_interest_data(InterestData {
+            interested: Some(true),
+            can_teach: Some(false),
+            notes: None
+        });
+        game_one.update_interests(&pool, one.email.clone()).await.unwrap();
+
+        let game_two = Game {
+            data: GameData{ name: Some("game_two".into()), ..GameData::default() },
+            ..default_game
+        }.with_event_id(event_id);
+        let id_two = game_two.add_new(&pool, two.email.clone()).await.unwrap();
+        let mut game_two = game_two.with_id(id_two).with_interest_data(InterestData {
+            interested: Some(true),
+            can_teach: Some(false),
+            notes: None
+        });
+        game_two.update_interests(&pool, two.email.clone()).await.unwrap();
+
+        let games = Game::get_all_for_event_and_user(&pool, event_id, one.email.clone()).await.unwrap();
+        assert_eq!(games.len(), 2, "User one should see 2 games, but saw {}", games.len());
+
+        game_one.update_interests(&pool, two.email.clone()).await.unwrap();
+
+        let games = Game::get_all_for_event_and_user(&pool, event_id, one.email.clone()).await.unwrap();
+        assert_eq!(games.len(), 2, "User one should still see 2 games after two marks interest, saw {}", games.len());
+
+        let found_one = games.iter().find(|g| g.id == id_one).unwrap();
+        assert_eq!(found_one.extra.recco.interest_level, 2,
+            "Game one should have an interest level of 2: was {}", found_one.extra.recco.interest_level);
+
+        game_two.extra.interested = Some(false);
+        game_two.update_interests(&pool, two.email.clone()).await.unwrap();
+
+        let games = Game::get_all_for_event_and_user(&pool, event_id, two.email.clone()).await.unwrap();
+        assert_eq!(dbg!(games).len(), 1, "With no interest, game two should have been removed");
     }
 }
