@@ -134,6 +134,7 @@
 
             elm-pkgs = unstable-pkgs.elmPackages;
           in
+          # if you don't what to use Nix, here are the dependencies you need:
           pkgs.mkShell {
             buildInputs =
               with pkgs;
@@ -162,7 +163,7 @@
                 mailpit
                 openssl
               ]
-              ++ buildDeps;
+              ++ buildDeps; # If you're doing your own installs, you can ignore this
           };
       }
     );
