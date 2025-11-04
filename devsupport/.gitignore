@@ -1,3 +1,8 @@
 db/
 db_sockets/*
 backend.keypair
+nginx/conf/*
+nginx/nginx.pid
+nginx/stderr
+tls/backend/*.csr
+tls/backend/*.pem
