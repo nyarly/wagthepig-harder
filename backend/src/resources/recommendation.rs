@@ -17,7 +17,7 @@ impl RecommendRequest {
     pub(crate) fn player_ids(&self, nested_at: &str) -> Result<Vec<UserId>, mattak::Error> {
         let user_route = RouteMap::User.prefixed(nested_at);
         self.players.clone().into_iter().map(|iri| {
-            user_route.extract::<UserLocate>(iri.as_str()).map(|loc| loc.user_id)
+            user_route.from_uri::<UserLocate>(iri.as_str().try_into()?).map(|loc| loc.user_id)
         }).collect::<Result<Vec<_>,_>>()
     }
 }

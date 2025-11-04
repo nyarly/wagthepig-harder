@@ -25,7 +25,7 @@ Something to add to mattak for next project
 *
 */
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum RouteMap {
     Root,
     Authenticate,
@@ -122,7 +122,7 @@ pub(crate) struct RecommendLocate {
     pub event_id: EventId
 }
 
-pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
+pub(crate) fn api_doc(nested_at: &str, bgg_api_url: &str) -> impl IntoResponse {
     use RouteMap::*;
     use ActionType::*;
 
@@ -148,5 +148,10 @@ pub(crate) fn api_doc(nested_at: &str) -> impl IntoResponse {
         "profile": entry(Profile, vec![op(Create), op(Find)]),
         "events": entry(Events, vec![ op(View), op(Add) ]),
         "event": entry(Event, vec![ op(Find), op(Update) ]),
+        "bggAPI": {
+            "type": "Link",
+            "id": bgg_api_url,
+            "operation": vec![op(View)]
+        }
     }))
 }

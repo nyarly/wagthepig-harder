@@ -35,6 +35,8 @@ unifiedbackend: &unifiedbackend
     depends_on:
       database:
         condition: process_log_ready
+  tls_term:
+    command: nginx -p devsupport/nginx -e stderr
   backend:
     environment:
     - RUST_LOG=trace,lettre=error,sqlxmq=error,mio=error

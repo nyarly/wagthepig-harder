@@ -9,44 +9,44 @@ edition = "2021"
 debug_embed = []
 
 [dependencies]
-mattak = { version = "0.1.0" }
-mattak_derives = { version = "0.1.0" }
+mattak = { path = "../../mattak/mattak" }
+mattak_derives = { path = "../../mattak/mattak_derives" }
 axum-spa = { version = "0.1.0" }
 
-thiserror = "~1.0.63"
+thiserror = "1.0.63"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-tokio = { version = "~1.38", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread"] }
 futures = "0.3.30"
 
 axum = { version = "~0.7", features = ["macros", "json"]}
-axum-extra = { version = "0.9.3", features = ["query", "typed-header"] }
-hyper = { version = "~1.4", features = ["client", "http1"] }
+# axum-extra = { version = "0.9.3", features = ["query", "typed-header"] }
+hyper = { version = "1.4", features = ["client", "http1"] }
 tower = "0.4.13"
 tower-http = { version = "0.6.6", features = ["trace", "fs", "set-header"] }
 
-include_dir = { version = "0.7.4", features = ["metadata"] }
+# include_dir = { version = "0.7.4", features = ["metadata"] }
 
 iri-string = { version = "0.7.4", features = ["serde"] }
 serde = { version = "~1.0.204", features = ["derive"] }
 serde_json = "~1.0.120"
-base64 = "0.22.1"
+# base64 = "0.22.1"
 
-biscuit-auth = "~5.0"
+biscuit-auth = "6.0"
 bcrypt = "0.15.1"
 zeroize = { version = "~1.8", features = ["derive", "std"] }
 
 sqlx = { version = "0.8.0", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-sha2 = "0.10.8"
-base64ct = { version = "1.6.0", features = ["alloc"] }
+# sha2 = "0.10.8"
+# base64ct = { version = "1.6.0", features = ["alloc"] }
 lettre = { version = "0.11.9", features = ["tokio1", "tokio1-native-tls", "tracing"] }
 sqlxmq = { version = "0.6.0" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 indoc = "2.0.5"
-tower_governor = { version = "0.5.0", features = ["tracing"] }
-governor = "0.8.0"
+# tower_governor = { version = "0.5.0", features = ["tracing"] }
+# governor = "0.8.0"
 
 [dev-dependencies]
 sqlx-pg-test-template = "0.1.2"

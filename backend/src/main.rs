@@ -17,10 +17,7 @@ use tracing_subscriber::{EnvFilter, prelude::*};
 
 use crate::routing::RouteMap;
 
-use mattak::{cachecontrol::CacheControlLayer,
-    biscuits::{self, Authentication},
-    routing::route_config,
-    ratelimiting::{self, IpExtractor, GovernorConfigBuilder}};
+use mattak::{biscuits::{self, resources::WellKnownKeySet, Authentication}, cachecontrol::CacheControlLayer, ratelimiting::{self, GovernorConfigBuilder, IpExtractor}, routing::{route_config, Route as _}};
 
 // app modules
 mod routing;
@@ -28,12 +25,16 @@ mod resources;
 mod db;
 mod mailing;
 
+#[derive(Clone)]
+struct BggApiUrl(String);
 
 #[derive(extract::FromRef, Clone)]
 struct AppState {
     pool: Pool<Postgres>,
     auth: Authentication,
+    bgg_api_url: BggApiUrl
 }
+
 
 
 #[derive(Parser)]
@@ -45,6 +46,10 @@ struct Config {
     /// Canonical domain the site is served from. Will be used in messages sent via email
     #[arg(long, env = "CANON_DOMAIN")]
     canon_domain: String,
+
+    /// The full URL to the root of the BGG API proxy
+    #[arg(long, env = "BGG_PROXY")]
+    bgg_api_url: String,
 
     /// Site administrator's email address - used when sending e.g. password reset messages
     #[arg(long, env = "ADMIN_EMAIL")]
@@ -135,11 +140,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth.clone(),
     ).await?;
 
-    let state = AppState{pool, auth: auth.clone()};
+    let state = AppState{pool, auth: auth.clone(), bgg_api_url: BggApiUrl(config.bgg_api_url.clone())};
 
     let rate_key = IpExtractor::trust(config.trust_forwarded_header);
 
     let app = Router::new()
+        .route(&WellKnownKeySet::axum_route(), get(biscuits::resources::get_well_known_key_set::<Authentication>))
         .nest("/api",
             root_api_router(rate_key)
                 .merge(open_api_router(rate_key))
@@ -172,8 +178,8 @@ fn spa(router: Router<AppState>, config: &Config) -> Result<Router<AppState>, Bo
     axum_spa::leaked_livereload(router, &config.frontend_path)
 }
 
-async fn sitemap(nested_at: extract::NestedPath) -> impl IntoResponse {
-    routing::api_doc(nested_at.as_str())
+async fn sitemap(nested_at: extract::NestedPath, extract::State(BggApiUrl(bgg_api_url)): extract::State<BggApiUrl>) -> impl IntoResponse {
+    routing::api_doc(nested_at.as_str(), &bgg_api_url)
 }
 
 fn root_api_router(extractor: IpExtractor) -> Router<AppState> {
@@ -207,7 +213,7 @@ fn open_api_router(extractor: IpExtractor) -> Router<AppState> {
         ))
 }
 
-fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor: IpExtractor) -> Router<AppState> {
+fn secured_api_router(state: AppState, auth: Authentication, extractor: IpExtractor) -> Router<AppState> {
     use resources::{event, game, profile, recommendation};
     use RouteMap::*;
 
@@ -253,9 +259,9 @@ fn secured_api_router(state: AppState, auth: biscuits::Authentication, extractor
                 .burst_size(60)
             ))
             .layer(CacheControlLayer::new(1))
-            .layer(biscuits::AuthenticationSetup::new(auth, "Authorization"))
+            .layer(biscuits::middleware::setup(auth, "Authorization"))
             .layer(middleware::from_fn_with_state(state, authentication::add_rejections))
-            .layer(biscuits::AuthenticationCheck::new(authorizer!(r#"
+            .layer(biscuits::middleware::check(authorizer!(r#"
                 allow if route({profile_path}), path_param("user_id", $user), user($user);
                 deny if route({profile_path});
 

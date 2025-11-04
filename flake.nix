@@ -162,6 +162,8 @@
                 biscuit-cli
                 mailpit
                 openssl
+                nginx
+                envsubst
               ]
               ++ buildDeps; # If you're doing your own installs, you can ignore this
           };
