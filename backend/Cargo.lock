@@ -1794,6 +1794,8 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 [[package]]
 name = "mattak"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e6f0e96eb081ab9875eb62be7ad9df7aa3e302a23f901e9a8cda55c68ff4fef"
 dependencies = [
  "axum",
  "axum-extra",
@@ -1825,6 +1827,8 @@ dependencies = [
 [[package]]
 name = "mattak_derives"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "649f8bc917d7eb0788a151a99d02b8a9ce3b5bf87f3036c4fe064a8905f5ec60"
 dependencies = [
  "mattak",
  "proc-macro2",

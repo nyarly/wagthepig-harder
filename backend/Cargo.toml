@@ -9,8 +9,8 @@ edition = "2021"
 debug_embed = []
 
 [dependencies]
-mattak = { path = "../../mattak/mattak" }
-mattak_derives = { path = "../../mattak/mattak_derives" }
+mattak = { version = "0.2.0" } #path = "../../mattak/mattak" }
+mattak_derives = { version = "0.2.0" } #path = "../../mattak/mattak_derives" }
 axum-spa = { version = "0.1.0" }
 
 thiserror = "1.0.63"
