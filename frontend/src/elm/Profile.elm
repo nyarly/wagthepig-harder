@@ -256,8 +256,6 @@ browseToProfile vars =
 
 putProfile : Auth.Cred -> Model -> Cmd Msg
 putProfile creds model =
-    --Up.put encode decoder (makeMsg creds) creds model.etag model.profile
-    --put encode decoder makeMsg cred etag resource =
     case model.profile.update of
         Just aff ->
             Up.update
@@ -277,7 +275,6 @@ putProfile creds model =
 
 fetchByCreds : Auth.Cred -> Cmd Msg
 fetchByCreds creds =
-    --Up.fetchByNick decoder (makeMsg creds) nickToVars browseToProfile creds (Auth.accountID creds)
     Up.retrieve
         { headers = Auth.credHeader creds
         , decoder = decoder

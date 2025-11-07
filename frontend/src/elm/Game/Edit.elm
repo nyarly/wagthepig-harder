@@ -14,7 +14,7 @@ module Game.Edit exposing
     )
 
 import Auth
-import BGGAPI exposing (BGGGame)
+import BGG
 import Dict
 import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
@@ -53,11 +53,12 @@ type Resource
 
 
 type alias LoadedResource =
-    { id : Affordance
+    { creds : Auth.Cred
+    , id : Affordance
     , update : Maybe Affordance
     , template : Maybe Affordance
     , nick : V.Nick
-    , bggSearchResults : List BGGGame
+    , bggSearchResults : List BGG.Thing
     , resource : V.Game
     }
 
@@ -80,9 +81,10 @@ init =
         NotLoaded
 
 
-decoder : D.Decoder LoadedResource
-decoder =
+decoder : Auth.Cred -> D.Decoder LoadedResource
+decoder cred =
     D.succeed LoadedResource
+        |> hardcoded cred
         |> custom (D.map (\u -> HM.link GET u) (D.field "id" D.string))
         |> custom (D.map (HM.selectAffordance (ByType "UpdateAction")) HM.affordanceListDecoder)
         |> custom (D.map (HM.selectAffordance (ByType "FindAction")) HM.affordanceListDecoder)
@@ -128,13 +130,13 @@ type alias Interface base model msg =
 
 
 childUpdate : (LoadedResource -> ( LoadedResource, Cmd V.Msg )) -> Updater Model Msg
-childUpdate upper model =
+childUpdate lower model =
     case model.resource of
         NotLoaded ->
             ( model, Cmd.none )
 
         Loaded res ->
-            upper res
+            lower res
                 |> Tuple.mapBoth (\m -> { model | resource = Loaded m }) (Cmd.map GameMsg)
 
 
@@ -221,7 +223,7 @@ fetchByNick : Auth.Cred -> Int -> V.Nick -> Cmd Msg
 fetchByNick creds event_id nick =
     Up.retrieve
         { headers = Auth.credHeader creds
-        , decoder = decoder
+        , decoder = decoder creds
         , resMsg = resultDispatch ErrGetGame (\( etag, ps ) -> GotGame etag ps)
         , startAt = apiRoot
         , browsePlan = browseToFetch (nickToVars creds event_id nick)
@@ -247,7 +249,7 @@ roundTrip resMsg update cred event_id nick =
     in
     Up.roundTrip
         { encode = encoder
-        , decoder = decoder
+        , decoder = decoder cred
         , resMsg = resMsg
         , browsePlan = browseToFetch (nickToVars cred event_id nick)
         , updateRes = updateRz

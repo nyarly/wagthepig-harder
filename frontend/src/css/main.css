@@ -49,6 +49,10 @@ nav {
   margin-top: auto;
 }
 
+.bgg-logo {
+  height: 1.8em;
+}
+
 .page {
   max-width: 1480px;
   margin: 0 auto;

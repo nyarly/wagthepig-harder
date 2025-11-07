@@ -10,7 +10,7 @@ module Game.Create exposing
     )
 
 import Auth
-import BGGAPI exposing (BGGGame)
+import BGG
 import Dict
 import Game.View as V
 import Html exposing (Html, a, button, div, form, text)
@@ -34,7 +34,7 @@ type alias Model =
 
     -- XXX + event sorting
     , event_id : EventId
-    , bggSearchResults : List BGGGame
+    , bggSearchResults : List BGG.Thing
     , resource : V.Game -- XXX Maybe?
     }
 

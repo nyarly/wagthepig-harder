@@ -1,0 +1,13 @@
+{
+  "type": "package",
+  "name": "nyarly/madhelm-viewutils",
+  "summary": "More like Ewww-ewwwtils, amirite?",
+  "license": "MPL-2.0",
+  "version": "0.1.0",
+  "exposed-modules": [],
+  "elm-version": "0.19.0 <= v < 0.20.0",
+  "dependencies": {
+    "elm/core": "1.0.5 <= v < 2.0.0"
+  },
+  "test-dependencies": {}
+}

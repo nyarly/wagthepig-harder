@@ -14,7 +14,7 @@ module WhatShouldWePlay exposing
     )
 
 import Auth
-import BGGAPI exposing (BGGThing)
+import BGG
 import Dict
 import Event exposing (browseToEvent)
 import Html exposing (Html, a, button, div, form, h1, h3, img, label, li, option, p, select, span, table, td, text, th, thead, tr, ul)
@@ -26,8 +26,9 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import Json.Encode as E
+import Maybe exposing (withDefault)
 import Players exposing (OtherPlayers(..), Player, closeOtherPlayers, otherPlayersDecoder, playerDecoder, playerName)
-import ResourceUpdate exposing (apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
+import ResourceUpdate exposing (Etag, apiRoot, resultDispatch, retrieve, taggedResultDispatch, update)
 import Router exposing (ReccoSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybes)
 import Toast
@@ -122,7 +123,7 @@ type Msg
     | GetOtherPlayers Affordance
     | GotOtherPlayers Uri OtherPlayers
     | GotBGGData Uri String
-    | ErrGetBGGData BGGAPI.Error
+    | ErrGetBGGData HM.Error
     | CloseOtherPlayers Uri
     | ErrOtherPlayers HM.Error
     | ErrGetRecco HM.Error
@@ -202,7 +203,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
             localUpdate (\m -> ( { m | extraCount = extraCount }, Cmd.none ))
 
         GotRecco suggestion ->
-            localUpdate (\m -> ( { m | suggestion = Just suggestion, retry = justTried m }, bggGameData suggestion ))
+            localUpdate (\m -> ( { m | suggestion = Just suggestion, retry = justTried m }, bggGameData m.creds suggestion ))
 
         Submit ->
             localUpdate (\m -> ( m, sendRequest m ))
@@ -562,14 +563,14 @@ whoElseTD { whoElse, userLink, name } =
             td [ class "empty whoelse" ] []
 
 
-bggGameData : List Recco -> Cmd Msg
-bggGameData list =
+bggGameData : Auth.Cred -> List Recco -> Cmd Msg
+bggGameData cred list =
     let
-        xform : Recco -> BGGThing -> Msg
-        xform rec bggData =
-            GotBGGData rec.userLink.uri bggData.thumbnail
+        xform : Recco -> ( Etag, BGG.Thing ) -> Msg
+        xform rec ( _, bggData ) =
+            GotBGGData rec.userLink.uri (withDefault "" bggData.thumbnail)
     in
-    BGGAPI.shotgunGames .bggId (taggedResultDispatch (\_ -> ErrGetBGGData) xform) list
+    BGG.shotgunGames cred .bggId (taggedResultDispatch (\_ -> ErrGetBGGData) xform) list
 
 
 browseToPost : HM.TemplateVars -> List (Response -> Result String Affordance)

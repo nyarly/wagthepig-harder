@@ -15,7 +15,7 @@ module EventShow exposing
     )
 
 import Auth
-import BGGAPI
+import BGG
 import Dict
 import Event exposing (browseToEvent, nickToVars)
 import Game.Edit
@@ -31,7 +31,7 @@ import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, hardcoded, required)
 import LinkFollowing as HM
 import Players exposing (OtherPlayers(..), closeOtherPlayers, otherPlayersDecoder, playerName)
-import ResourceUpdate as Up exposing (apiRoot, resultDispatch, taggedResultDispatch)
+import ResourceUpdate as Up exposing (Etag, apiRoot, resultDispatch, taggedResultDispatch)
 import Router exposing (GameSortBy(..))
 import TableSort exposing (SortOrder(..), compareMaybeBools, compareMaybes)
 import Time
@@ -167,7 +167,7 @@ type Msg
     | GotGameList GameList
     | GetOtherPlayers G.Nick Affordance
     | GotOtherPlayers G.Nick OtherPlayers
-    | GotBGGData G.Nick BGGAPI.BGGThing
+    | GotBGGData G.Nick ( Etag, BGG.Thing )
     | CloseOtherPlayers G.Nick
     | UpdateGameInterest Bool Int G.Nick
     | UpdatedGameInterest Bool G.Nick
@@ -232,7 +232,7 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
             localUpdate (\m -> ( { m | etag = etag, resource = Just ev, retry = justTried m }, fetchGamesList m.creds ev.gamesTemplate ))
 
         GotGameList list ->
-            localUpdate (\m -> ( { m | games = Just list, retry = justTried m }, fetchBGGData list ))
+            localUpdate (\m -> ( { m | games = Just list, retry = justTried m }, fetchBGGData m.creds list ))
 
         UpdateGameInterest val event_id nick ->
             localUpdate (\m -> ( { m | retry = justTried m }, updateInterest val m.creds event_id nick ))
@@ -311,12 +311,12 @@ updaters ({ localUpdate, requestUpdatePath, lowerModel, handleErrorWithRetry, se
                     )
                 )
 
-        GotBGGData gameId bggData ->
+        GotBGGData gameId ( _, bggData ) ->
             localUpdate
                 (\m ->
                     ( { m
                         | games =
-                            gameItemUpdate gameId (\g -> { g | thumbnail = Just bggData.thumbnail }) m.games
+                            gameItemUpdate gameId (\g -> { g | thumbnail = bggData.thumbnail }) m.games
                         , retry = Nothing
                       }
                     , Cmd.none
@@ -664,9 +664,9 @@ fetchGamesList creds tmpl =
     HM.chainFrom (HM.fill credvars tmpl) [] (Auth.credHeader creds) Http.emptyBody (HM.decodeBody gameListDecoder) handle
 
 
-fetchBGGData : List Game -> Cmd Msg
-fetchBGGData gameList =
-    BGGAPI.shotgunGames .bggID (taggedResultDispatch (\_ -> \_ -> ErrGetBGGData) (\game -> GotBGGData game.nick)) gameList
+fetchBGGData : Auth.Cred -> List Game -> Cmd Msg
+fetchBGGData cred gameList =
+    BGG.shotgunGames cred .bggID (taggedResultDispatch (\_ -> \_ -> ErrGetBGGData) (\game -> GotBGGData game.nick)) gameList
 
 
 fetchByNick : Auth.Cred -> Int -> Cmd Msg

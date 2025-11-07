@@ -379,9 +379,12 @@ view model =
                    )
                 ++ [ Toast.render viewToast model.toastTray toastConfig
                    , div [ class "footer" ]
-                        [ a [ href "https://github.com/nyarly/wagthepig-harder" ] [ text "Contribute!" ]
-                        , text " "
-                        , a [ href "https://github.com/nyarly/wagthepig-harder/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
+                        [ div [ class "row" ]
+                            [ a [ href "https://github.com/nyarly/wagthepig-harder" ] [ text "Contribute!" ]
+                            , text " "
+                            , a [ href "https://github.com/nyarly/wagthepig-harder/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
+                            ]
+                        , div [ class "row" ] [ img [ class "bgg-logo", src "http://localhost:3001/api/logos/color-rgb.svg" ] [] ]
                         ]
                    ]
             )

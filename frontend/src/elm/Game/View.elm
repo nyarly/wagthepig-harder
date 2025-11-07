@@ -1,7 +1,7 @@
 module Game.View exposing
     ( Game
-    , GameAndSearch
     , Interface
+    , ModelInterface
     , Msg(..)
     , Nick
     , Toast
@@ -15,15 +15,17 @@ module Game.View exposing
     , viewToast
     )
 
-import BGGAPI exposing (BGGGame(..), BGGThing, requestBGGSearch)
+import Auth
+import BGG
 import Html exposing (Html, a, button, div, img, p, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, disabled, href, src, type_)
+import Html.Attributes exposing (class, href, src, type_)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlExtra
-import Hypermedia exposing (decodeMaybe, encodeMaybe)
+import Hypermedia as HM exposing (decodeMaybe, encodeMaybe)
 import Json.Decode as D
 import Json.Encode as E
 import Maybe exposing (withDefault)
+import ResourceUpdate exposing (Etag, resultDispatch)
 import Toast
 import Updaters exposing (Updater, childUpdate)
 import ViewUtil as Eww
@@ -88,8 +90,12 @@ type alias Nick =
     }
 
 
-type alias GameAndSearch gas =
-    { gas | resource : Game, bggSearchResults : List BGGGame }
+type alias ModelInterface gas =
+    { gas
+        | creds : Auth.Cred
+        , resource : Game
+        , bggSearchResults : List BGG.Thing
+    }
 
 
 init : Game
@@ -152,10 +158,10 @@ type Msg
     | ChangeInterested Bool
     | ChangeCanTeach Bool
     | ChangeNotes String
-    | Pick BGGThing
+    | Pick BGG.Thing
     | SearchName
-    | BGGSearchResult (Result BGGAPI.Error (List BGGGame))
-    | BGGThingResult (Result BGGAPI.Error BGGThing)
+    | GotSearch ( Etag, BGG.SearchResult )
+    | ErrSearch HM.Error
 
 
 type Toast
@@ -166,14 +172,14 @@ type Toast
 -- XXX this should be editView, and there should also be showView
 
 
-view : Bool -> GameAndSearch gas -> List (Html Msg)
+view : Bool -> ModelInterface gas -> List (Html Msg)
 view showInterest model =
     let
         game : Game
         game =
             model.resource
 
-        foundGames : List BGGGame
+        foundGames : List BGG.Thing
         foundGames =
             model.bggSearchResults
 
@@ -219,7 +225,7 @@ bggLink { name, bggID } =
     Maybe.withDefault nameHTML (Maybe.map makeLink bggID)
 
 
-searchResults : List BGGGame -> Html Msg
+searchResults : List BGG.Thing -> Html Msg
 searchResults bggSearchResults =
     if List.length bggSearchResults > 0 then
         table []
@@ -240,24 +246,21 @@ searchResults bggSearchResults =
         HtmlExtra.nothing
 
 
-viewBggResult : BGGGame -> Html Msg
-viewBggResult game =
-    case game of
-        SearchResult bggRes ->
-            tr []
-                [ td [ class "image" ] [ text "placeholder" ]
-                , td [ class "name" ] [ text bggRes.name ]
-                , td [ class "description" ] [ text "?" ]
-                , td [ class "pick" ] [ button [ type_ "button", disabled True ] [ text "Pick" ] ]
-                ]
+viewBggResult : BGG.Thing -> Html Msg
+viewBggResult thing =
+    tr []
+        [ td [ class "image" ]
+            (case thing.thumbnail of
+                Just thumbnail ->
+                    [ img [ src thumbnail ] [] ]
 
-        Thing thing ->
-            tr []
-                [ td [ class "image" ] [ img [ src thing.thumbnail ] [] ]
-                , td [ class "name" ] [ text thing.name ]
-                , td [ class "description" ] [ text thing.description ]
-                , td [ class "pick" ] [ button [ type_ "button", onClick (Pick thing) ] [ text "Pick" ] ]
-                ]
+                Nothing ->
+                    []
+            )
+        , td [ class "name" ] [ text (withDefault "" thing.name) ]
+        , td [ class "description" ] [ text (withDefault "" thing.description) ]
+        , td [ class "pick" ] [ button [ type_ "button", onClick (Pick thing) ] [ text "Pick" ] ]
+        ]
 
 
 interestedInput : Bool -> Game -> Html Msg
@@ -271,7 +274,7 @@ interestedInput showInterest g =
 
 type alias Interface base gas model msg =
     { base
-        | localUpdate : Updater (GameAndSearch gas) Msg -> Updater model msg
+        | localUpdate : Updater (ModelInterface gas) Msg -> Updater model msg
         , sendToast : Toast -> Updater model msg
     }
 
@@ -283,9 +286,18 @@ updaters { localUpdate, sendToast } msg =
         gameLocalUpdate =
             localUpdate << childUpdate .resource (\m -> \g -> { m | resource = g }) identity
 
-        searchLocalUpdate : Updater (List BGGGame) Msg -> model -> ( model, Cmd msg )
+        searchLocalUpdate : Updater (List BGG.Thing) Msg -> model -> ( model, Cmd msg )
         searchLocalUpdate =
             localUpdate << childUpdate .bggSearchResults (\m -> \g -> { m | bggSearchResults = g }) identity
+
+        doSearch : ModelInterface gas -> ( ModelInterface gas, Cmd Msg )
+        doSearch model =
+            case model.resource.name of
+                Just name ->
+                    ( model, BGG.search model.creds name (resultDispatch ErrSearch GotSearch) )
+
+                Nothing ->
+                    ( model, Cmd.none )
     in
     case msg of
         ChangeName n ->
@@ -317,52 +329,34 @@ updaters { localUpdate, sendToast } msg =
 
         Pick thing ->
             let
-                onlyPicked : BGGGame -> Bool
-                onlyPicked g =
-                    case g of
-                        SearchResult _ ->
-                            False
+                onlyPicked : BGG.Thing -> Bool
+                onlyPicked t =
+                    t.bggId == thing.bggId
 
-                        Thing t ->
-                            t.bggId == thing.bggId
+                updateFromThing : Game -> ( Game, Cmd Msg )
+                updateFromThing m =
+                    ( { m
+                        | name = thing.name
+                        , bggID = Just thing.bggId
+                        , minPlayers = thing.minPlayers
+                        , maxPlayers = thing.maxPlayers
+                        , durationSecs = Maybe.map (\t -> t * 60) thing.durationMinutes
+                      }
+                    , Cmd.none
+                    )
             in
             Updaters.compose
                 (searchLocalUpdate (\m -> ( List.filter onlyPicked m, Cmd.none )))
-                (gameLocalUpdate
-                    (\m ->
-                        ( { m
-                            | name = Just thing.name
-                            , bggID = Just thing.bggId
-                            , minPlayers = Just thing.minPlayers
-                            , maxPlayers = Just thing.maxPlayers
-                            , durationSecs = Just (thing.durationMinutes * 60)
-                          }
-                        , Cmd.none
-                        )
-                    )
-                )
+                (gameLocalUpdate updateFromThing)
 
-        BGGSearchResult r ->
-            case r of
-                Ok l ->
-                    searchLocalUpdate (\_ -> ( l, shotgunGames l ))
+        GotSearch ( _, r ) ->
+            searchLocalUpdate (\_ -> ( r.things, Cmd.none ))
 
-                Err _ ->
-                    sendToast Unknown
-
-        BGGThingResult r ->
-            case r of
-                Ok newGame ->
-                    searchLocalUpdate (\m -> ( enrichGame m newGame, Cmd.none ))
-
-                Err _ ->
-                    sendToast Unknown
+        ErrSearch _ ->
+            sendToast Unknown
 
         SearchName ->
-            localUpdate
-                (\model ->
-                    ( model, requestBGGSearch BGGSearchResult (withDefault "" model.resource.name) )
-                )
+            localUpdate doSearch
 
 
 viewToast : Toast.Info Toast -> List (Html Msg)
@@ -370,37 +364,3 @@ viewToast toastInfo =
     case toastInfo.content of
         Unknown ->
             [ p [] [ text "there was an error from the BGG servers; try that again?" ] ]
-
-
-shotgunGames : List BGGGame -> Cmd Msg
-shotgunGames list =
-    let
-        getID : BGGGame -> Maybe String
-        getID sres =
-            case sres of
-                SearchResult res ->
-                    Just res.id
-
-                _ ->
-                    Nothing
-    in
-    BGGAPI.shotgunGames getID (\_ -> BGGThingResult) list
-
-
-enrichGame : List BGGGame -> BGGThing -> List BGGGame
-enrichGame list newGame =
-    let
-        swapGame : BGGGame -> BGGGame
-        swapGame oldGame =
-            case oldGame of
-                SearchResult res ->
-                    if res.id == newGame.bggId then
-                        Thing newGame
-
-                    else
-                        oldGame
-
-                _ ->
-                    oldGame
-    in
-    List.map swapGame list
