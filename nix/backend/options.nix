@@ -39,6 +39,10 @@ in
       example = "wagthepig.com";
       default = "wagthepig.com";
     };
+    bggProxyURL = mkOption {
+      description = "The URL for the BGG XML API 2 proxy";
+      type = str;
+    };
     trustForwarded = mkOption {
       type = bool;
       description = ''
