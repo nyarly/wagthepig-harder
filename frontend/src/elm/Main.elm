@@ -4,6 +4,7 @@ module Main exposing
     )
 
 import Auth
+import BGG
 import Browser
 import Browser.Navigation as Nav
 import Dict
@@ -16,6 +17,7 @@ import Json.Encode exposing (Value)
 import Login
 import Pages
 import Platform.Cmd as Cmd
+import ResourceUpdate as Up
 import Router
 import State
 import Toast exposing (withAttributes, withTrayAttributes)
@@ -30,6 +32,7 @@ type alias Model =
     , page : Router.Target
     , pages : Pages.Models
     , creds : Auth.Cred
+    , bggLogo : Maybe String
     , toastTray : Toast.Tray Toast
     }
 
@@ -44,6 +47,8 @@ type Msg
     | ToastMsg Toast.Msg
     | CloseToast (Toast.Info ())
     | Relogin (Toast.Info ())
+    | GotBGGAPIRoot ( Up.Etag, String )
+    | ErrBGGAPIRoot Error
 
 
 type Toast
@@ -96,6 +101,7 @@ init flags url key =
                 Router.Landing
                 Pages.init
                 Auth.unauthenticated
+                Nothing
                 startingTray
 
         fromStore : Dict.Dict String Value
@@ -105,8 +111,14 @@ init flags url key =
         model : Model
         model =
             Dict.foldl loadIntoModel baseModel fromStore
+
+        ( routedModel, routeCmd ) =
+            routeToPage url model
+
+        logoFetchCmd =
+            BGG.fetchAPIRoot (Up.resultDispatch ErrBGGAPIRoot GotBGGAPIRoot)
     in
-    routeToPage url model
+    ( routedModel, Cmd.batch [ routeCmd, logoFetchCmd ] )
 
 
 type alias Updater model msg =
@@ -268,6 +280,12 @@ update msg model =
                 saveCurrentPageAndReLogin
                 model
 
+        GotBGGAPIRoot ( _, root ) ->
+            ( { model | bggLogo = Just (root ++ "/logos/color-rgb.svg") }, Cmd.none )
+
+        ErrBGGAPIRoot _ ->
+            ( model, BGG.fetchAPIRoot (Up.resultDispatch ErrBGGAPIRoot GotBGGAPIRoot) )
+
 
 handleError : Error -> Updater Model Msg
 handleError =
@@ -384,7 +402,14 @@ view model =
                             , text " "
                             , a [ href "https://github.com/nyarly/wagthepig-harder/issues" ] [ s [] [ text "Complain!" ], text " Suggest!" ]
                             ]
-                        , div [ class "row" ] [ img [ class "bgg-logo", src "http://localhost:3001/api/logos/color-rgb.svg" ] [] ]
+                        , div [ class "row" ]
+                            [ case model.bggLogo of
+                                Just url ->
+                                    img [ class "bgg-logo", src url ] []
+
+                                Nothing ->
+                                    text "powered by bgg"
+                            ]
                         ]
                    ]
             )

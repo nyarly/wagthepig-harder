@@ -1,4 +1,4 @@
-module BGG exposing (SearchResult, Thing, fetchThingById, search, shotgunGames)
+module BGG exposing (SearchResult, Thing, fetchAPIRoot, fetchThingById, search, shotgunGames)
 
 import Auth
 import Dict
@@ -6,6 +6,22 @@ import Hypermedia as HM exposing (Affordance, Method(..), OperationSelector(..),
 import Json.Decode as D
 import Json.Decode.Pipeline exposing (custom, required)
 import ResourceUpdate as Up exposing (Etag, apiRoot)
+
+
+apiRootDecoder : D.Decoder String
+apiRootDecoder =
+    D.at [ "bggAPI", "id" ] D.string
+
+
+fetchAPIRoot : (Result HM.Error ( Etag, String ) -> msg) -> Cmd msg
+fetchAPIRoot resultDispatch =
+    Up.retrieve
+        { headers = []
+        , decoder = apiRootDecoder
+        , resMsg = resultDispatch
+        , startAt = apiRoot
+        , browsePlan = []
+        }
 
 
 type alias Thing =
