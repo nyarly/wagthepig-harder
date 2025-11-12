@@ -633,8 +633,8 @@ impl<E, U> Game<GameId, E, U, InterestData> {
                 self.id.id(), interest.notes, interest.can_teach, user_id)
         } else {
             sqlx::query!(
-                r#"delete from interests where game_id = $1"#,
-                self.id.id())
+                r#"delete from interests where game_id = $1 and user_id = $2"#,
+                self.id.id(), user_id)
             }).execute(db)
             .map_ok(|_| ())
             .map_err(Error::from)
