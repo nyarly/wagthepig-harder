@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from interests where game_id = $1 and user_id = (select id from users where email = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fccf69a82d11a16a1d8421ac9de9e9775e99df96212c79da4f9289d46bdbfa22"
+}

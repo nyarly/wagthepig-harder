@@ -6,7 +6,16 @@
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     mkElmDerivation.url = "github:jeslie0/mkElmDerivation";
+    crate2nix = {
+      url = "github:nix-community/crate2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
+
+  nixConfig = {
+    allow-import-from-derivation = true; # my default, but useful for others
+  };
+
   outputs =
     {
       self,
@@ -14,6 +23,7 @@
       nixpkgs-unstable,
       flake-utils,
       mkElmDerivation,
+      crate2nix,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -40,6 +50,11 @@
         packages =
           let
             version = "0.1.0";
+
+            cargoNix = crate2nix.tools.${system}.appliedCargoNix {
+              name = "wag-the-pig";
+              src = ./backend;
+            };
 
           in
           rec {
@@ -70,6 +85,33 @@
               '';
             };
 
+            wag-the-pig-crate2nix = cargoNix.rootCrate.build.overrideAttrs (previousAttrs: {
+              preBuild = ''
+                rm -rf frontend
+                cp -a ${wag-the-pig-frontend} frontend
+              '';
+
+              checkFlags = "--skip db::";
+
+              buildPhase = ''
+                export CARGO=${pkgs.cargo}/bin/cargo
+
+              ''
+              + previousAttrs.buildPhase;
+
+              meta = with pkgs.lib; {
+                description = "A web app for pre-deciding games to play";
+                longDescription = ''
+                  wagthepig is a web app to help with the What Are We Going to Play Game
+                '';
+                homepage = "https://crates.io/crates/wagthepig";
+                license = licenses.mpl20;
+                maintainers = [ maintainers.nyarly ];
+              };
+            });
+
+            # TODO a migrations package
+
             wag-the-pig = pkgs.rustPlatform.buildRustPackage rec {
               crateName = "wag-the-pig";
 
@@ -83,7 +125,6 @@
               ];
 
               cargoLock.lockFile = backend/Cargo.lock;
-              # cargoHash = "sha256-BT88YI93D/QVqn2EHsm3a/+mhP8d6gPzyDPQMKjLjkw=";
 
               nativeBuildInputs = buildDeps;
 
@@ -144,6 +185,8 @@
                 rustc
                 rust-analyzer
                 clippy
+
+                pkgs.crate2nix
 
                 nodejs_latest
                 elm-pkgs.elm
