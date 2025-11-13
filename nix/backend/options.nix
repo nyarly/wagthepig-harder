@@ -22,6 +22,10 @@ in
       type = package;
       default = self-packages.wag-the-pig;
     };
+    migrationsPackage = mkOption {
+      type = package;
+      default = self-packages.wag-the-pig-migrations;
+    };
     user = mkOption {
       type = str;
       default = "wagthepig";

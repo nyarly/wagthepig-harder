@@ -85,7 +85,7 @@
               '';
             };
 
-            wag-the-pig-crate2nix = cargoNix.rootCrate.build.overrideAttrs (previousAttrs: {
+            wag-the-pig = cargoNix.rootCrate.build.overrideAttrs (previousAttrs: {
               preBuild = ''
                 rm -rf frontend
                 cp -a ${wag-the-pig-frontend} frontend
@@ -110,9 +110,20 @@
               };
             });
 
+            wag-the-pig-migrations = pkgs.stdenv.mkDerivation {
+              pname = "wag-the-pig-migrations";
+              inherit version;
+              src = ./backend/migrations;
+
+              installPhase = ''
+                mkdir $out
+                cp -a * $out
+              '';
+            };
+
             # TODO a migrations package
 
-            wag-the-pig = pkgs.rustPlatform.buildRustPackage rec {
+            wag-the-pig-brp = pkgs.rustPlatform.buildRustPackage rec {
               crateName = "wag-the-pig";
 
               src = ./backend;
@@ -123,6 +134,11 @@
                 "out"
                 "migrations"
               ];
+
+              postInstall = ''
+                mkdir -p $migrations
+                cp migrations/* $migrations
+              '';
 
               cargoLock.lockFile = backend/Cargo.lock;
 
@@ -136,11 +152,6 @@
               '';
 
               checkFlags = "--skip db::";
-
-              postInstall = ''
-                mkdir -p $migrations
-                cp migrations/* $migrations
-              '';
 
               meta = with pkgs.lib; {
                 description = "A web app for pre-deciding games to play";

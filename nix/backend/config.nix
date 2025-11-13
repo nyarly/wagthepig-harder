@@ -8,6 +8,7 @@ lib.mkIf config.services.wag-the-pig.enable (
   let
     cfg = config.services.wag-the-pig;
     package = cfg.package;
+    migrationsPackage = cfg.migrationsPackage;
     maybeSMTPCert =
       if cfg.smtp.certPath != null then
         {
@@ -57,7 +58,7 @@ lib.mkIf config.services.wag-the-pig.enable (
               SQL
 
               ${dbURL}
-              ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${package.migrations}
+              ${pkgs.sqlx-cli}/bin/sqlx migrate run --source ${migrationsPackage}
             ''
           ).overrideAttrs
             (_: {
