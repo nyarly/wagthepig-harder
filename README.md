@@ -1,4 +1,4 @@
-# Development Setupj
+# Development Setup
 
 There's been some thought and effort
 put into building a reusable and reproducable
